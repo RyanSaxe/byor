@@ -13,3 +13,7 @@ class ConfigError(ByolspError):
 
 class RepoNotInitialized(ByolspError):
     """The repository has no .byolsp/config.yml; `byolsp init` has not run here."""
+
+
+class RuleValidationError(ByolspError):
+    """A rule file is missing required ast-grep fields or has wrongly typed values."""
