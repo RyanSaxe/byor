@@ -25,10 +25,10 @@ from byolsp.config import (
     save_repo_registry,
 )
 from byolsp.errors import ConfigError, RepoNotInitialized
+from byolsp.fsio import write_text_atomic
 from byolsp.ignore import IgnoreMode, ignore_file, write_ignore_block
 from byolsp.paths import global_config_dir, resolve_repo_root
 from byolsp.sgconfig import ensure_rule_dirs
-from byolsp.yamlio import write_text_atomic
 
 AGENT_CHOICES = ("generic", "claude-code", "codex", "copilot")
 

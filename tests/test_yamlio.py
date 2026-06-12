@@ -1,11 +1,9 @@
-import os
-import stat
 from pathlib import Path
 
 import pytest
 
 from byolsp.errors import ConfigError
-from byolsp.yamlio import load_yaml_mapping, write_text_atomic, write_yaml_atomic
+from byolsp.yamlio import load_yaml_mapping, write_yaml_atomic
 
 
 def test_round_trip_preserves_comments_and_key_order(tmp_path: Path) -> None:
@@ -50,33 +48,3 @@ def test_load_rejects_invalid_yaml(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError, match="invalid YAML"):
         load_yaml_mapping(path)
-
-
-def test_write_text_atomic_creates_parents_overwrites_and_leaves_no_temp_files(
-    tmp_path: Path,
-) -> None:
-    path = tmp_path / "nested" / "file.txt"
-
-    write_text_atomic(path, "first")
-    write_text_atomic(path, "second")
-
-    assert path.read_text() == "second"
-    assert [entry.name for entry in path.parent.iterdir()] == ["file.txt"]
-
-
-def test_write_text_atomic_preserves_mode_on_overwrite_and_honors_umask(
-    tmp_path: Path,
-) -> None:
-    previous_umask = os.umask(0o022)
-    try:
-        fresh = tmp_path / "fresh.txt"
-        write_text_atomic(fresh, "new files honor the umask")
-        assert stat.S_IMODE(fresh.stat().st_mode) == 0o644
-
-        hook = tmp_path / "hook.sh"
-        hook.write_text("#!/bin/sh\n")
-        hook.chmod(0o755)
-        write_text_atomic(hook, "#!/bin/sh\nupdated\n")
-        assert stat.S_IMODE(hook.stat().st_mode) == 0o755
-    finally:
-        os.umask(previous_umask)

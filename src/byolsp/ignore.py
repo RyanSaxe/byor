@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 from byolsp.errors import ConfigError
-from byolsp.yamlio import write_text_atomic
+from byolsp.fsio import write_text_atomic
 
 IgnoreMode = Literal["project", "local"]
 
