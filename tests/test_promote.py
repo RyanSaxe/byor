@@ -97,5 +97,5 @@ def test_promote_unknown_rule_id_fails_cleanly(
     assert promote(repo, "missing", "global") == 1
 
     captured = capsys.readouterr()
-    assert "No global rule with ID 'missing'." in captured.err
+    assert "No rule with ID 'missing' found in global rules." in captured.err
     assert "Traceback" not in captured.err
