@@ -29,18 +29,24 @@ def new_yaml() -> YAML:
 
 
 def load_yaml_mapping(path: Path) -> CommentedMap:
-    """Load a YAML file whose top level must be a mapping, preserving comments.
+    """Load a YAML file whose top level must be a mapping, preserving comments."""
+    return parse_yaml_mapping(path.read_text(encoding="utf-8"), source=path)
 
-    Empty and comment-only documents load as an empty mapping.
+
+def parse_yaml_mapping(text: str, source: Path) -> CommentedMap:
+    """Parse YAML text whose top level must be a mapping, preserving comments.
+
+    Empty and comment-only documents parse as an empty mapping. `source` names
+    the file in error messages.
     """
     try:
-        data = new_yaml().load(path)
+        data = new_yaml().load(text)
     except YAMLError as error:
-        raise ConfigError(f"{path}: invalid YAML: {error}") from error
+        raise ConfigError(f"{source}: invalid YAML: {error}") from error
     if data is None:
         return CommentedMap()
     if not isinstance(data, CommentedMap):
-        raise ConfigError(f"{path}: expected a YAML mapping at the top level")
+        raise ConfigError(f"{source}: expected a YAML mapping at the top level")
     return data
 
 

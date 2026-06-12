@@ -12,7 +12,7 @@ from ruamel.yaml.comments import CommentedMap
 
 from byolsp.config import RepoPaths
 from byolsp.errors import ConfigError, DuplicateRuleId, RuleValidationError
-from byolsp.yamlio import load_yaml_mapping
+from byolsp.yamlio import parse_yaml_mapping
 
 RuleScope = Literal["project", "local", "global"]
 
@@ -40,6 +40,10 @@ class Rule:
     language: str
     message: str
     path: Path
+
+    content: str
+    """The raw file text, so sync can mirror the rule without rereading it."""
+
     severity: str | None = None
     byolsp: ByolspMetadata = field(default_factory=ByolspMetadata)
 
@@ -62,8 +66,9 @@ def load_rule(path: Path) -> Rule:
     metadata.byolsp block degrades to defaults when malformed: ast-grep
     ignores metadata, and deep validation is doctor's job (SPEC 15.4).
     """
+    text = path.read_text(encoding="utf-8")
     try:
-        data = load_yaml_mapping(path)
+        data = parse_yaml_mapping(text, source=path)
     except ConfigError as error:
         raise RuleValidationError(str(error)) from error
     missing = [name for name in REQUIRED_AST_GREP_FIELDS if data.get(name) is None]
@@ -78,6 +83,7 @@ def load_rule(path: Path) -> Rule:
         language=_string(data, "language", path),
         message=_string(data, "message", path),
         path=path,
+        content=text,
         severity=_lenient_string(data, "severity"),
         byolsp=_byolsp_metadata(data),
     )

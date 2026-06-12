@@ -145,7 +145,9 @@ def test_unconventional_rule_id_warns_but_loads(tmp_path: Path) -> None:
 
 
 def rule(rule_id: str, filename: str) -> Rule:
-    return Rule(id=rule_id, language="Python", message="msg", path=Path(filename))
+    return Rule(
+        id=rule_id, language="Python", message="msg", path=Path(filename), content=""
+    )
 
 
 # One test per SPEC section 14 conflict table row.
