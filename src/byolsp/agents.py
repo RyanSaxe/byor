@@ -60,8 +60,8 @@ GENERIC_AGENT_INSTRUCTIONS = (
 # SPEC 27.4: every harness that auto-discovers skills gets the capture loop.
 SKILL_DISCOVERY_NOTE = (
     "{harness} also auto-discovers the `byolsp` rule-capture skill at\n"
-    "`.agents/skills/byolsp/SKILL.md`, which turns your durable feedback\n"
-    "into new ast-grep rules."
+    "`.agents/skills/byolsp/SKILL.md`; use it to turn the user's durable\n"
+    "code-style feedback into new ast-grep rules."
 )
 
 
@@ -207,30 +207,41 @@ def _instructions_relpath(agent: str) -> str:
     return f".byolsp/agents/{agent}.md"
 
 
+# Display name and wiring note per instruction-file agent; _agent_instructions
+# appends SKILL_DISCOVERY_NOTE to every entry, so notes stay pure wiring text.
+INSTRUCTION_AGENT_NOTES = {
+    "codex": (
+        "Codex",
+        "Codex reads repository guidance from `AGENTS.md`. Copy the\n"
+        "instruction above into `AGENTS.md` so Codex checks its changes\n"
+        "automatically.",
+    ),
+    "copilot": (
+        "Copilot",
+        "GitHub Copilot reads repository guidance from\n"
+        "`.github/copilot-instructions.md`. Copy the instruction above into\n"
+        "that file so Copilot checks its changes automatically.",
+    ),
+    "opencode": (
+        "OpenCode",
+        "The BYOLSP plugin at\n"
+        f"`{OPENCODE_PLUGIN_RELPATH}` hooks `tool.execute.after` and appends\n"
+        "diagnostics automatically when you change files with the `edit`,\n"
+        "`write`, or `apply_patch` tools — do not rerun `agent-check` for\n"
+        "those. Run the command above only for files changed another way\n"
+        "(for example via shell commands).",
+    ),
+}
+
+
 def _agent_instructions(agent: str) -> str:
     if agent == "generic":
         return GENERIC_AGENT_INSTRUCTIONS
-    titles = {"codex": "Codex", "copilot": "Copilot", "opencode": "OpenCode"}
-    notes = {
-        "codex": (
-            "Codex reads repository guidance from `AGENTS.md`. Copy the\n"
-            "instruction above into `AGENTS.md` so Codex checks its changes\n"
-            f"automatically.\n\n{SKILL_DISCOVERY_NOTE.format(harness='Codex')}"
-        ),
-        "copilot": (
-            "GitHub Copilot reads repository guidance from\n"
-            "`.github/copilot-instructions.md`. Copy the instruction above into\n"
-            "that file so Copilot checks its changes automatically.\n\n"
-            f"{SKILL_DISCOVERY_NOTE.format(harness='Copilot')}"
-        ),
-        "opencode": (
-            "OpenCode runs the check automatically: the BYOLSP plugin at\n"
-            f"`{OPENCODE_PLUGIN_RELPATH}` hooks `tool.execute.after` and appends\n"
-            "any diagnostics to the tool output after every file edit.\n\n"
-            f"{SKILL_DISCOVERY_NOTE.format(harness='OpenCode')}"
-        ),
-    }
-    return _instruction_file(f"BYOLSP {titles[agent]} Instructions", notes[agent])
+    name, wiring_note = INSTRUCTION_AGENT_NOTES[agent]
+    return _instruction_file(
+        f"BYOLSP {name} Instructions",
+        f"{wiring_note}\n\n{SKILL_DISCOVERY_NOTE.format(harness=name)}",
+    )
 
 
 def _instruction_file(title: str, wiring_note: str) -> str:
