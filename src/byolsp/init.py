@@ -12,7 +12,6 @@ from byolsp.config import (
     GlobalConfig,
     LocalConfig,
     RepoConfig,
-    RepoPaths,
     global_config_path,
     global_rules_dir,
     load_global_config,
@@ -21,6 +20,7 @@ from byolsp.config import (
     register_repo,
     repo_config_path,
     repo_registry_path,
+    rule_dir_relpaths,
     save_global_config,
     save_local_config,
     save_repo_config,
@@ -67,7 +67,7 @@ def initialize_repo(
     repo_config = _ensure_repo_layout(repo_root, options.agents)
     sgconfig_message = ensure_rule_dirs(
         repo_root / repo_config.paths.sgconfig,
-        _rule_dirs(repo_config.paths),
+        rule_dir_relpaths(repo_config.paths),
         replace=options.replace_sgconfig,
     )
     if sgconfig_message is not None:
@@ -112,19 +112,11 @@ def _ensure_repo_layout(repo_root: Path, agents: list[str]) -> RepoConfig:
         save_repo_config(repo_root, config)
     if not local_config_path(repo_root).is_file():
         save_local_config(repo_root, LocalConfig())
-    for rules_dir in _rule_dirs(config.paths):
+    for rules_dir in rule_dir_relpaths(config.paths):
         gitkeep = repo_root / rules_dir / ".gitkeep"
         gitkeep.parent.mkdir(parents=True, exist_ok=True)
         gitkeep.touch(exist_ok=True)
     return config
-
-
-def _rule_dirs(paths: RepoPaths) -> list[str]:
-    return [
-        paths.project_rules,
-        paths.personal_local_rules,
-        paths.personal_global_rules,
-    ]
 
 
 def _load_or_default_repo_config(repo_root: Path) -> RepoConfig:

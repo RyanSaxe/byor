@@ -51,6 +51,15 @@ class GlobalConfig:
     ast_grep_command: str = "auto"
 
 
+def rule_dir_relpaths(paths: RepoPaths) -> list[str]:
+    """The three rule directories sgconfig.yml must list, repo-relative (SPEC 8)."""
+    return [
+        paths.project_rules,
+        paths.personal_local_rules,
+        paths.personal_global_rules,
+    ]
+
+
 def repo_config_path(repo_root: Path) -> Path:
     return repo_root / ".byolsp" / "config.yml"
 
