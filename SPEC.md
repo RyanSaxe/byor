@@ -123,10 +123,10 @@ Ignored:
 
 ```text
 .byolsp/local.yml
-.byolsp/rules/personal/local/*.yml
-.byolsp/rules/personal/local/*.yaml
-.byolsp/rules/personal/global/*.yml
-.byolsp/rules/personal/global/*.yaml
+.byolsp/rules/personal/local/**/*.yml
+.byolsp/rules/personal/local/**/*.yaml
+.byolsp/rules/personal/global/**/*.yml
+.byolsp/rules/personal/global/**/*.yaml
 ```
 
 `.byolsp/rules/project/` is shared team policy and committed. `.byolsp/rules/personal/local/` is private to this user and repo. `.byolsp/rules/personal/global/` is a generated build artifact — wholly owned by byolsp, mirrored by sync, never edited by hand (section 12.3).
@@ -183,6 +183,8 @@ ast-grep lsp
 2. Local `.git/info/exclude` (private experimentation without changing shared ignore policy).
 
 The ignored patterns are exactly the "Ignored" list in section 6, written as one marked block. Writing the block is idempotent. Do not rely on `assume-unchanged` or `skip-worktree`.
+
+**Keeping git-ignored rules visible to ast-grep.** ast-grep's rule discovery respects gitignore, so the ignored personal rule files would otherwise never load inside a git repository (verified empirically). ast-grep also reads `.ignore` files, which git does not. Init therefore writes a byolsp-marked `.ignore` file containing `!*.yml` / `!*.yaml` negations into each personal rule directory: git ignores the rule copies, ast-grep still loads them. `doctor` checks this visibility; an unmarked user-owned `.ignore` is never touched.
 
 ## 10. Config File Schemas
 
@@ -748,7 +750,7 @@ v0.1 is acceptable when:
 6. A stale repo is healed by running any byolsp command, and the opt-in git hooks heal the pulled-collision case.
 7. `byolsp agent-check` renders `metadata.byolsp.agent_prompt` with correct exit codes.
 8. `byolsp doctor` reports actionable diagnostics.
-9. Tests, ruff, and basedpyright pass.
+9. Tests, ruff, and ty pass.
 10. Docs explain that BYOLSP means Build Your Own LSP and why copies are used.
 
 ## 25. Explicitly Deferred
