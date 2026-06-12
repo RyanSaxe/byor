@@ -2,13 +2,17 @@ from pathlib import Path
 
 import pytest
 
-from byolsp.errors import ConfigError, RuleValidationError
+from byolsp.config import RepoPaths
+from byolsp.errors import ConfigError, DuplicateRuleId, RuleValidationError
 from byolsp.rules import (
     ByolspMetadata,
+    Rule,
+    check_id_conflicts,
     discover_rule_files,
     load_rule,
     load_rules,
     rule_id_warnings,
+    scope_rules_dir,
 )
 
 NO_PYTHON_CAST = """\
@@ -117,3 +121,61 @@ def test_unconventional_rule_id_warns_but_loads(tmp_path: Path) -> None:
     assert len(warnings) == 1
     assert "odd.yml" in warnings[0]
     assert "'No_Cast'" in warnings[0]
+
+
+def rule(rule_id: str, filename: str) -> Rule:
+    return Rule(id=rule_id, language="Python", message="msg", path=Path(filename))
+
+
+# One test per SPEC section 14 conflict table row.
+
+
+def test_duplicate_id_within_project_rules_is_an_error() -> None:
+    duplicated = [rule("no-cast", "a.yml"), rule("no-cast", "b.yml")]
+
+    with pytest.raises(DuplicateRuleId, match=r"(?s)project rules.*a\.yml.*b\.yml"):
+        check_id_conflicts(duplicated, [], [])
+
+
+def test_duplicate_id_within_local_rules_is_an_error() -> None:
+    duplicated = [rule("no-cast", "a.yml"), rule("no-cast", "b.yml")]
+
+    with pytest.raises(DuplicateRuleId, match="local personal rules"):
+        check_id_conflicts([], duplicated, [])
+
+
+def test_duplicate_id_within_canonical_global_rules_is_an_error() -> None:
+    duplicated = [rule("no-cast", "a.yml"), rule("no-cast", "b.yml")]
+
+    with pytest.raises(DuplicateRuleId, match="global rules"):
+        check_id_conflicts([], [], duplicated)
+
+
+def test_project_id_matching_global_id_is_an_override_not_an_error() -> None:
+    check_id_conflicts(
+        [rule("no-cast", "project.yml")], [], [rule("no-cast", "global.yml")]
+    )
+
+
+def test_local_id_matching_global_id_is_an_override_not_an_error() -> None:
+    check_id_conflicts(
+        [], [rule("no-cast", "local.yml")], [rule("no-cast", "global.yml")]
+    )
+
+
+def test_project_id_matching_local_id_is_an_error() -> None:
+    with pytest.raises(DuplicateRuleId, match="requires a different ID"):
+        check_id_conflicts(
+            [rule("no-cast", "project.yml")], [rule("no-cast", "local.yml")], []
+        )
+
+
+def test_scope_rules_dirs_map_to_repo_paths_and_canonical_global_root() -> None:
+    repo_root = Path("/repo")
+    global_root = Path("/home/user/.config/byolsp/rules")
+    paths = RepoPaths()
+
+    args = (repo_root, paths, global_root)
+    assert scope_rules_dir("project", *args) == repo_root / ".byolsp/rules/project"
+    assert scope_rules_dir("local", *args) == repo_root / ".byolsp/rules/personal/local"
+    assert scope_rules_dir("global", *args) == global_root
