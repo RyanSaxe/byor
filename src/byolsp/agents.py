@@ -193,9 +193,15 @@ def _install_claude_code(repo_root: Path) -> list[str]:
     settings_path = repo_root / CLAUDE_SETTINGS_RELPATH
     settings = _load_claude_settings(settings_path)
     groups = _post_tool_use_groups(settings)
-    if any(_contains_byolsp_command(group) for group in groups):
+    current = _claude_hook_group()
+    if current in groups:
         return []
-    _set_post_tool_use_groups(settings, [*groups, _claude_hook_group()])
+    # Converge byolsp-owned groups to the current hook (SPEC 17); a group the
+    # user mixed their own hooks into is user-edited and stays as is.
+    kept = [group for group in groups if not _is_byolsp_group(group)]
+    if any(_contains_byolsp_command(group) for group in kept):
+        return []
+    _set_post_tool_use_groups(settings, [*kept, current])
     _save_claude_settings(settings_path, settings)
     return [f"Installed a PostToolUse hook in {CLAUDE_SETTINGS_RELPATH}"]
 

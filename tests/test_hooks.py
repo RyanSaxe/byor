@@ -58,6 +58,22 @@ def test_claude_code_with_claude_dir_merges_settings_hook(home: Path) -> None:
     assert main(["doctor", "--repo", str(repo), "--quick"]) == 0
 
 
+def test_outdated_claude_settings_hook_is_updated(home: Path) -> None:
+    repo = home / "repo"
+    (repo / ".claude").mkdir(parents=True)
+    settings = repo / ".claude" / "settings.json"
+    stale = {
+        "matcher": "Write",
+        "hooks": [{"type": "command", "command": "byolsp agent-check --files old"}],
+    }
+    settings.write_text(json.dumps({"hooks": {"PostToolUse": [stale]}}))
+
+    assert init_with_agents(repo, "claude-code") == 0
+
+    [group] = json.loads(settings.read_text())["hooks"]["PostToolUse"]
+    assert group["hooks"][0]["command"] == CLAUDE_HOOK_COMMAND
+
+
 def test_claude_code_creates_settings_when_only_the_dir_exists(home: Path) -> None:
     repo = home / "repo"
     (repo / ".claude").mkdir(parents=True)
