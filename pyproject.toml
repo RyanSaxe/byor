@@ -1,0 +1,33 @@
+[project]
+name = "byolsp"
+version = "0.1.0"
+description = "Make custom ast-grep diagnostics easy to set up, share, and expose to AI agents"
+readme = "README.md"
+authors = [
+    { name = "Ryan Saxe", email = "ryancsaxe+1@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "ruamel-yaml>=0.18",
+]
+
+[project.scripts]
+byolsp = "byolsp.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11.16,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.0",
+    "pytest>=9.0.3",
+    "ruff>=0.15.17",
+    "ty>=0.0.49",
+]
+
+[tool.ruff.lint]
+extend-select = ["I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
