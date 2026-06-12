@@ -49,6 +49,8 @@ def build_parser() -> argparse.ArgumentParser:
             _add_doctor_arguments(command)
         if name == "list":
             _add_list_arguments(command)
+        if name in ("exclude", "include"):
+            _add_rule_id_arguments(command)
         if name == "hook":
             actions = command.add_subparsers(dest="hook_action", required=True)
             actions.add_parser("install", help="Install agent integration files")
@@ -123,6 +125,11 @@ def _add_list_arguments(command: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_rule_id_arguments(command: argparse.ArgumentParser) -> None:
+    _add_repo_argument(command)
+    command.add_argument("rule_id", metavar="RULE_ID", help="ID of a global rule")
+
+
 def _add_doctor_arguments(command: argparse.ArgumentParser) -> None:
     _add_repo_argument(command)
     command.add_argument(
@@ -161,6 +168,14 @@ def run(args: argparse.Namespace) -> int:
         from byolsp.listing import run_list
 
         return run_list(args)
+    if args.command == "exclude":
+        from byolsp.rule_commands import run_exclude
+
+        return run_exclude(args)
+    if args.command == "include":
+        from byolsp.rule_commands import run_include
+
+        return run_include(args)
     raise ByolspError(f"'{args.command}' is not implemented yet")
 
 
