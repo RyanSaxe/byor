@@ -2,40 +2,9 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import make_repo, write_global_rule, write_rule
 
 from byolsp.cli import main
-
-RULE_TEMPLATE = (
-    "id: {rule_id}\n"
-    "language: Python\n"
-    "message: Avoid this.\n"
-    "rule:\n"
-    "  pattern: cast($TYPE, $VALUE)\n"
-)
-
-
-@pytest.fixture
-def home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """A sandbox holding repos and the global config dir (via XDG_CONFIG_HOME)."""
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    return tmp_path
-
-
-def make_repo(home: Path, name: str = "repo") -> Path:
-    repo = home / name
-    repo.mkdir()
-    assert main(["init", "--repo", str(repo), "--non-interactive"]) == 0
-    return repo
-
-
-def write_rule(path: Path, rule_id: str) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(RULE_TEMPLATE.format(rule_id=rule_id))
-    return path
-
-
-def write_global_rule(home: Path, relpath: str, rule_id: str) -> Path:
-    return write_rule(home / "xdg" / "byolsp" / "rules" / relpath, rule_id)
 
 
 def list_rules(repo: Path, *extra: str) -> int:
