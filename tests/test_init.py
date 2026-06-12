@@ -1,4 +1,6 @@
 import io
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -184,7 +186,12 @@ def test_interactive_prompts_drive_agents_ignore_mode_and_hooks(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    (repo / ".git").mkdir()
+    # GIT_* vars leak in when pytest itself runs inside a git hook (pre-commit)
+    # and would redirect the git calls shim installation makes at the tmp repo.
+    for name in list(os.environ):
+        if name.startswith("GIT_"):
+            monkeypatch.delenv(name)
+    subprocess.run(["git", "init", "--quiet", str(repo)], check=True)
     # Answers: agents -> claude-code, ignore mode -> local, git hooks -> yes.
     monkeypatch.setattr(sys, "stdin", io.StringIO("2\n2\n2\n"))
 

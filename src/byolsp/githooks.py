@@ -41,29 +41,24 @@ def install_git_shims(repo_root: Path) -> list[str]:
     hooks_dir = _hooks_dir(repo_root)
     messages: list[str] = []
     for name in SHIM_HOOK_NAMES:
-        messages.extend(_install_shim(hooks_dir / name, name))
+        messages.extend(_install_shim(hooks_dir / name))
     return messages
 
 
-def _install_shim(hook: Path, name: str) -> list[str]:
+def _install_shim(hook: Path) -> list[str]:
     if hook.is_file():
         content = hook.read_text(encoding="utf-8")
         if SHIM_MARKER not in content:
             return [
-                f".git/hooks/{name} exists without the BYOLSP marker; "
+                f".git/hooks/{hook.name} exists without the BYOLSP marker; "
                 "add this line to it:",
                 f"  {SHIM_LINE}",
             ]
         if content == SHIM_CONTENT:
             return []
     write_text_atomic(hook, SHIM_CONTENT)
-    _make_executable(hook)
-    return [f"Installed .git/hooks/{name}"]
-
-
-def _make_executable(path: Path) -> None:
-    mode = path.stat().st_mode
-    path.chmod(mode | ((mode & 0o444) >> 2))
+    hook.chmod(hook.stat().st_mode | 0o111)
+    return [f"Installed .git/hooks/{hook.name}"]
 
 
 def _configured_hooks_path(repo_root: Path) -> str | None:
@@ -71,14 +66,11 @@ def _configured_hooks_path(repo_root: Path) -> str | None:
 
 
 def _hooks_dir(repo_root: Path) -> Path:
-    git_path = repo_root / ".git"
-    if git_path.is_dir():
-        return git_path / "hooks"
-    # A .git file means a worktree; hooks live in the shared common dir.
-    common_dir = _git_output(repo_root, "rev-parse", "--git-common-dir")
-    if common_dir is None:
+    # --git-path resolves worktrees to the shared common hooks directory.
+    output = _git_output(repo_root, "rev-parse", "--git-path", "hooks")
+    if output is None:
         raise ConfigError(f"could not locate the git hooks directory for {repo_root}")
-    return (repo_root / common_dir).resolve() / "hooks"
+    return (repo_root / output).resolve()
 
 
 def _git_output(repo_root: Path, *args: str) -> str | None:
