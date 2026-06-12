@@ -7,9 +7,11 @@ import sys
 from collections.abc import Sequence
 from importlib.metadata import version
 from pathlib import Path
+from typing import get_args
 
+from byolsp.agents import AGENT_CHOICES
 from byolsp.errors import ByolspError
-from byolsp.init import run_init
+from byolsp.ignore import IgnoreMode
 
 COMMANDS = {
     "init": "Initialize BYOLSP in a repository",
@@ -46,22 +48,27 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _add_init_arguments(command: argparse.ArgumentParser) -> None:
+def _add_repo_argument(command: argparse.ArgumentParser) -> None:
+    """Every repo-operating command accepts --repo with these semantics (SPEC 15)."""
     command.add_argument(
         "--repo", type=Path, help="Repository root (default: search upward from cwd)"
     )
+
+
+def _add_init_arguments(command: argparse.ArgumentParser) -> None:
+    _add_repo_argument(command)
     command.add_argument(
         "--agents",
-        help="Comma-separated AI integrations: generic, claude-code, codex, copilot",
+        help=f"Comma-separated AI integrations: {', '.join(AGENT_CHOICES)}",
     )
     command.add_argument(
         "--ignore-mode",
-        choices=("project", "local"),
+        choices=get_args(IgnoreMode),
         help="Write ignore entries to .gitignore (project) or .git/info/exclude (local)",
     )
     command.add_argument(
         "--git-hooks",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=None,
         help="Install post-merge/post-checkout shims that run `byolsp sync`",
     )
@@ -84,6 +91,9 @@ def _add_init_arguments(command: argparse.ArgumentParser) -> None:
 
 def run(args: argparse.Namespace) -> int:
     if args.command == "init":
+        # Deferred so startup (--help, future hot paths) never pays for ruamel.
+        from byolsp.init import run_init
+
         return run_init(args)
     raise ByolspError(f"'{args.command}' is not implemented yet")
 

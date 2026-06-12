@@ -134,11 +134,11 @@ def _options_from_args(args: argparse.Namespace) -> InitOptions:
     else:
         agents = _prompt_agents() if interactive else []
     if args.ignore_mode is not None:
-        ignore_mode: IgnoreMode = "local" if args.ignore_mode == "local" else "project"
+        ignore_mode: IgnoreMode = args.ignore_mode
     else:
         ignore_mode = _prompt_ignore_mode() if interactive else "project"
     if args.git_hooks is not None:
-        git_hooks = bool(args.git_hooks)
+        git_hooks: bool = args.git_hooks
     else:
         git_hooks = _prompt_git_hooks() if interactive else False
     return InitOptions(
@@ -146,7 +146,7 @@ def _options_from_args(args: argparse.Namespace) -> InitOptions:
         ignore_mode=ignore_mode,
         git_hooks=git_hooks,
         register=not args.no_register,
-        replace_sgconfig=bool(args.replace_sgconfig),
+        replace_sgconfig=args.replace_sgconfig,
     )
 
 
