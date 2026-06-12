@@ -72,6 +72,17 @@ def collect_checks(repo_root: Path, config_dir: Path, quick: bool) -> list[Check
     return checks
 
 
+def quick_doctor_problems(repo_root: Path, config_dir: Path) -> list[str]:
+    """Failing `doctor --quick` checks as printable lines, for the post-action
+    step that init, add, edit, and promote share (SPEC 15.1, 15.4-15.6).
+    """
+    return [
+        f"doctor: {check.id}: {check.message}"
+        for check in collect_checks(repo_root, config_dir, quick=True)
+        if not check.ok
+    ]
+
+
 def render_checks(checks: list[Check]) -> list[str]:
     width = max(len(check.id) for check in checks)
     return [
