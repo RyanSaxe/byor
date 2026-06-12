@@ -45,6 +45,8 @@ def build_parser() -> argparse.ArgumentParser:
             _add_init_arguments(command)
         if name == "sync":
             _add_sync_arguments(command)
+        if name == "doctor":
+            _add_doctor_arguments(command)
         if name == "hook":
             actions = command.add_subparsers(dest="hook_action", required=True)
             actions.add_parser("install", help="Install agent integration files")
@@ -105,6 +107,16 @@ def _add_sync_arguments(command: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_doctor_arguments(command: argparse.ArgumentParser) -> None:
+    _add_repo_argument(command)
+    command.add_argument(
+        "--quick", action="store_true", help="Skip recursive rule validation"
+    )
+    command.add_argument(
+        "--json", action="store_true", help="Emit machine-readable JSON"
+    )
+
+
 # Commands whose body performs a full sync itself: init (step 8) and sync
 # (whose --check variant must never write). Everything else self-heals first.
 SELF_SYNCING_COMMANDS = frozenset({"init", "sync"})
@@ -125,6 +137,10 @@ def run(args: argparse.Namespace) -> int:
         from byolsp.sync import run_sync
 
         return run_sync(args)
+    if args.command == "doctor":
+        from byolsp.doctor import run_doctor
+
+        return run_doctor(args)
     raise ByolspError(f"'{args.command}' is not implemented yet")
 
 
