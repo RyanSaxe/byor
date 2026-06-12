@@ -36,6 +36,7 @@ IMPLEMENTED = {
     "add",
     "edit",
     "promote",
+    "agent-check",
 }
 INVOCATIONS = [
     [name] for name in sorted(COMMANDS) if name != "hook" and name not in IMPLEMENTED

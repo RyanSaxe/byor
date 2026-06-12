@@ -57,6 +57,8 @@ def build_parser() -> argparse.ArgumentParser:
             _add_promote_arguments(command)
         if name in ("exclude", "include"):
             _add_rule_id_arguments(command)
+        if name == "agent-check":
+            _add_agent_check_arguments(command)
         if name == "hook":
             actions = command.add_subparsers(dest="hook_action", required=True)
             actions.add_parser("install", help="Install agent integration files")
@@ -202,6 +204,29 @@ def _add_rule_id_arguments(command: argparse.ArgumentParser) -> None:
     command.add_argument("rule_id", metavar="RULE_ID", help="ID of a global rule")
 
 
+def _add_agent_check_arguments(command: argparse.ArgumentParser) -> None:
+    _add_repo_argument(command)
+    command.add_argument(
+        "--files",
+        nargs="+",
+        type=Path,
+        metavar="FILE",
+        help="Files to scan (default: the whole repository)",
+    )
+    command.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Output format (default: text)",
+    )
+    command.add_argument(
+        "--max-results",
+        type=int,
+        metavar="N",
+        help="Forwarded to ast-grep scan; also raises the 20-diagnostic render cap",
+    )
+
+
 def _add_doctor_arguments(command: argparse.ArgumentParser) -> None:
     _add_repo_argument(command)
     command.add_argument(
@@ -260,6 +285,10 @@ def run(args: argparse.Namespace) -> int:
         from byolsp.rule_commands import run_include
 
         return run_include(args)
+    if args.command == "agent-check":
+        from byolsp.agent_check import run_agent_check
+
+        return run_agent_check(args)
     raise ByolspError(f"'{args.command}' is not implemented yet")
 
 
