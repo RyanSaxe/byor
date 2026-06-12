@@ -95,10 +95,11 @@ def test_doctor_flags_missing_sgconfig(
     assert "sgconfig.yml is missing; run `byolsp init`" in capsys.readouterr().out
 
 
-def test_doctor_surfaces_invalid_rules_without_traceback(
+def test_doctor_renders_a_failing_check_for_invalid_rules(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The self-heal preamble parses rules first, so its error names the file."""
+    """A broken rule stops the self-heal preamble's sync, but doctor must still
+    render its check table rather than abort (SPEC 15.3)."""
     repo = make_repo(home)
     broken = repo / ".byolsp" / "rules" / "project" / "broken.yml"
     broken.write_text("id: broken\n")
@@ -107,7 +108,8 @@ def test_doctor_surfaces_invalid_rules_without_traceback(
     assert doctor(repo) == 1
 
     captured = capsys.readouterr()
-    assert "broken.yml: missing required ast-grep fields" in captured.err
+    assert "FAIL  rules_valid" in captured.out
+    assert "broken.yml: missing required ast-grep fields" in captured.out
     assert "Traceback" not in captured.err
 
 

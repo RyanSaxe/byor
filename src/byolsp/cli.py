@@ -261,7 +261,14 @@ SELF_SYNCING_COMMANDS = frozenset({"init", "sync"})
 
 def run(args: argparse.Namespace) -> int:
     if args.command not in SELF_SYNCING_COMMANDS:
-        heal_message = _self_heal_preamble(args)
+        try:
+            heal_message = _self_heal_preamble(args)
+        except ByolspError:
+            # Doctor's job is reporting problems (e.g. a rule file that does
+            # not parse stops sync); its own checks render them as FAIL rows.
+            if args.command != "doctor":
+                raise
+            heal_message = None
         if heal_message is not None:
             # stderr keeps stdout clean for JSON-emitting commands (SPEC 15.3/15.8).
             print(heal_message, file=sys.stderr)
