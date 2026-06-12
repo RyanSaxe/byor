@@ -41,6 +41,8 @@ def build_parser() -> argparse.ArgumentParser:
         command = subparsers.add_parser(name, help=help_text, description=help_text)
         if name == "init":
             _add_init_arguments(command)
+        if name == "sync":
+            _add_sync_arguments(command)
         if name == "hook":
             actions = command.add_subparsers(dest="hook_action", required=True)
             actions.add_parser("install", help="Install agent integration files")
@@ -89,12 +91,28 @@ def _add_init_arguments(command: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_sync_arguments(command: argparse.ArgumentParser) -> None:
+    _add_repo_argument(command)
+    command.add_argument(
+        "--all", action="store_true", help="Sync every registered repository"
+    )
+    command.add_argument(
+        "--check",
+        action="store_true",
+        help="Report staleness without writing; exit 3 when stale",
+    )
+
+
 def run(args: argparse.Namespace) -> int:
     if args.command == "init":
         # Deferred so startup (--help, future hot paths) never pays for ruamel.
         from byolsp.init import run_init
 
         return run_init(args)
+    if args.command == "sync":
+        from byolsp.sync import run_sync
+
+        return run_sync(args)
     raise ByolspError(f"'{args.command}' is not implemented yet")
 
 
