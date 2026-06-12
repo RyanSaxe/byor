@@ -8,7 +8,7 @@ from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from byolsp.agents import AGENT_INSTRUCTIONS_RELPATH
+from byolsp.agents import missing_agent_files
 from byolsp.astgrep import ast_grep_version, resolve_ast_grep
 from byolsp.config import (
     GlobalConfig,
@@ -184,16 +184,15 @@ def _registry_check(config_dir: Path, global_config: GlobalConfig) -> Check:
 
 
 def _agent_files_check(repo_root: Path, repo_config: RepoConfig) -> Check:
-    """Configured agents need their instruction files (currently the shared README;
-    per-agent adapters arrive with `byolsp hook install`, SPEC 15.10).
-    """
+    """Each agent in ai.agents needs its integration files (SPEC 15.10)."""
     if not repo_config.agents:
         return Check("agent_files", True, "no AI agents configured")
-    if (repo_root / AGENT_INSTRUCTIONS_RELPATH).is_file():
-        agents = ", ".join(repo_config.agents)
-        return Check("agent_files", True, f"agent instructions installed for: {agents}")
-    return Check(
-        "agent_files",
-        False,
-        f"{AGENT_INSTRUCTIONS_RELPATH} is missing; rerun `byolsp init`",
-    )
+    missing = missing_agent_files(repo_root, repo_config.agents)
+    if missing:
+        return Check(
+            "agent_files",
+            False,
+            f"{', '.join(missing)} is missing; run `byolsp hook install`",
+        )
+    agents = ", ".join(repo_config.agents)
+    return Check("agent_files", True, f"agent files installed for: {agents}")

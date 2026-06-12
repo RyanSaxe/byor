@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from byolsp.agents import AGENT_CHOICES, install_agent_instructions
+from byolsp.agents import AGENT_CHOICES, install_agents
 from byolsp.config import (
     GlobalConfig,
     LocalConfig,
@@ -76,7 +76,7 @@ def initialize_repo(
     if write_ignore_block(repo_root, options.ignore_mode):
         target = ignore_file(repo_root, options.ignore_mode).relative_to(repo_root)
         messages.append(f"Wrote ignore block to {target.as_posix()}")
-    messages.extend(install_agent_instructions(repo_root, options.agents))
+    messages.extend(install_agents(repo_root, options.agents))
     if options.git_hooks:
         messages.append(GIT_HOOKS_NOTICE)
     if options.register and register_repo(

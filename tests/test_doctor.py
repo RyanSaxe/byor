@@ -152,13 +152,13 @@ def test_doctor_flags_registered_repos_whose_path_is_gone(
     assert f"{gone} no longer exists" in capsys.readouterr().out
 
 
-def test_doctor_flags_missing_agent_instructions(
+def test_doctor_flags_missing_agent_files(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home, "repo", "--agents", "claude-code")
-    (repo / ".byolsp" / "agents" / "README.md").unlink()
+    (repo / ".byolsp" / "agents" / "claude-code.md").unlink()
     capsys.readouterr()
 
     assert doctor(repo, "--quick") == 1
 
-    assert ".byolsp/agents/README.md is missing" in capsys.readouterr().out
+    assert ".byolsp/agents/claude-code.md is missing" in capsys.readouterr().out
