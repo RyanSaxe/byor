@@ -28,6 +28,7 @@ from byolsp.errors import (
     RepoNotInitialized,
     RuleValidationError,
 )
+from byolsp.ignore import rule_visibility_ok
 from byolsp.paths import global_config_dir, resolve_repo_root
 from byolsp.rules import load_rules
 from byolsp.sync import compute_sync_plan, load_canonical_rules, mirror_contents
@@ -65,6 +66,7 @@ def collect_checks(repo_root: Path, config_dir: Path, quick: bool) -> list[Check
     checks = [_ast_grep_check(global_config), repo_check]
     checks.append(_sgconfig_check(repo_root, repo_config.paths))
     checks.append(_rule_dirs_check(repo_root, repo_config.paths))
+    checks.append(_rule_visibility_check(repo_root, repo_config.paths))
     if not quick and repo_check.ok:
         checks.extend(_rule_checks(repo_root, repo_config.paths, config_dir))
     checks.append(_registry_check(config_dir, global_config))
@@ -142,6 +144,24 @@ def _rule_dirs_check(repo_root: Path, paths: RepoPaths) -> Check:
             f"missing rule directories: {', '.join(missing)}; run `byolsp init`",
         )
     return Check("rule_dirs", True, "all rule directories exist")
+
+
+def _rule_visibility_check(repo_root: Path, paths: RepoPaths) -> Check:
+    """Personal rules are git-ignored; without the .ignore negation files,
+    ast-grep's gitignore-respecting rule discovery would never load them.
+    """
+    personal_dirs = (paths.personal_local_rules, paths.personal_global_rules)
+    broken = [d for d in personal_dirs if not rule_visibility_ok(repo_root / d)]
+    if broken:
+        return Check(
+            "rules_visible",
+            False,
+            f"{', '.join(broken)} lacks the .ignore negations ast-grep needs"
+            " to load git-ignored rules; run `byolsp init`",
+        )
+    return Check(
+        "rules_visible", True, "personal rule directories are visible to ast-grep"
+    )
 
 
 def _rule_checks(repo_root: Path, paths: RepoPaths, config_dir: Path) -> list[Check]:

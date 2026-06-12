@@ -46,6 +46,7 @@ def test_doctor_json_matches_the_spec_shape(
         "repo_config",
         "sgconfig",
         "rule_dirs",
+        "rules_visible",
         "rules_valid",
         "rule_ids_unique",
         "sync_fresh",
@@ -123,6 +124,25 @@ def test_quick_checks_skip_recursive_rule_validation(home: Path) -> None:
     assert set(failed) == {"rules_valid"}
     assert "missing required ast-grep fields" in failed["rules_valid"].message
     assert all(check.ok for check in quick)
+
+
+def test_doctor_flags_a_missing_rule_visibility_file(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Without the .ignore negations, ast-grep would skip the git-ignored rules.
+
+    Uses the local dir: the global mirror's .ignore is restored by the
+    self-heal preamble before doctor runs.
+    """
+    repo = make_repo(home)
+    (repo / ".byolsp" / "rules" / "personal" / "local" / ".ignore").unlink()
+    capsys.readouterr()
+
+    assert doctor(repo, "--quick") == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  rules_visible" in out
+    assert ".byolsp/rules/personal/local" in out
 
 
 def test_doctor_flags_duplicate_project_and_local_ids(home: Path) -> None:
