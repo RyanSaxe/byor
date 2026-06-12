@@ -180,6 +180,17 @@ def test_sync_check_reports_staleness_without_writing(
     assert f"Sync is fresh in {repo}" in capsys.readouterr().out
 
 
+def test_init_syncs_existing_global_rules(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_global_rule(home, "python/no-cast.yml", "no-cast")
+
+    repo = make_repo(home)
+
+    assert (mirror(repo) / "python" / "no-cast.yml").is_file()
+    assert "Synced 1 updated global rule" in capsys.readouterr().out
+
+
 def test_any_command_self_heals_a_stale_repo(
     home: Path,
     monkeypatch: pytest.MonkeyPatch,
