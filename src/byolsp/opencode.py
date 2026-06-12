@@ -27,13 +27,12 @@ const FILE_MUTATING_TOOLS = new Set(["edit", "write", "apply_patch"])
 
 const DIAGNOSTICS_EXIT_CODE = 2
 
+// OpenCode's edit and write tools pass the touched file as `filePath`;
+// a tool call without it (e.g. a multi-file apply_patch) is skipped.
 const filePathArgument = (args: unknown): string | undefined => {
   if (typeof args !== "object" || args === null) return undefined
-  for (const key of ["filePath", "file_path", "path"]) {
-    const value = Reflect.get(args, key)
-    if (typeof value === "string") return value
-  }
-  return undefined
+  const value = Reflect.get(args, "filePath")
+  return typeof value === "string" ? value : undefined
 }
 
 export const ByolspPlugin: Plugin = async ({ $ }) => ({
