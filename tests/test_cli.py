@@ -26,7 +26,17 @@ def test_unknown_command_exits_nonzero() -> None:
     assert excinfo.value.code != 0
 
 
-IMPLEMENTED = {"init", "sync", "doctor", "list", "exclude", "include", "add", "edit"}
+IMPLEMENTED = {
+    "init",
+    "sync",
+    "doctor",
+    "list",
+    "exclude",
+    "include",
+    "add",
+    "edit",
+    "promote",
+}
 INVOCATIONS = [
     [name] for name in sorted(COMMANDS) if name != "hook" and name not in IMPLEMENTED
 ] + [

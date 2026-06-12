@@ -143,6 +143,41 @@ def run_edit(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_promote(args: argparse.Namespace) -> int:
+    context = repo_context(args)
+    source_scope: RuleScope = args.from_scope
+    source_dir = _scope_dir(context, source_scope)
+    rule = next(
+        (r for r in load_rules(source_dir) if r.id == args.rule_id),
+        None,
+    )
+    if rule is None:
+        raise ByolspError(f"No {source_scope} rule with ID '{args.rule_id}'.")
+    project_dir = context.repo_root / context.paths.project_rules
+    destination = project_dir / rule.path.relative_to(source_dir)
+    if destination.exists() and not args.replace:
+        raise UnsafeOverwrite(
+            f"{_display(destination, context)} already exists; "
+            "rerun with --replace to overwrite it."
+        )
+    # SPEC 14 conflict check on the post-promote state, before any write. With
+    # --keep-local this fails: keeping the local original would leave project
+    # and local rules sharing the ID, which ast-grep rejects.
+    remove_source = source_scope == "local" and not args.keep_local
+    project = [r for r in load_rules(project_dir) if r.path != destination]
+    project.append(replace(rule, path=destination))
+    local = load_rules(context.repo_root / context.paths.personal_local_rules)
+    if remove_source:
+        local = [r for r in local if r.path != rule.path]
+    check_id_conflicts(project, local, load_rules(context.global_rules_root))
+    write_text_atomic(destination, rule.content)
+    if remove_source:
+        rule.path.unlink()
+    print(f"Promoted '{rule.id}' to {_display(destination, context)}")
+    _finish(context, fan_out=False)
+    return 0
+
+
 def run_exclude(args: argparse.Namespace) -> int:
     context = repo_context(args)
     local = load_local_config(context.repo_root)

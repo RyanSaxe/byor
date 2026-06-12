@@ -53,6 +53,8 @@ def build_parser() -> argparse.ArgumentParser:
             _add_add_arguments(command)
         if name == "edit":
             _add_edit_arguments(command)
+        if name == "promote":
+            _add_promote_arguments(command)
         if name in ("exclude", "include"):
             _add_rule_id_arguments(command)
         if name == "hook":
@@ -167,6 +169,34 @@ def _add_edit_arguments(command: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_promote_arguments(command: argparse.ArgumentParser) -> None:
+    _add_repo_argument(command)
+    command.add_argument("rule_id", metavar="RULE_ID", help="ID of the rule to promote")
+    command.add_argument(
+        "--from",
+        dest="from_scope",
+        choices=("local", "global"),
+        required=True,
+        help="Scope the rule currently lives in",
+    )
+    command.add_argument(
+        "--to",
+        choices=("project",),
+        default="project",
+        help="Destination scope (only project is supported)",
+    )
+    command.add_argument(
+        "--keep-local",
+        action="store_true",
+        help="Keep the local original when promoting from local",
+    )
+    command.add_argument(
+        "--replace",
+        action="store_true",
+        help="Overwrite an existing project rule file at the destination",
+    )
+
+
 def _add_rule_id_arguments(command: argparse.ArgumentParser) -> None:
     _add_repo_argument(command)
     command.add_argument("rule_id", metavar="RULE_ID", help="ID of a global rule")
@@ -218,6 +248,10 @@ def run(args: argparse.Namespace) -> int:
         from byolsp.rule_commands import run_edit
 
         return run_edit(args)
+    if args.command == "promote":
+        from byolsp.rule_commands import run_promote
+
+        return run_promote(args)
     if args.command == "exclude":
         from byolsp.rule_commands import run_exclude
 
