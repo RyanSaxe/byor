@@ -180,6 +180,26 @@ def test_sync_check_reports_staleness_without_writing(
     assert f"Sync is fresh in {repo}" in capsys.readouterr().out
 
 
+def test_any_command_self_heals_a_stale_repo(
+    home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Running byolsp *anything* makes this repo correct (SPEC 3)."""
+    repo = make_repo(home)
+    write_global_rule(home, "no-cast.yml", "no-cast")
+    monkeypatch.chdir(repo)
+    capsys.readouterr()
+
+    main(["list"])
+
+    assert (mirror(repo) / "no-cast.yml").is_file()
+    assert "byolsp: synced 1 updated global rule\n" in capsys.readouterr().out
+
+    main(["list"])
+    assert "byolsp: synced" not in capsys.readouterr().out
+
+
 def test_sync_all_syncs_registered_repos_and_skips_missing_paths(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

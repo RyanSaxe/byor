@@ -103,7 +103,14 @@ def _add_sync_arguments(command: argparse.ArgumentParser) -> None:
     )
 
 
+# Commands whose body performs a full sync itself: init (step 8) and sync
+# (whose --check variant must never write). Everything else self-heals first.
+SELF_SYNCING_COMMANDS = frozenset({"init", "sync"})
+
+
 def run(args: argparse.Namespace) -> int:
+    if args.command not in SELF_SYNCING_COMMANDS:
+        _self_heal_preamble(args)
     if args.command == "init":
         # Deferred so startup (--help, future hot paths) never pays for ruamel.
         from byolsp.init import run_init
@@ -114,6 +121,21 @@ def run(args: argparse.Namespace) -> int:
 
         return run_sync(args)
     raise ByolspError(f"'{args.command}' is not implemented yet")
+
+
+def _self_heal_preamble(args: argparse.Namespace) -> None:
+    """SPEC 15: every repo-operating command heals a stale repo before running.
+
+    Commands that have not yet grown a --repo flag heal the repo found from
+    the current directory; uninitialized repos are skipped silently.
+    """
+    from byolsp.paths import global_config_dir, resolve_repo_root
+    from byolsp.sync import heal_repo
+
+    repo_root = resolve_repo_root(explicit=getattr(args, "repo", None))
+    message = heal_repo(repo_root, global_config_dir())
+    if message is not None:
+        print(message)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
