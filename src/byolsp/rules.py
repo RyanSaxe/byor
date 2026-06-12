@@ -15,7 +15,6 @@ from byolsp.errors import DuplicateRuleId, RuleValidationError
 from byolsp.yamlio import load_yaml_mapping
 
 RuleScope = Literal["project", "local", "global"]
-RULE_SCOPES: tuple[RuleScope, ...] = ("project", "local", "global")
 
 RULE_FILE_SUFFIXES = (".yml", ".yaml")
 REQUIRED_AST_GREP_FIELDS = ("id", "language", "rule", "message")
@@ -118,10 +117,15 @@ def check_id_conflicts(
     _require_unique_ids(project, "project rules")
     _require_unique_ids(local, "local personal rules")
     _require_unique_ids(canonical_global, "canonical global rules")
-    _require_project_local_disjoint(project, local)
+    # Each scope is unique on its own, so any duplicate here is cross-scope.
+    _require_unique_ids(
+        project + local,
+        "project and local personal rules combined",
+        hint="A local variation of a project rule requires a different ID.",
+    )
 
 
-def _require_unique_ids(rules: list[Rule], where: str) -> None:
+def _require_unique_ids(rules: list[Rule], where: str, hint: str | None = None) -> None:
     paths_by_id: dict[str, list[Path]] = {}
     for rule in rules:
         paths_by_id.setdefault(rule.id, []).append(rule.path)
@@ -134,22 +138,8 @@ def _require_unique_ids(rules: list[Rule], where: str) -> None:
     for rule_id, paths in sorted(duplicates.items()):
         lines.append(f"  {rule_id}:")
         lines.extend(f"    {path}" for path in paths)
-    raise DuplicateRuleId("\n".join(lines))
-
-
-def _require_project_local_disjoint(project: list[Rule], local: list[Rule]) -> None:
-    local_by_id = {rule.id: rule for rule in local}
-    conflicts = [
-        (rule, local_by_id[rule.id]) for rule in project if rule.id in local_by_id
-    ]
-    if not conflicts:
-        return
-    lines = ["Rule IDs exist in both project and local personal rules:"]
-    for project_rule, local_rule in conflicts:
-        lines.append(f"  {project_rule.id}:")
-        lines.append(f"    {project_rule.path}")
-        lines.append(f"    {local_rule.path}")
-    lines.append("A local variation of a project rule requires a different ID.")
+    if hint is not None:
+        lines.append(hint)
     raise DuplicateRuleId("\n".join(lines))
 
 
