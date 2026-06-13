@@ -161,11 +161,12 @@ def test_global_paths_resolve_relative_to_config_dir_unless_absolute(
     tmp_path: Path,
 ) -> None:
     relative = GlobalConfig()
-    absolute = GlobalConfig(rules_path="/elsewhere/rules")
+    elsewhere = tmp_path / "elsewhere" / "rules"
+    absolute = GlobalConfig(rules_path=str(elsewhere))
 
     assert global_rules_dir(tmp_path, relative) == tmp_path / "rules"
     assert repo_registry_path(tmp_path, relative) == tmp_path / "repos.yml"
-    assert global_rules_dir(tmp_path, absolute) == Path("/elsewhere/rules")
+    assert global_rules_dir(tmp_path, absolute) == elsewhere
 
 
 def test_register_repo_creates_registry_and_is_idempotent(tmp_path: Path) -> None:

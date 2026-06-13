@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from conftest import git, mirror, write_global_rule, write_rule
 
+from byolsp.astgrep import resolve_ast_grep
 from byolsp.cli import main
 
 VIOLATION = 'from typing import cast\nx = cast(int, "5")\n'
@@ -25,8 +26,10 @@ def git_repo(home: Path, *init_extra: str) -> Path:
 
 
 def scan(repo: Path) -> str:
+    # resolve_ast_grep applies PATHEXT, so it finds ast-grep.cmd on Windows
+    # where a bare "ast-grep" argv entry would not.
     result = subprocess.run(
-        ["ast-grep", "scan"], cwd=repo, capture_output=True, text=True
+        [str(resolve_ast_grep()), "scan"], cwd=repo, capture_output=True, text=True
     )
     return result.stdout
 

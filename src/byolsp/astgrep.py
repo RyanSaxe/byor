@@ -197,7 +197,8 @@ def _parse_match(match: dict[str, object]) -> ScanMatch:
         rule_id=_string_field(match, "ruleId"),
         severity=_string_field(match, "severity"),
         message=_string_field(match, "message"),
-        lines=_string_field(match, "lines"),
+        # Strip CR so a CRLF source file does not leak \r into agent feedback.
+        lines=_string_field(match, "lines").replace("\r\n", "\n").rstrip("\r"),
         agent_prompt=_agent_prompt(match),
     )
 

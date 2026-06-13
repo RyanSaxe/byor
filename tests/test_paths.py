@@ -17,7 +17,9 @@ def test_global_config_dir_falls_back_to_home_dot_config(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
-    monkeypatch.setenv("HOME", str(tmp_path))
+    # Path.home() reads HOME on POSIX and USERPROFILE on Windows; patch the
+    # method so the fallback branch is exercised portably.
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
     assert global_config_dir() == tmp_path / ".config" / "byolsp"
 
