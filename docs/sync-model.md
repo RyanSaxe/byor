@@ -87,6 +87,21 @@ local rule still owns the ID, in which case it stays skipped.
 `ast-grep scan` works with project rules immediately. Personal rules appear
 after `uvx byolsp init` (or any byolsp command) runs.
 
+That property is what makes CI cheap: a fresh clone can gate on the committed
+project rules with zero byolsp installed. Use `--error` so warning severities
+fail the build (a plain `ast-grep scan` exits 0 on warnings):
+
+```yaml
+# .github/workflows/byolsp-rules.yml
+jobs:
+  rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm install -g @ast-grep/cli
+      - run: ast-grep scan --error
+```
+
 ## The git-pull collision case
 
 A teammate can commit a project rule whose ID matches one of your synced
