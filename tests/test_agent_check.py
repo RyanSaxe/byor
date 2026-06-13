@@ -173,6 +173,10 @@ def test_json_format_emits_one_issue_per_diagnostic(
     }
 
 
+def stdin(monkeypatch: pytest.MonkeyPatch, payload: object) -> None:
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(payload)))
+
+
 def test_stdin_hook_scans_the_edited_file_from_the_claude_payload(
     check_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -180,10 +184,9 @@ def test_stdin_hook_scans_the_edited_file_from_the_claude_payload(
 ) -> None:
     source = check_repo / "src.py"
     source.write_text('x = cast(int, "1")\n')
-    payload = {"tool_input": {"file_path": str(source)}}
-    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(payload)))
+    stdin(monkeypatch, {"tool_input": {"file_path": str(source)}})
 
-    assert check(check_repo, "--stdin-hook") == 2
+    assert check(check_repo, "--stdin-hook", "claude-code") == 2
 
     assert "Rule: no-python-cast" in capsys.readouterr().out
 
@@ -194,9 +197,67 @@ def test_stdin_hook_without_a_file_path_scans_nothing(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     (check_repo / "src.py").write_text('x = cast(int, "1")\n')
-    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({"tool_input": {}})))
+    stdin(monkeypatch, {"tool_input": {}})
 
-    assert check(check_repo, "--stdin-hook") == 0
+    assert check(check_repo, "--stdin-hook", "claude-code") == 0
+
+    assert capsys.readouterr().out == ""
+
+
+def test_edit_scope_keeps_only_violations_inside_the_edited_lines(
+    check_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = check_repo / "src.py"
+    source.write_text("a = cast(int, 1)\nb = cast(int, 2)\nc = cast(int, 3)\n")
+    # The payload's new_string names only line 2 as the edit (SPEC 28.3).
+    stdin(
+        monkeypatch,
+        {"tool_input": {"file_path": str(source), "new_string": "b = cast(int, 2)"}},
+    )
+
+    assert check(check_repo, "--stdin-hook", "claude-code") == 2
+
+    out = capsys.readouterr().out
+    assert out.count("Rule: no-python-cast") == 1
+    assert "src.py:2:5" in out
+
+
+def test_codex_hook_edit_scopes_an_apply_patch_and_emits_its_json(
+    check_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = check_repo / "src.py"
+    source.write_text("a = cast(int, 1)\nb = cast(int, 2)\n")
+    patch = (
+        "*** Begin Patch\n"
+        f"*** Update File: {source}\n"
+        "@@\n"
+        "+b = cast(int, 2)\n"
+        "*** End Patch"
+    )
+    stdin(monkeypatch, {"tool_name": "shell", "tool_input": {"command": patch}})
+
+    assert check(check_repo, "--stdin-hook", "codex") == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    context = payload["hookSpecificOutput"]["additionalContext"]
+    assert context.count("Rule: no-python-cast") == 1
+    assert "src.py:2:5" in context
+
+
+def test_hook_mode_is_silent_in_an_uninitialized_repo(
+    home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bare = home / "bare"
+    bare.mkdir()
+    source = bare / "src.py"
+    source.write_text('x = cast(int, "1")\n')
+    stdin(monkeypatch, {"tool_input": {"file_path": str(source)}})
+
+    assert check(bare, "--stdin-hook", "claude-code") == 0
 
     assert capsys.readouterr().out == ""
 

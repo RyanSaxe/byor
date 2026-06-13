@@ -11,6 +11,7 @@ from typing import get_args
 
 from byolsp.agents import AGENT_CHOICES
 from byolsp.errors import ByolspError
+from byolsp.harness import HARNESS_CHOICES
 from byolsp.ignore import IgnoreMode
 
 COMMANDS = {
@@ -236,8 +237,12 @@ def _add_agent_check_arguments(command: argparse.ArgumentParser) -> None:
     )
     source.add_argument(
         "--stdin-hook",
-        action="store_true",
-        help="Read the edited file from a Claude Code hook JSON payload on stdin",
+        choices=HARNESS_CHOICES,
+        metavar="HARNESS",
+        help=(
+            "Read the edited file from a harness hook JSON payload on stdin"
+            f" ({'|'.join(HARNESS_CHOICES)}) and reply in its feedback format"
+        ),
     )
     command.add_argument(
         "--scope",

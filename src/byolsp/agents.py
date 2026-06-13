@@ -37,7 +37,7 @@ CLAUDE_HOOK_MATCHER = "Write|Edit|MultiEdit|NotebookEdit"
 # Claude Code pipes tool-call JSON to PostToolUse hooks on stdin, which
 # --stdin-hook parses directly; on exit 2 it feeds the hook's stderr back to
 # the model, hence the >&2 (agent-check exits 2 exactly with diagnostics).
-CLAUDE_HOOK_COMMAND = "byolsp agent-check --stdin-hook >&2"
+CLAUDE_HOOK_COMMAND = "byolsp agent-check --stdin-hook claude-code >&2"
 
 CORE_INSTRUCTION = f"""\
 This repository uses BYOLSP to expose custom ast-grep diagnostics.

@@ -10,9 +10,10 @@ from pathlib import Path
 from typing import Literal
 
 from byolsp.astgrep import ScanMatch, resolve_ast_grep, scan_files
-from byolsp.config import load_global_config
+from byolsp.config import load_global_config, repo_config_path
 from byolsp.errors import ByolspError
-from byolsp.linescope import Range, diff_ranges, overlaps
+from byolsp.harness import EditPayload, Harness, emit, parse_payload
+from byolsp.linescope import Range, diff_ranges, edit_ranges, overlaps
 from byolsp.paths import display_path, global_config_dir, resolve_repo_root
 
 DIAGNOSTICS_EXIT_CODE = 2
@@ -38,19 +39,59 @@ class Diagnostic:
 
 def run_agent_check(args: argparse.Namespace) -> int:
     repo_root = resolve_repo_root(explicit=args.repo)
-    scope = _resolve_scope(args)
-    if args.stdin_hook:
-        hook_files = _hook_payload_files()
-        if not hook_files:
-            return 0
+    harness: Harness | None = args.stdin_hook
+    if harness is not None:
+        return _run_hook(args, repo_root, harness)
+    return _run_files(args, repo_root, list(args.files), _resolve_scope(args, None))
+
+
+def _run_files(
+    args: argparse.Namespace, repo_root: Path, files: list[Path], scope: Scope
+) -> int:
+    """The `--files` path: print diagnostics in the requested text/json format."""
+    diagnostics = _diagnostics(args, repo_root, files, scope, payload=None)
+    if args.format == "json":
+        result = {"issues": [asdict(diagnostic) for diagnostic in diagnostics]}
+        print(json.dumps(result, indent=2))
     else:
-        hook_files = list(args.files)
-    files = [file.resolve() for file in hook_files]
+        for line in render_diagnostics(diagnostics, _render_limit(args)):
+            print(line)
+    return DIAGNOSTICS_EXIT_CODE if diagnostics else 0
+
+
+def _run_hook(args: argparse.Namespace, repo_root: Path, harness: Harness) -> int:
+    """The `--stdin-hook HARNESS` path: parse the payload, emit per harness.
+
+    Global hooks fire in every repo, so byolsp stays silent (exit 0) where
+    there is no `.byolsp/config.yml` to scope against (SPEC 28.3).
+    """
+    if not repo_config_path(repo_root).is_file():
+        return 0
+    payload = _resolved_payload(parse_payload(harness, sys.stdin.read()))
+    if not payload.files:
+        return 0
+    scope = _resolve_scope(args, harness)
+    diagnostics = _diagnostics(args, repo_root, payload.files, scope, payload)
+    rendered = "\n".join(render_diagnostics(diagnostics, _render_limit(args)))
+    stdout, exit_code = emit(harness, rendered)
+    if stdout:
+        print(stdout)
+    return exit_code
+
+
+def _diagnostics(
+    args: argparse.Namespace,
+    repo_root: Path,
+    raw_files: list[Path],
+    scope: Scope,
+    payload: EditPayload | None,
+) -> list[Diagnostic]:
+    files = [file.resolve() for file in raw_files]
     if scope != "file" and files:
         # An edit/diff-scoped target deleted since the edit has no lines left.
         files = [file for file in files if file.is_file()]
         if not files:
-            return 0
+            return []
     config_dir = global_config_dir()
     executable = resolve_ast_grep(load_global_config(config_dir).ast_grep_command)
     result = scan_files(executable, repo_root, files, max_results=args.max_results)
@@ -58,76 +99,89 @@ def run_agent_check(args: argparse.Namespace) -> int:
         print(result.warnings, file=sys.stderr)
     matches = result.matches
     if scope != "file":
-        matches = _matches_in_scope(matches, repo_root)
-    diagnostics = collect_diagnostics(matches, repo_root)
-    if args.format == "json":
-        payload = {"issues": [asdict(diagnostic) for diagnostic in diagnostics]}
-        print(json.dumps(payload, indent=2))
-    else:
-        limit = (
-            args.max_results if args.max_results is not None else DEFAULT_RENDER_LIMIT
-        )
-        for line in render_diagnostics(diagnostics, limit):
-            print(line)
-    return DIAGNOSTICS_EXIT_CODE if diagnostics else 0
+        matches = _matches_in_scope(matches, repo_root, scope, payload)
+    return collect_diagnostics(matches, repo_root)
 
 
-def _resolve_scope(args: argparse.Namespace) -> Scope:
+def _render_limit(args: argparse.Namespace) -> int:
+    return args.max_results if args.max_results is not None else DEFAULT_RENDER_LIMIT
+
+
+def _resolve_scope(args: argparse.Namespace, harness: Harness | None) -> Scope:
     """The diagnostic scope (SPEC 28.3): explicit flag wins, else per mode.
 
-    Hook mode defaults to file until the per-harness payload parsers land;
-    they will carry edit contents and flip the default to edit.
+    Hook mode defaults to edit (payload contents locate the lines); `--files`
+    defaults to file. The fallback chain edit -> diff -> file is applied later,
+    per file, when contents cannot be located.
     """
     scope: str | None = args.scope
     if scope == "edit":
-        if not args.stdin_hook:
+        if harness is None:
             raise ByolspError(
                 "--scope edit needs a hook payload; use --stdin-hook, or --scope diff"
             )
         return "edit"
     if scope == "diff":
         return "diff"
-    return "file"
+    if scope == "file":
+        return "file"
+    return "edit" if harness is not None else "file"
 
 
-def _matches_in_scope(matches: list[ScanMatch], repo_root: Path) -> list[ScanMatch]:
-    """Matches overlapping their file's uncommitted-diff line ranges.
+def _matches_in_scope(
+    matches: list[ScanMatch],
+    repo_root: Path,
+    scope: Scope,
+    payload: EditPayload | None,
+) -> list[ScanMatch]:
+    """Matches overlapping their file's in-scope line ranges (SPEC 28.3).
 
-    Edit scope filters here too: until hook payloads carry edit contents it
-    falls back to diff, whose own fallback (None ranges: untracked file,
-    non-git repo, unborn HEAD) keeps every match — file scope (SPEC 28.3).
+    A `None` range means the file could not be scoped (untracked, non-git,
+    unborn HEAD, or — under edit scope — edit contents that could not be
+    located in the post-edit text); every match is kept, the fallback to file
+    scope.
     """
     ranges_by_file: dict[str, list[Range] | None] = {}
     in_scope = []
     for match in matches:
         if match.file not in ranges_by_file:
             file = (repo_root / match.file).resolve()
-            ranges_by_file[match.file] = diff_ranges(repo_root, file)
+            ranges_by_file[match.file] = _file_ranges(repo_root, file, scope, payload)
         ranges = ranges_by_file[match.file]
         if ranges is None or overlaps(match.line, match.end_line, ranges):
             in_scope.append(match)
     return in_scope
 
 
-def _hook_payload_files() -> list[Path]:
-    """The edited file in a Claude Code PostToolUse payload on stdin (SPEC 15.10).
+def _file_ranges(
+    repo_root: Path, file: Path, scope: Scope, payload: EditPayload | None
+) -> list[Range] | None:
+    """In-scope line ranges for one file under the active scope.
 
-    Payloads without one — including malformed ones, which must never block
-    the agent loop — yield [] so the caller scans nothing.
+    Edit scope locates the payload's edit strings in the post-edit text and
+    falls back to diff scope when they cannot be found (or the harness gave no
+    contents); diff scope's own None fallback then reaches file scope.
     """
-    try:
-        payload = json.loads(sys.stdin.read())
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(payload, dict):
-        return []
-    tool_input = payload.get("tool_input")
-    if not isinstance(tool_input, dict):
-        return []
-    file_path = tool_input.get("file_path")
-    if isinstance(file_path, str) and file_path:
-        return [Path(file_path)]
-    return []
+    if scope == "edit" and payload is not None:
+        ranges = _edit_ranges_for(file, payload)
+        if ranges is not None:
+            return ranges
+    return diff_ranges(repo_root, file)
+
+
+def _edit_ranges_for(file: Path, payload: EditPayload) -> list[Range] | None:
+    contents = payload.edits.get(file, [])
+    if not contents:
+        return None
+    return edit_ranges(file.read_text(encoding="utf-8"), contents)
+
+
+def _resolved_payload(payload: EditPayload) -> EditPayload:
+    """Resolve the payload's paths so they match the scanned files' keys."""
+    return EditPayload(
+        files=[file.resolve() for file in payload.files],
+        edits={file.resolve(): contents for file, contents in payload.edits.items()},
+    )
 
 
 def collect_diagnostics(matches: list[ScanMatch], repo_root: Path) -> list[Diagnostic]:
