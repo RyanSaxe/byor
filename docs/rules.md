@@ -56,6 +56,13 @@ The comment goes on its own line directly above the violation. Always include
 the rule id (a bare `ast-grep-ignore` silences every rule on the next line)
 and keep the reason short.
 
+`byolsp add --allow-exceptions` ends the new rule's `agent_prompt` with the
+standard sentence:
+
+> If this is genuinely necessary, suppress with
+> `# ast-grep-ignore: <rule-id> -- <short reason>` on its own line above,
+> and keep the reason short.
+
 ## Rule IDs
 
 Rule IDs must be unique across the three repo rule directories combined, and
@@ -100,7 +107,7 @@ global copy, no error. Conflicts that ast-grep would see are errors:
 
 ```bash
 byolsp add --scope project|local|global [--id RULE_ID] [--language LANGUAGE]
-           [--from FILE | --edit]
+           [--from FILE | --edit] [--allow-exceptions]
 ```
 
 - `--from FILE` copies an existing ast-grep YAML rule file into the scope.
@@ -108,6 +115,10 @@ byolsp add --scope project|local|global [--id RULE_ID] [--language LANGUAGE]
   default `vi`).
 - With neither, `add` prints the template (with `--id`/`--language`
   substituted) and asks you to rerun with one of them.
+- `--allow-exceptions` ends the rule's `agent_prompt` with the standard
+  suppression sentence (see [Exceptions](#exceptions)): pre-filled in the
+  `--edit` template, appended to the copied rule with `--from` (creating
+  `metadata.byolsp.agent_prompt` when absent).
 
 The new rule is written as `<rule-id>.yml` at the scope's rule root, then
 validated: YAML parses, required fields present, no illegal ID conflict. With

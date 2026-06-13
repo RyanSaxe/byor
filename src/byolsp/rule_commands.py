@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import os
 import shlex
 import subprocess
@@ -11,6 +12,8 @@ import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
+
+from ruamel.yaml.comments import CommentedMap
 
 from byolsp.config import (
     RepoPaths,
@@ -23,6 +26,7 @@ from byolsp.errors import ByolspError, ConfigError, UnsafeOverwrite
 from byolsp.fsio import write_text_atomic
 from byolsp.paths import display_path, global_config_dir, resolve_repo_root
 from byolsp.rules import (
+    ALLOW_EXCEPTIONS_SENTENCE,
     Rule,
     RuleScope,
     check_id_conflicts,
@@ -39,6 +43,7 @@ from byolsp.sync import (
     summarize_changes,
     sync_repo,
 )
+from byolsp.yamlio import new_yaml, parse_yaml_mapping
 
 DEFAULT_EDITOR = "vi"
 
@@ -80,7 +85,7 @@ def repo_context(args: argparse.Namespace) -> RepoContext:
 
 
 def run_add(args: argparse.Namespace) -> int:
-    template = _build_template(args.id, args.language)
+    template = _build_template(args.id, args.language, args.allow_exceptions)
     if args.from_file is None and not args.edit:
         print(template)
         print("Rerun with --from FILE or --edit to create the rule.")
@@ -93,7 +98,12 @@ def run_add(args: argparse.Namespace) -> int:
         if draft is None:
             raise ByolspError("Aborted: the template was left unedited.")
     try:
-        rule = _load_source_rule(args.from_file) if draft is None else load_rule(draft)
+        if draft is not None:
+            rule = load_rule(draft)
+        else:
+            rule = _load_source_rule(args.from_file)
+            if args.allow_exceptions:
+                rule = _with_exception_sentence(rule)
         destination = _scope_dir(context, scope) / f"{rule.id}.yml"
         if destination.exists():
             raise UnsafeOverwrite(
@@ -195,10 +205,41 @@ def run_include(args: argparse.Namespace) -> int:
     return 0
 
 
-def _build_template(rule_id: str | None, language: str | None) -> str:
-    return RULE_TEMPLATE.format(
+def _build_template(
+    rule_id: str | None, language: str | None, allow_exceptions: bool
+) -> str:
+    template = RULE_TEMPLATE.format(
         rule_id=rule_id or "REPLACE_ME", language=language or "Python"
     )
+    if allow_exceptions:
+        return _append_exception_sentence(template, source=Path("template"))
+    return template
+
+
+def _with_exception_sentence(rule: Rule) -> Rule:
+    """The rule with ALLOW_EXCEPTIONS_SENTENCE appended to its agent_prompt."""
+    return replace(rule, content=_append_exception_sentence(rule.content, rule.path))
+
+
+def _append_exception_sentence(content: str, source: Path) -> str:
+    """Rule text whose metadata.byolsp.agent_prompt ends with the standard
+    exception sentence (SPEC 28.1), creating the metadata path when absent.
+    """
+    data = parse_yaml_mapping(content, source=source)
+    metadata = data.get("metadata")
+    if not isinstance(metadata, CommentedMap):
+        metadata = CommentedMap()
+        data["metadata"] = metadata
+    block = metadata.get("byolsp")
+    if not isinstance(block, CommentedMap):
+        block = CommentedMap()
+        metadata["byolsp"] = block
+    prompt = block.get("agent_prompt")
+    existing = prompt.strip() if isinstance(prompt, str) else ""
+    block["agent_prompt"] = f"{existing} {ALLOW_EXCEPTIONS_SENTENCE}".lstrip()
+    stream = io.StringIO()
+    new_yaml().dump(data, stream)
+    return stream.getvalue()
 
 
 def _find_rule(

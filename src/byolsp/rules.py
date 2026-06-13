@@ -20,6 +20,15 @@ RULE_FILE_SUFFIXES = (".yml", ".yaml")
 REQUIRED_AST_GREP_FIELDS = ("id", "language", "rule", "message")
 RECOMMENDED_ID_PATTERN = re.compile(r"[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*")
 
+# The standard exception sentence an agent_prompt ends with when a rule
+# tolerates exceptions (SPEC 28.1). `byolsp add --allow-exceptions` appends it;
+# the capture skill includes it when the user allows exceptions.
+ALLOW_EXCEPTIONS_SENTENCE = (
+    "If this is genuinely necessary, suppress with "
+    "`# ast-grep-ignore: <rule-id> -- <short reason>` on its own line above, "
+    "and keep the reason short."
+)
+
 
 @dataclass
 class ByolspMetadata:

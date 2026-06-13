@@ -121,8 +121,10 @@ the agent:
 2. **Proposes a scope**: `project` for team policy voiced about this
    codebase, `global` for personal preferences that transcend the repo,
    `local` for experiments — and shows you the drafted rule.
-3. **Confirms** with exactly one question before writing anything. No rule is
-   ever created from an offhand remark.
+3. **Confirms** with exactly one question — covering the rule, the scope, and
+   whether exceptions are acceptable — before writing anything. No rule is
+   ever created from an offhand remark. When you allow exceptions, the drafted
+   `agent_prompt` ends with the standard suppression sentence.
 4. **Creates** the rule via `byolsp add --scope SCOPE --from FILE` (which
    validates, syncs, and runs doctor), then **verifies** it by running
    `ast-grep scan` against an in-repo example of the violation.

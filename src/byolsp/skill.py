@@ -9,6 +9,7 @@ with single hyphens, description of at most 1024 chars.
 from __future__ import annotations
 
 from byolsp.fsio import MANAGED_MARKER
+from byolsp.rules import ALLOW_EXCEPTIONS_SENTENCE
 
 SKILL_RELPATHS = (
     ".agents/skills/byolsp/SKILL.md",
@@ -26,7 +27,7 @@ SKILL_DESCRIPTION = (
     "syntax pattern, follow the skill's decline guidance."
 )
 
-SKILL_BODY = """\
+SKILL_BODY = f"""\
 # BYOLSP Rule Capture
 
 This repository uses BYOLSP to enforce custom ast-grep diagnostics. When the
@@ -86,8 +87,12 @@ Show the user the drafted rule and your recommended scope.
 
 ### 3. Confirm with exactly one question
 
-Ask one question covering both the rule and the scope, then stop and wait.
-Never create a rule from an offhand remark without confirmation.
+Ask one question covering the rule, the scope, and whether exceptions are
+acceptable, then stop and wait. Never create a rule from an offhand remark
+without confirmation. When the user allows exceptions, end the drafted
+agent_prompt with the standard sentence:
+
+> {ALLOW_EXCEPTIONS_SENTENCE}
 
 ### 4. Create, then verify
 
@@ -143,7 +148,7 @@ metadata:
 ```
 
 Confirm: "This sounds like team policy for this repo, so I drafted the rule
-above at project scope — create it?" On yes:
+above at project scope, with no exceptions allowed — create it?" On yes:
 
 ```bash
 byolsp add --scope project --from /tmp/no-print-logging.yml

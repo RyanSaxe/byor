@@ -9,6 +9,7 @@ from conftest import make_repo
 from byolsp.agents import MANAGED_MARKER
 from byolsp.cli import main
 from byolsp.config import load_repo_config
+from byolsp.rules import ALLOW_EXCEPTIONS_SENTENCE
 from byolsp.skill import SKILL_RELPATHS
 from byolsp.yamlio import parse_yaml_mapping
 
@@ -59,6 +60,9 @@ def test_skill_teaches_the_full_capture_loop(home: Path) -> None:
     assert "never use print for logging" in content
     assert "$$$" in content
     assert "ast-grep run -p" in content
+    # The single confirmation question folds in "are exceptions allowed?".
+    assert "whether exceptions" in content
+    assert ALLOW_EXCEPTIONS_SENTENCE in content
 
 
 def test_hook_uninstall_removes_only_marked_renders(
