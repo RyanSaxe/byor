@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,12 @@ from byolsp.astgrep import (
     scan_files,
 )
 from byolsp.errors import AstGrepNotFound, ByolspError
+
+# These tests run `#!/bin/sh` stand-in executables, which Windows cannot exec;
+# the real-ast-grep cases below still exercise the resolver there.
+requires_sh = pytest.mark.skipif(
+    sys.platform == "win32", reason="fake executables are POSIX shell scripts"
+)
 
 
 def fake_executable(path: Path, script: str = 'echo "ast-grep 9.9.9"') -> Path:
@@ -29,6 +36,7 @@ def bin_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     return bin_dir
 
 
+@requires_sh
 def test_env_override_wins_over_path(
     bin_dir: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -39,6 +47,7 @@ def test_env_override_wins_over_path(
     assert resolve_ast_grep() == override
 
 
+@requires_sh
 def test_path_resolution_prefers_ast_grep_over_sg(bin_dir: Path) -> None:
     sg = fake_executable(bin_dir / "sg")
 
@@ -48,6 +57,7 @@ def test_path_resolution_prefers_ast_grep_over_sg(bin_dir: Path) -> None:
     assert resolve_ast_grep() == ast_grep
 
 
+@requires_sh
 def test_resolution_skips_a_candidate_that_is_not_ast_grep(bin_dir: Path) -> None:
     # Ubuntu's /usr/bin/sg is the setgroups tool: --version is not ast-grep's.
     fake_executable(bin_dir / "sg", script='echo "sg from util-linux"')
@@ -58,6 +68,7 @@ def test_resolution_skips_a_candidate_that_is_not_ast_grep(bin_dir: Path) -> Non
     assert str(excinfo.value) == NOT_FOUND_MESSAGE
 
 
+@requires_sh
 def test_resolution_falls_through_to_a_real_ast_grep(bin_dir: Path) -> None:
     fake_executable(bin_dir / "sg", script="exit 1")
     ast_grep = fake_executable(bin_dir / "ast-grep")
@@ -65,6 +76,7 @@ def test_resolution_falls_through_to_a_real_ast_grep(bin_dir: Path) -> None:
     assert resolve_ast_grep() == ast_grep
 
 
+@requires_sh
 def test_configured_command_is_used_exactly(bin_dir: Path, tmp_path: Path) -> None:
     fake_executable(bin_dir / "ast-grep")
     configured = fake_executable(tmp_path / "custom" / "ast-grep")
@@ -83,6 +95,7 @@ def test_missing_executable_raises_the_exact_install_message(bin_dir: Path) -> N
     assert "brew install ast-grep" in NOT_FOUND_MESSAGE
 
 
+@requires_sh
 def test_version_is_parsed_from_version_output(bin_dir: Path) -> None:
     executable = fake_executable(bin_dir / "ast-grep")
 
@@ -95,6 +108,7 @@ def test_version_of_the_real_ast_grep_is_readable() -> None:
     assert VERSION_PATTERN.fullmatch(version)
 
 
+@requires_sh
 def test_unreadable_version_fails_cleanly(bin_dir: Path) -> None:
     broken = fake_executable(bin_dir / "ast-grep", script="exit 1")
 

@@ -1,6 +1,9 @@
 import os
 import stat
+import sys
 from pathlib import Path
+
+import pytest
 
 from byolsp.fsio import write_text_atomic
 
@@ -17,6 +20,9 @@ def test_write_text_atomic_creates_parents_overwrites_and_leaves_no_temp_files(
     assert [entry.name for entry in path.parent.iterdir()] == ["file.txt"]
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="POSIX mode bits and umask are not meaningful"
+)
 def test_write_text_atomic_preserves_mode_on_overwrite_and_honors_umask(
     tmp_path: Path,
 ) -> None:
