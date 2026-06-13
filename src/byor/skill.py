@@ -1,4 +1,4 @@
-"""The byolsp rule-capture skill: canonical SKILL.md content.
+"""The byor rule-capture skill: canonical SKILL.md content.
 
 One skill, authored here, rendered identically into the two locations every
 major harness discovers natively. The frontmatter must start at byte 0 and
@@ -8,15 +8,15 @@ with single hyphens, description of at most 1024 chars.
 
 from __future__ import annotations
 
-from byolsp.fsio import MANAGED_MARKER
-from byolsp.rules import ALLOW_EXCEPTIONS_SENTENCE
+from byor.fsio import MANAGED_MARKER
+from byor.rules import ALLOW_EXCEPTIONS_SENTENCE
 
 SKILL_RELPATHS = (
-    ".agents/skills/byolsp/SKILL.md",
-    ".claude/skills/byolsp/SKILL.md",
+    ".agents/skills/byor/SKILL.md",
+    ".claude/skills/byor/SKILL.md",
 )
 
-SKILL_NAME = "byolsp"
+SKILL_NAME = "byor"
 
 SKILL_DESCRIPTION = (
     "Capture durable, mechanically checkable code feedback as ast-grep rules. "
@@ -28,9 +28,9 @@ SKILL_DESCRIPTION = (
 )
 
 SKILL_BODY = f"""\
-# BYOLSP Rule Capture
+# BYOR Rule Capture
 
-This repository uses BYOLSP to enforce custom ast-grep diagnostics. When the
+This repository uses BYOR to enforce custom ast-grep diagnostics. When the
 user gives feedback that a syntax pattern can check, capture it as a rule so
 every future session enforces it automatically — do not just remember it.
 
@@ -54,7 +54,7 @@ Do not act on:
 ### 1. Draft the rule
 
 Write a complete ast-grep YAML rule with id, language, severity, message,
-`rule.pattern`, and `metadata.byolsp`:
+`rule.pattern`, and `metadata.byor`:
 
 ```yaml
 id: kebab-case-id
@@ -64,7 +64,7 @@ message: One-line statement of the policy.
 rule:
   pattern: forbidden_call($$$ARGS)
 metadata:
-  byolsp:
+  byor:
     rationale: >
       Why this policy exists, in one or two sentences.
     agent_prompt: >
@@ -99,7 +99,7 @@ agent_prompt with the standard sentence:
 Write the drafted YAML to a temp file and run:
 
 ```bash
-byolsp add --scope SCOPE --from FILE
+byor add --scope SCOPE --from FILE
 ```
 
 This validates the rule, syncs it into place, and runs doctor. Then prove the
@@ -134,7 +134,7 @@ message: Use the logging module instead of print for logging.
 rule:
   pattern: print($$$ARGS)
 metadata:
-  byolsp:
+  byor:
     rationale: >
       print bypasses log levels, handlers, and structured output; this repo
       logs through the logging module.
@@ -151,7 +151,7 @@ Confirm: "This sounds like team policy for this repo, so I drafted the rule
 above at project scope, with no exceptions allowed — create it?" On yes:
 
 ```bash
-byolsp add --scope project --from /tmp/no-print-logging.yml
+byor add --scope project --from /tmp/no-print-logging.yml
 ```
 
 Verify: write `print("debug")` to `scratch_violation.py` at the repo root,

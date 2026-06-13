@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from byolsp.errors import ConfigError
-from byolsp.yamlio import load_yaml_mapping, write_yaml_atomic
+from byor.errors import ConfigError
+from byor.yamlio import load_yaml_mapping, write_yaml_atomic
 
 
 def test_round_trip_preserves_comments_and_key_order(tmp_path: Path) -> None:

@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from byolsp.harness import (
+from byor.harness import (
     COPILOT_CONTEXT_CAP,
     EditPayload,
     emit,

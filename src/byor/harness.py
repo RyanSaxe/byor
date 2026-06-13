@@ -4,7 +4,7 @@ Each harness pipes a different post-edit JSON shape on stdin and reads back a
 different feedback channel. This module is the single normalized pipeline:
 `parse_payload` turns any harness's stdin JSON into an `EditPayload` (the
 touched files plus, when locatable, the literal edited text), and `emit`
-renders byolsp's diagnostics into the harness's response format. Every parser
+renders byor's diagnostics into the harness's response format. Every parser
 fails open — an unrecognized or malformed payload yields an empty
 `EditPayload` so the agent loop is never blocked.
 """

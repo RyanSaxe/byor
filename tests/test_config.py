@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from byolsp.config import (
+from byor.config import (
     CheckDef,
     GlobalConfig,
     InitDefaults,
@@ -19,7 +19,7 @@ from byolsp.config import (
     save_local_config,
     save_repo_config,
 )
-from byolsp.errors import ConfigError, RepoNotInitialized
+from byor.errors import ConfigError, RepoNotInitialized
 
 
 def test_repo_config_round_trips_and_writes_version(tmp_path: Path) -> None:
@@ -28,25 +28,25 @@ def test_repo_config_round_trips_and_writes_version(tmp_path: Path) -> None:
     save_repo_config(tmp_path, config)
 
     assert load_repo_config(tmp_path) == config
-    assert "version: 1" in (tmp_path / ".byolsp" / "config.yml").read_text()
+    assert "version: 1" in (tmp_path / ".byor" / "config.yml").read_text()
 
 
 def test_repo_config_missing_means_repo_not_initialized(tmp_path: Path) -> None:
-    with pytest.raises(RepoNotInitialized, match="byolsp init"):
+    with pytest.raises(RepoNotInitialized, match="byor init"):
         load_repo_config(tmp_path)
 
 
 def test_repo_config_rejects_unsupported_version(tmp_path: Path) -> None:
-    (tmp_path / ".byolsp").mkdir()
-    (tmp_path / ".byolsp" / "config.yml").write_text("version: 2\n")
+    (tmp_path / ".byor").mkdir()
+    (tmp_path / ".byor" / "config.yml").write_text("version: 2\n")
 
     with pytest.raises(ConfigError, match="version"):
         load_repo_config(tmp_path)
 
 
 def test_repo_config_rejects_wrongly_typed_values(tmp_path: Path) -> None:
-    (tmp_path / ".byolsp").mkdir()
-    (tmp_path / ".byolsp" / "config.yml").write_text(
+    (tmp_path / ".byor").mkdir()
+    (tmp_path / ".byor" / "config.yml").write_text(
         "version: 1\nai:\n  agents: not-a-list\n"
     )
 
@@ -65,8 +65,8 @@ def test_repo_config_round_trips_checks(tmp_path: Path) -> None:
 
 
 def test_repo_config_rejects_a_check_missing_name_or_run(tmp_path: Path) -> None:
-    (tmp_path / ".byolsp").mkdir()
-    (tmp_path / ".byolsp" / "config.yml").write_text(
+    (tmp_path / ".byor").mkdir()
+    (tmp_path / ".byor" / "config.yml").write_text(
         "version: 1\nchecks:\n  - extensions: [py]\n"
     )
 
@@ -95,7 +95,7 @@ def test_local_config_round_trips(tmp_path: Path) -> None:
 
 
 def test_save_preserves_user_comments_and_unknown_keys(tmp_path: Path) -> None:
-    path = tmp_path / ".byolsp" / "local.yml"
+    path = tmp_path / ".byor" / "local.yml"
     path.parent.mkdir()
     path.write_text(
         "# personal overrides\n"
@@ -170,7 +170,7 @@ def test_global_paths_resolve_relative_to_config_dir_unless_absolute(
 
 
 def test_register_repo_creates_registry_and_is_idempotent(tmp_path: Path) -> None:
-    registry_path = tmp_path / "config" / "byolsp" / "repos.yml"
+    registry_path = tmp_path / "config" / "byor" / "repos.yml"
     repo = tmp_path / "repo"
     repo.mkdir()
 

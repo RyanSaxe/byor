@@ -1,4 +1,4 @@
-"""Git hook shims installed by `byolsp init --git-hooks`."""
+"""Git hook shims installed by `byor init --git-hooks`."""
 
 import os
 from pathlib import Path
@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 from conftest import git, make_repo
 
-from byolsp.cli import main
-from byolsp.githooks import SHIM_CONTENT, SHIM_LINE, SHIM_MARKER
+from byor.cli import main
+from byor.githooks import SHIM_CONTENT, SHIM_LINE, SHIM_MARKER
 
 
 def git_repo(home: Path) -> Path:
@@ -50,7 +50,7 @@ def test_unmarked_existing_hook_is_left_untouched(
 
     assert existing.read_text() == "#!/bin/sh\nmy own hook\n"
     out = capsys.readouterr().out
-    assert ".git/hooks/post-merge exists without the BYOLSP marker" in out
+    assert ".git/hooks/post-merge exists without the BYOR marker" in out
     assert SHIM_LINE in out
     assert (repo / ".git" / "hooks" / "post-checkout").read_text() == SHIM_CONTENT
 
@@ -58,7 +58,7 @@ def test_unmarked_existing_hook_is_left_untouched(
 def test_outdated_marked_shim_is_updated(home: Path) -> None:
     repo = git_repo(home)
     stale = repo / ".git" / "hooks" / "post-checkout"
-    stale.write_text(f"#!/bin/sh\n{SHIM_MARKER}\nbyolsp sync\n")
+    stale.write_text(f"#!/bin/sh\n{SHIM_MARKER}\nbyor sync\n")
 
     assert init_with_hooks(repo) == 0
 

@@ -13,8 +13,8 @@ from conftest import (
     write_rule,
 )
 
-from byolsp.cli import main
-from byolsp.rules import ALLOW_EXCEPTIONS_SENTENCE, load_rule
+from byor.cli import main
+from byor.rules import ALLOW_EXCEPTIONS_SENTENCE, load_rule
 
 
 def add(repo: Path, *extra: str) -> int:
@@ -51,11 +51,11 @@ def test_add_from_file_creates_project_rule(
 
     assert add(repo, "--scope", "project", "--from", str(source)) == 0
 
-    destination = repo / ".byolsp" / "rules" / "project" / "team-rule.yml"
+    destination = repo / ".byor" / "rules" / "project" / "team-rule.yml"
     assert destination.read_text() == source.read_text()
     captured = capsys.readouterr()
     assert (
-        "Added project rule 'team-rule' at .byolsp/rules/project/team-rule.yml"
+        "Added project rule 'team-rule' at .byor/rules/project/team-rule.yml"
         in captured.out
     )
     assert "doctor:" not in captured.out
@@ -74,7 +74,7 @@ def test_add_global_rule_fans_out_to_registered_repos(
         == 0
     )
 
-    canonical = home / "xdg" / "byolsp" / "rules" / "no-cast.yml"
+    canonical = home / "xdg" / "byor" / "rules" / "no-cast.yml"
     assert canonical.read_text() == source.read_text()
     assert (mirror(first) / "no-cast.yml").is_file()
     assert (mirror(second) / "no-cast.yml").is_file()
@@ -92,7 +92,7 @@ def test_add_edit_writes_the_edited_template(
 
     assert add(repo, "--scope", "local", "--edit") == 0
 
-    destination = repo / ".byolsp" / "rules" / "personal" / "local" / "my-rule.yml"
+    destination = repo / ".byor" / "rules" / "personal" / "local" / "my-rule.yml"
     assert destination.read_text() == content
 
 
@@ -105,7 +105,7 @@ def test_add_edit_aborts_when_template_left_unedited(
     assert add(repo, "--scope", "local", "--edit") == 1
 
     assert "template was left unedited" in capsys.readouterr().err
-    local_dir = repo / ".byolsp" / "rules" / "personal" / "local"
+    local_dir = repo / ".byor" / "rules" / "personal" / "local"
     assert list(local_dir.glob("*.yml")) == []
 
 
@@ -132,20 +132,20 @@ def test_add_rejects_invalid_rule_file(
     captured = capsys.readouterr()
     assert "missing required ast-grep fields" in captured.err
     assert "Traceback" not in captured.err
-    assert not (repo / ".byolsp" / "rules" / "project" / "broken.yml").exists()
+    assert not (repo / ".byor" / "rules" / "project" / "broken.yml").exists()
 
 
 def test_add_rejects_duplicate_id_within_scope(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home)
-    write_rule(repo / ".byolsp" / "rules" / "project" / "existing.yml", "no-cast")
+    write_rule(repo / ".byor" / "rules" / "project" / "existing.yml", "no-cast")
     source = write_rule(home / "source.yml", "no-cast")
 
     assert add(repo, "--scope", "project", "--from", str(source)) == 1
 
     assert "Duplicate rule IDs" in capsys.readouterr().err
-    assert not (repo / ".byolsp" / "rules" / "project" / "no-cast.yml").exists()
+    assert not (repo / ".byor" / "rules" / "project" / "no-cast.yml").exists()
 
 
 def test_add_refuses_to_overwrite_existing_destination(
@@ -196,7 +196,7 @@ def test_allow_exceptions_appends_to_an_existing_agent_prompt(home: Path) -> Non
         "rule:\n"
         "  pattern: cast($TYPE, $VALUE)\n"
         "metadata:\n"
-        "  byolsp:\n"
+        "  byor:\n"
         "    agent_prompt: Narrow the type instead.\n"
     )
 
@@ -205,8 +205,8 @@ def test_allow_exceptions_appends_to_an_existing_agent_prompt(home: Path) -> Non
         == 0
     )
 
-    written = load_rule(repo / ".byolsp" / "rules" / "project" / "no-cast.yml")
-    assert written.byolsp.agent_prompt == (
+    written = load_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml")
+    assert written.byor.agent_prompt == (
         f"Narrow the type instead. {ALLOW_EXCEPTIONS_SENTENCE}"
     )
 
@@ -222,8 +222,8 @@ def test_allow_exceptions_seeds_agent_prompt_from_message_when_absent(
         == 0
     )
 
-    written = load_rule(repo / ".byolsp" / "rules" / "project" / "no-cast.yml")
-    assert written.byolsp.agent_prompt == f"Avoid this. {ALLOW_EXCEPTIONS_SENTENCE}"
+    written = load_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml")
+    assert written.byor.agent_prompt == f"Avoid this. {ALLOW_EXCEPTIONS_SENTENCE}"
 
 
 def test_allow_exceptions_with_edit_keeps_the_prefilled_sentence(
@@ -234,10 +234,10 @@ def test_allow_exceptions_with_edit_keeps_the_prefilled_sentence(
 
     assert add(repo, "--scope", "local", "--edit", "--allow-exceptions") == 0
 
-    destination = repo / ".byolsp" / "rules" / "personal" / "local" / "no-cast.yml"
+    destination = repo / ".byor" / "rules" / "personal" / "local" / "no-cast.yml"
     written = load_rule(destination)
-    assert written.byolsp.agent_prompt is not None
-    assert written.byolsp.agent_prompt.endswith(ALLOW_EXCEPTIONS_SENTENCE)
+    assert written.byor.agent_prompt is not None
+    assert written.byor.agent_prompt.endswith(ALLOW_EXCEPTIONS_SENTENCE)
 
 
 def test_add_warns_on_nonconforming_rule_id(
@@ -249,4 +249,4 @@ def test_add_warns_on_nonconforming_rule_id(
     assert add(repo, "--scope", "project", "--from", str(source)) == 0
 
     assert "does not match the recommended" in capsys.readouterr().err
-    assert (repo / ".byolsp" / "rules" / "project" / "Bad_ID.yml").is_file()
+    assert (repo / ".byor" / "rules" / "project" / "Bad_ID.yml").is_file()

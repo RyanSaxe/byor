@@ -4,7 +4,7 @@ from pathlib import Path
 
 from conftest import commit_file, git
 
-from byolsp.linescope import diff_ranges, edit_ranges, merge_ranges, overlaps
+from byor.linescope import diff_ranges, edit_ranges, merge_ranges, overlaps
 
 TEXT = "alpha\nbravo\ncharlie\ndelta\necho\n"
 

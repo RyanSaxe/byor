@@ -3,10 +3,10 @@ from pathlib import Path
 import pytest
 from conftest import write_rule
 
-from byolsp.config import RepoPaths
-from byolsp.errors import DuplicateRuleId, RuleValidationError
-from byolsp.rules import (
-    ByolspMetadata,
+from byor.config import RepoPaths
+from byor.errors import DuplicateRuleId, RuleValidationError
+from byor.rules import (
+    ByorMetadata,
     Rule,
     check_id_conflicts,
     discover_rule_files,
@@ -24,7 +24,7 @@ message: Avoid typing.cast in Python code.
 rule:
   pattern: cast($TYPE, $VALUE)
 metadata:
-  byolsp:
+  byor:
     rationale: casting hides type model problems.
     agent_prompt: Do not use typing.cast here.
     docs_url: https://example.com/no-python-cast
@@ -50,7 +50,7 @@ def test_discovery_of_missing_directory_is_empty(tmp_path: Path) -> None:
     assert discover_rule_files(tmp_path / "absent") == []
 
 
-def test_load_rule_parses_byolsp_metadata(tmp_path: Path) -> None:
+def test_load_rule_parses_byor_metadata(tmp_path: Path) -> None:
     path = tmp_path / "no-python-cast.yml"
     path.write_text(NO_PYTHON_CAST)
 
@@ -61,7 +61,7 @@ def test_load_rule_parses_byolsp_metadata(tmp_path: Path) -> None:
     assert rule.severity == "warning"
     assert rule.message == "Avoid typing.cast in Python code."
     assert rule.path == path
-    assert rule.byolsp == ByolspMetadata(
+    assert rule.byor == ByorMetadata(
         rationale="casting hides type model problems.",
         agent_prompt="Do not use typing.cast here.",
         docs_url="https://example.com/no-python-cast",
@@ -73,7 +73,7 @@ def test_load_rule_defaults_optional_fields(tmp_path: Path) -> None:
     rule = load_rule(write_rule(tmp_path / "minimal.yml", "minimal"))
 
     assert rule.severity is None
-    assert rule.byolsp == ByolspMetadata()
+    assert rule.byor == ByorMetadata()
 
 
 def test_load_rule_names_file_when_required_fields_missing(tmp_path: Path) -> None:
@@ -102,7 +102,7 @@ def test_load_rule_degrades_malformed_metadata_to_defaults(tmp_path: Path) -> No
         "rule:\n"
         "  pattern: cast($TYPE, $VALUE)\n"
         "metadata:\n"
-        "  byolsp:\n"
+        "  byor:\n"
         "    agent_prompt: Keep this prompt.\n"
         "    rationale: [not, a, string]\n"
         "    tags: python\n"
@@ -110,7 +110,7 @@ def test_load_rule_degrades_malformed_metadata_to_defaults(tmp_path: Path) -> No
 
     rule = load_rule(path)
 
-    assert rule.byolsp == ByolspMetadata(agent_prompt="Keep this prompt.")
+    assert rule.byor == ByorMetadata(agent_prompt="Keep this prompt.")
 
 
 def test_load_rules_parses_every_discovered_file(tmp_path: Path) -> None:
@@ -182,10 +182,10 @@ def test_project_id_matching_local_id_is_an_error() -> None:
 
 def test_scope_rules_dirs_map_to_repo_paths_and_canonical_global_root() -> None:
     repo_root = Path("/repo")
-    global_root = Path("/home/user/.config/byolsp/rules")
+    global_root = Path("/home/user/.config/byor/rules")
     paths = RepoPaths()
 
     args = (repo_root, paths, global_root)
-    assert scope_rules_dir("project", *args) == repo_root / ".byolsp/rules/project"
-    assert scope_rules_dir("local", *args) == repo_root / ".byolsp/rules/personal/local"
+    assert scope_rules_dir("project", *args) == repo_root / ".byor/rules/project"
+    assert scope_rules_dir("local", *args) == repo_root / ".byor/rules/personal/local"
     assert scope_rules_dir("global", *args) == global_root

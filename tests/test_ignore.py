@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from byolsp.errors import ConfigError
-from byolsp.ignore import (
+from byor.errors import ConfigError
+from byor.ignore import (
     IGNORED_PATTERNS,
     rule_visibility_ok,
     write_ignore_block,
@@ -36,7 +36,7 @@ def test_edits_inside_the_block_are_healed(tmp_path: Path) -> None:
     write_ignore_block(tmp_path, "project")
     gitignore = tmp_path / ".gitignore"
     pristine = gitignore.read_text()
-    gitignore.write_text(pristine.replace(".byolsp/local.yml\n", ""))
+    gitignore.write_text(pristine.replace(".byor/local.yml\n", ""))
 
     assert write_ignore_block(tmp_path, "project") is True
     assert gitignore.read_text() == pristine
@@ -59,8 +59,8 @@ def test_local_mode_requires_a_git_repository(tmp_path: Path) -> None:
 
 def test_ignored_patterns_cover_nested_rule_files() -> None:
     """`*` does not cross `/` in gitignore; synced copies keep their nesting."""
-    assert ".byolsp/rules/personal/global/**/*.yml" in IGNORED_PATTERNS
-    assert ".byolsp/rules/personal/local/**/*.yml" in IGNORED_PATTERNS
+    assert ".byor/rules/personal/global/**/*.yml" in IGNORED_PATTERNS
+    assert ".byor/rules/personal/local/**/*.yml" in IGNORED_PATTERNS
 
 
 def test_visibility_file_is_written_idempotently_and_satisfies_the_check(

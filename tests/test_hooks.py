@@ -1,4 +1,4 @@
-"""AI agent adapters and the `byolsp hook` command."""
+"""AI agent adapters and the `byor hook` command."""
 
 import json
 from pathlib import Path
@@ -6,12 +6,12 @@ from pathlib import Path
 import pytest
 from conftest import commands_in, make_repo
 
-from byolsp.agents import MANAGED_MARKER
-from byolsp.cli import main
-from byolsp.config import load_repo_config
-from byolsp.hookconfig import BYOLSP_COMMAND_SIGNATURE
+from byor.agents import MANAGED_MARKER
+from byor.cli import main
+from byor.config import load_repo_config
+from byor.hookconfig import BYOR_COMMAND_SIGNATURE
 
-AGENTS_DIR = Path(".byolsp") / "agents"
+AGENTS_DIR = Path(".byor") / "agents"
 
 SETTINGS_RELPATH = Path(".claude") / "settings.json"
 
@@ -21,12 +21,12 @@ def init_with_agents(repo: Path, agents: str) -> int:
 
 
 def claude_command(repo: Path) -> str:
-    """The single PostToolUse command byolsp installed in claude settings."""
+    """The single PostToolUse command byor installed in claude settings."""
     text = (repo / SETTINGS_RELPATH).read_text()
     commands = [
         command
         for command in commands_in(json.loads(text))
-        if BYOLSP_COMMAND_SIGNATURE in command
+        if BYOR_COMMAND_SIGNATURE in command
     ]
     [command] = commands
     return command
@@ -38,20 +38,20 @@ def test_init_installs_instruction_files_for_requested_agents(home: Path) -> Non
     for name in ("codex.md", "copilot.md"):
         content = (repo / AGENTS_DIR / name).read_text()
         assert MANAGED_MARKER in content
-        assert "byolsp agent-check" in content
+        assert "byor agent-check" in content
         # Both harnesses auto-discover the rule-capture skill.
-        assert "`byolsp` rule-capture skill" in content
-        assert ".agents/skills/byolsp" in content
+        assert "`byor` rule-capture skill" in content
+        assert ".agents/skills/byor" in content
 
 
 def test_claude_code_install_writes_a_guarded_project_hook(home: Path) -> None:
     repo = make_repo(home, "repo", "--agents", "claude-code")
 
     command = claude_command(repo)
-    assert f"{BYOLSP_COMMAND_SIGNATURE} claude-code" in command
-    assert "command -v byolsp" in command
+    assert f"{BYOR_COMMAND_SIGNATURE} claude-code" in command
+    assert "command -v byor" in command
     # The skill render still creates .claude/skills/ alongside the hook.
-    assert (repo / ".claude" / "skills" / "byolsp" / "SKILL.md").is_file()
+    assert (repo / ".claude" / "skills" / "byor" / "SKILL.md").is_file()
 
 
 def test_claude_code_install_merges_into_existing_settings(home: Path) -> None:
@@ -65,7 +65,7 @@ def test_claude_code_install_merges_into_existing_settings(home: Path) -> None:
     data = json.loads(settings.read_text())
     assert data["model"] == "opus"
     assert data["hooks"]["PreToolUse"] == []
-    assert BYOLSP_COMMAND_SIGNATURE in json.dumps(data["hooks"]["PostToolUse"])
+    assert BYOR_COMMAND_SIGNATURE in json.dumps(data["hooks"]["PostToolUse"])
 
     snapshot = settings.read_text()
     assert init_with_agents(repo, "claude-code") == 0
@@ -81,13 +81,13 @@ def test_outdated_claude_settings_hook_is_updated(home: Path) -> None:
     settings = repo / SETTINGS_RELPATH
     stale = {
         "matcher": "Write",
-        "hooks": [{"type": "command", "command": "byolsp agent-check --stdin-hook x"}],
+        "hooks": [{"type": "command", "command": "byor agent-check --stdin-hook x"}],
     }
     settings.write_text(json.dumps({"hooks": {"PostToolUse": [stale]}}))
 
     assert init_with_agents(repo, "claude-code") == 0
 
-    assert f"{BYOLSP_COMMAND_SIGNATURE} claude-code" in claude_command(repo)
+    assert f"{BYOR_COMMAND_SIGNATURE} claude-code" in claude_command(repo)
 
 
 def test_invalid_claude_settings_fail_cleanly(
@@ -126,9 +126,9 @@ def test_cursor_is_a_full_agent_choice(home: Path) -> None:
     instructions = (repo / AGENTS_DIR / "cursor.md").read_text()
     assert MANAGED_MARKER in instructions
     assert "Cursor" in instructions
-    assert "`byolsp` rule-capture skill" in instructions
+    assert "`byor` rule-capture skill" in instructions
     hooks = json.loads((repo / ".cursor" / "hooks.json").read_text())
-    assert BYOLSP_COMMAND_SIGNATURE in json.dumps(hooks)
+    assert BYOR_COMMAND_SIGNATURE in json.dumps(hooks)
     assert load_repo_config(repo).agents == ["skill", "cursor"]
 
 
@@ -165,7 +165,7 @@ def test_hook_install_requires_an_initialized_repo(
     assert hook("install", repo, "generic") == 1
 
     err = capsys.readouterr().err
-    assert "byolsp init" in err
+    assert "byor init" in err
     assert "Traceback" not in err
 
 
@@ -179,7 +179,7 @@ def test_hook_uninstall_removes_only_marker_bearing_files(
     assert hook("uninstall", repo, "copilot") == 0
 
     assert (repo / AGENTS_DIR / "copilot.md").read_text() == "my own notes\n"
-    assert "without the BYOLSP marker" in capsys.readouterr().out
+    assert "without the BYOR marker" in capsys.readouterr().out
     assert load_repo_config(repo).agents == ["skill"]
 
 
@@ -195,7 +195,7 @@ def test_hook_uninstall_removes_the_installed_adapter_and_hook(home: Path) -> No
     assert hook("uninstall", repo, "codex") == 0
 
 
-def test_hook_uninstall_claude_code_removes_only_the_byolsp_settings_group(
+def test_hook_uninstall_claude_code_removes_only_the_byor_settings_group(
     home: Path,
 ) -> None:
     repo = make_repo(home)
@@ -209,4 +209,4 @@ def test_hook_uninstall_claude_code_removes_only_the_byolsp_settings_group(
 
     data = json.loads(settings.read_text())
     assert data["hooks"]["PostToolUse"] == [user_group]
-    assert BYOLSP_COMMAND_SIGNATURE not in settings.read_text()
+    assert BYOR_COMMAND_SIGNATURE not in settings.read_text()

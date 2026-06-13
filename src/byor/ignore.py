@@ -1,4 +1,4 @@
-"""The marked git ignore block for BYOLSP's untracked generated state,
+"""The marked git ignore block for BYOR's untracked generated state,
 plus the `.ignore` files that keep those rules visible to ast-grep.
 
 ast-grep's rule discovery respects gitignore, so the git-ignored personal rule
@@ -12,8 +12,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from byolsp.errors import ConfigError
-from byolsp.fsio import (
+from byor.errors import ConfigError
+from byor.fsio import (
     MANAGED_NOTICE,
     MarkedWriteResult,
     write_marked_text,
@@ -24,15 +24,15 @@ IgnoreMode = Literal["project", "local"]
 
 # `**` so nested rules (e.g. personal/global/python/no-cast.yml) are ignored too.
 IGNORED_PATTERNS = (
-    ".byolsp/local.yml",
-    ".byolsp/rules/personal/local/**/*.yml",
-    ".byolsp/rules/personal/local/**/*.yaml",
-    ".byolsp/rules/personal/global/**/*.yml",
-    ".byolsp/rules/personal/global/**/*.yaml",
+    ".byor/local.yml",
+    ".byor/rules/personal/local/**/*.yml",
+    ".byor/rules/personal/local/**/*.yaml",
+    ".byor/rules/personal/global/**/*.yml",
+    ".byor/rules/personal/global/**/*.yaml",
 )
 
 BLOCK_BEGIN = f"# >>> {MANAGED_NOTICE} >>>"
-BLOCK_END = "# <<< Managed by BYOLSP <<<"
+BLOCK_END = "# <<< Managed by BYOR <<<"
 
 VISIBILITY_MARKER = f"# {MANAGED_NOTICE}"
 
@@ -75,7 +75,7 @@ def ignore_file(repo_root: Path, mode: IgnoreMode) -> Path:
 
 
 def write_ignore_block(repo_root: Path, mode: IgnoreMode) -> bool:
-    """Write the BYOLSP ignore block, replacing any previous one.
+    """Write the BYOR ignore block, replacing any previous one.
 
     Idempotent; returns True only when the file changed.
     """

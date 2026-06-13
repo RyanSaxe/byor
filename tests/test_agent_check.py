@@ -1,4 +1,4 @@
-"""`byolsp agent-check` against the real ast-grep binary."""
+"""`byor agent-check` against the real ast-grep binary."""
 
 import io
 import json
@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 from conftest import commit_file, git, make_repo
 
-from byolsp.cli import main
-from byolsp.config import CheckDef, load_repo_config, save_repo_config
+from byor.cli import main
+from byor.config import CheckDef, load_repo_config, save_repo_config
 
 CAST_PROMPT = (
     "Do not use typing.cast here. Fix the type by narrowing, changing the "
@@ -27,7 +27,7 @@ message: Avoid typing.cast in Python code.
 rule:
   pattern: cast($TYPE, $VALUE)
 metadata:
-  byolsp:
+  byor:
     agent_prompt: >
       Do not use typing.cast here. Fix the type by narrowing, changing the
       signature, introducing a protocol, or restructuring the value flow.
@@ -49,7 +49,7 @@ rule:
 def check_repo(home: Path, capsys: pytest.CaptureFixture[str]) -> Path:
     """An initialized repo with both rules, init output already flushed."""
     repo = make_repo(home)
-    project = repo / ".byolsp" / "rules" / "project"
+    project = repo / ".byor" / "rules" / "project"
     (project / "no-python-cast.yml").write_text(CAST_RULE)
     (project / "no-print.yml").write_text(PRINT_RULE)
     capsys.readouterr()
@@ -93,7 +93,7 @@ def test_one_diagnostic_renders_the_spec_block(
     assert check(check_repo, "--files", str(source)) == 2
 
     assert capsys.readouterr().out == (
-        "BYOLSP found 1 issue in AI-written code.\n"
+        "BYOR found 1 issue in AI-written code.\n"
         "\n"
         "src.py:2:5\n"
         "Rule: no-python-cast\n"
@@ -144,7 +144,7 @@ def test_renders_at_most_twenty_diagnostics_with_overflow_line(
     assert check(check_repo, "--files", str(source)) == 2
 
     out = capsys.readouterr().out
-    assert out.startswith("BYOLSP found 21 issues in AI-written code.\n")
+    assert out.startswith("BYOR found 21 issues in AI-written code.\n")
     assert out.count("Rule: no-python-cast") == 20
     assert out.endswith(
         "...and 1 more diagnostics. Run ast-grep scan for the full list.\n"
@@ -160,7 +160,7 @@ def test_max_results_is_forwarded_to_ast_grep(
     assert check(check_repo, "--files", str(source), "--max-results", "1") == 2
 
     out = capsys.readouterr().out
-    assert out.startswith("BYOLSP found 1 issue in AI-written code.\n")
+    assert out.startswith("BYOR found 1 issue in AI-written code.\n")
     assert "more diagnostics" not in out
 
 
@@ -355,7 +355,7 @@ def test_check_does_not_run_for_files_outside_its_extensions(
 def test_missing_check_command_warns_and_keeps_diagnostics(
     check_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    add_repo_check(check_repo, "ghost", ["py"], "byolsp-no-such-command --x")
+    add_repo_check(check_repo, "ghost", ["py"], "byor-no-such-command --x")
     source = check_repo / "src.py"
     source.write_text('x = cast(int, "1")\n')
 
@@ -444,7 +444,7 @@ def test_hook_mode_fails_open_on_an_internal_error(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     # The same broken sgconfig that errors under --files must never block the
-    # agent: a global-scope hook has no shell `|| true`, so byolsp exits 0 itself.
+    # agent: a global-scope hook has no shell `|| true`, so byor exits 0 itself.
     (check_repo / "sgconfig.yml").write_text("ruleDirs: 5\n")
     source = check_repo / "src.py"
     source.write_text('x = cast(int, "1")\n')

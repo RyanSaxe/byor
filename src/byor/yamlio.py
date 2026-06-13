@@ -10,15 +10,15 @@ from ruamel.yaml.comments import CommentedMap
 from ruamel.yaml.error import YAMLError
 from ruamel.yaml.representer import SafeRepresenter
 
-from byolsp.errors import ConfigError
-from byolsp.fsio import write_text_atomic
+from byor.errors import ConfigError
+from byor.fsio import write_text_atomic
 
 # Wide enough that ruamel never rewraps long values like agent prompts.
 YAML_LINE_WIDTH = 4096
 
 
 def new_yaml() -> YAML:
-    """A round-trip YAML processor configured for BYOLSP's output conventions."""
+    """A round-trip YAML processor configured for BYOR's output conventions."""
     yaml = YAML()
     yaml.preserve_quotes = True
     yaml.width = YAML_LINE_WIDTH
@@ -51,7 +51,7 @@ def parse_yaml_mapping(text: str, source: Path) -> CommentedMap:
 
 
 def dump_yaml(data: CommentedMap) -> str:
-    """Serialize a mapping with BYOLSP's output conventions."""
+    """Serialize a mapping with BYOR's output conventions."""
     stream = io.StringIO()
     new_yaml().dump(data, stream)
     return stream.getvalue()

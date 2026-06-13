@@ -1,4 +1,4 @@
-"""Create or update sgconfig.yml so ast-grep sees the BYOLSP rule dirs."""
+"""Create or update sgconfig.yml so ast-grep sees the BYOR rule dirs."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from pathlib import Path
 
 from ruamel.yaml.comments import CommentedMap
 
-from byolsp.errors import ConfigError
-from byolsp.yamlio import load_yaml_mapping, write_yaml_atomic
+from byor.errors import ConfigError
+from byor.yamlio import load_yaml_mapping, write_yaml_atomic
 
 BACKUP_TIMESTAMP_FORMAT = "%Y%m%d-%H%M%S"
 
@@ -57,6 +57,6 @@ def _minimal_sgconfig(rule_dirs: list[str]) -> CommentedMap:
 
 def _backup(path: Path) -> Path:
     stamp = datetime.now().strftime(BACKUP_TIMESTAMP_FORMAT)
-    backup = path.with_name(f"{path.name}.byolsp-backup-{stamp}")
+    backup = path.with_name(f"{path.name}.byor-backup-{stamp}")
     shutil.copy2(path, backup)
     return backup

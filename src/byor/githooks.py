@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from byolsp.errors import ConfigError
-from byolsp.fsio import MANAGED_NOTICE, write_marked_text
-from byolsp.gitio import git_stdout
+from byor.errors import ConfigError
+from byor.fsio import MANAGED_NOTICE, write_marked_text
+from byor.gitio import git_stdout
 
 SHIM_HOOK_NAMES = ("post-merge", "post-checkout")
 
 SHIM_MARKER = f"# {MANAGED_NOTICE}"
 
 # `|| true` so the shim can never block a git operation.
-SHIM_LINE = "[ -d .byolsp ] && command -v byolsp >/dev/null 2>&1 && byolsp sync || true"
+SHIM_LINE = "[ -d .byor ] && command -v byor >/dev/null 2>&1 && byor sync || true"
 
 SHIM_CONTENT = f"""#!/bin/sh
 {SHIM_MARKER}
@@ -49,7 +49,7 @@ def _install_shim(hook: Path) -> list[str]:
     result = write_marked_text(hook, SHIM_CONTENT, SHIM_MARKER)
     if result == "unmarked":
         return [
-            f".git/hooks/{hook.name} exists without the BYOLSP marker; "
+            f".git/hooks/{hook.name} exists without the BYOR marker; "
             "add this line to it:",
             f"  {SHIM_LINE}",
         ]

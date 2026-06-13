@@ -2,7 +2,7 @@
 
 `checks:` entries in the repo and global configs name a command to run on the
 in-scope files whose extension matches. Repo checks win over global ones by
-name; `.byolsp/local.yml` `checks.excluded` disables them per repo. A failing
+name; `.byor/local.yml` `checks.excluded` disables them per repo. A failing
 check's raw output is appended under a `### <name>` header and yields the same
 diagnostics-exist exit code as an ast-grep finding. A missing command warns
 once and never crashes the hook — committed checks run on contributors'
@@ -16,7 +16,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from byolsp.config import (
+from byor.config import (
     CheckDef,
     GlobalConfig,
     LocalConfig,
@@ -77,7 +77,7 @@ def load_effective_checks(repo_root: Path, config_dir: Path) -> list[EffectiveCh
 
     The single I/O wrapper around the pure `effective_checks`; every surface
     (`agent-check`, `list`, `doctor`) routes through it so a missing repo config
-    or a malformed `.byolsp/local.yml` behaves identically everywhere. Returns
+    or a malformed `.byor/local.yml` behaves identically everywhere. Returns
     `[]` when the repo is not initialized.
     """
     if not repo_config_path(repo_root).is_file():
@@ -112,7 +112,7 @@ def _run_one(
         )
     except FileNotFoundError:
         outcome.warnings.append(
-            f"byolsp: check '{check.name}' command not found: {argv[0]}"
+            f"byor: check '{check.name}' command not found: {argv[0]}"
         )
         return
     if result.returncode != 0:

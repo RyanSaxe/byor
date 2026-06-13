@@ -5,16 +5,16 @@ from pathlib import Path
 import pytest
 from conftest import make_repo, write_rule
 
-from byolsp.astgrep import NOT_FOUND_MESSAGE
-from byolsp.cli import main
-from byolsp.config import (
+from byor.astgrep import NOT_FOUND_MESSAGE
+from byor.cli import main
+from byor.config import (
     CheckDef,
     LocalConfig,
     load_repo_config,
     save_local_config,
     save_repo_config,
 )
-from byolsp.doctor import collect_checks
+from byor.doctor import collect_checks
 
 
 def doctor(repo: Path, *extra: str) -> int:
@@ -100,7 +100,7 @@ def test_doctor_reports_missing_ast_grep_with_the_install_message(
     empty_bin = home / "empty-bin"
     empty_bin.mkdir()
     monkeypatch.setenv("PATH", str(empty_bin))
-    monkeypatch.delenv("BYOLSP_AST_GREP", raising=False)
+    monkeypatch.delenv("BYOR_AST_GREP", raising=False)
     capsys.readouterr()
 
     assert doctor(repo) == 1
@@ -118,7 +118,7 @@ def test_doctor_flags_an_uninitialized_repo(
 
     out = capsys.readouterr().out
     assert "FAIL  repo_config" in out
-    assert "byolsp init" in out
+    assert "byor init" in out
 
 
 def test_doctor_flags_missing_sgconfig(
@@ -130,7 +130,7 @@ def test_doctor_flags_missing_sgconfig(
 
     assert doctor(repo) == 1
 
-    assert "sgconfig.yml is missing; run `byolsp init`" in capsys.readouterr().out
+    assert "sgconfig.yml is missing; run `byor init`" in capsys.readouterr().out
 
 
 def test_doctor_renders_a_failing_check_for_invalid_rules(
@@ -139,7 +139,7 @@ def test_doctor_renders_a_failing_check_for_invalid_rules(
     """A broken rule stops the self-heal preamble's sync, but doctor must still
     render its check table rather than abort."""
     repo = make_repo(home)
-    broken = repo / ".byolsp" / "rules" / "project" / "broken.yml"
+    broken = repo / ".byor" / "rules" / "project" / "broken.yml"
     broken.write_text("id: broken\n")
     capsys.readouterr()
 
@@ -153,9 +153,9 @@ def test_doctor_renders_a_failing_check_for_invalid_rules(
 
 def test_quick_checks_skip_recursive_rule_validation(home: Path) -> None:
     repo = make_repo(home)
-    broken = repo / ".byolsp" / "rules" / "project" / "broken.yml"
+    broken = repo / ".byor" / "rules" / "project" / "broken.yml"
     broken.write_text("id: broken\n")
-    config_dir = home / "xdg" / "byolsp"
+    config_dir = home / "xdg" / "byor"
 
     full = collect_checks(repo, config_dir, quick=False)
     quick = collect_checks(repo, config_dir, quick=True)
@@ -175,24 +175,24 @@ def test_doctor_flags_a_missing_rule_visibility_file(
     self-heal preamble before doctor runs.
     """
     repo = make_repo(home)
-    (repo / ".byolsp" / "rules" / "personal" / "local" / ".ignore").unlink()
+    (repo / ".byor" / "rules" / "personal" / "local" / ".ignore").unlink()
     capsys.readouterr()
 
     assert doctor(repo, "--quick") == 1
 
     out = capsys.readouterr().out
     assert "FAIL  rules_visible" in out
-    assert ".byolsp/rules/personal/local" in out
+    assert ".byor/rules/personal/local" in out
 
 
 def test_doctor_flags_duplicate_project_and_local_ids(home: Path) -> None:
     repo = make_repo(home)
-    write_rule(repo / ".byolsp" / "rules" / "project" / "no-cast.yml", "no-cast")
+    write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
     write_rule(
-        repo / ".byolsp" / "rules" / "personal" / "local" / "no-cast.yml", "no-cast"
+        repo / ".byor" / "rules" / "personal" / "local" / "no-cast.yml", "no-cast"
     )
 
-    checks = collect_checks(repo, home / "xdg" / "byolsp", quick=False)
+    checks = collect_checks(repo, home / "xdg" / "byor", quick=False)
 
     failed = {check.id: check for check in checks if not check.ok}
     assert set(failed) == {"rule_ids_unique"}
@@ -216,9 +216,9 @@ def test_doctor_flags_missing_agent_files(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home, "repo", "--agents", "claude-code")
-    (repo / ".byolsp" / "agents" / "claude-code.md").unlink()
+    (repo / ".byor" / "agents" / "claude-code.md").unlink()
     capsys.readouterr()
 
     assert doctor(repo, "--quick") == 1
 
-    assert ".byolsp/agents/claude-code.md is missing" in capsys.readouterr().out
+    assert ".byor/agents/claude-code.md is missing" in capsys.readouterr().out

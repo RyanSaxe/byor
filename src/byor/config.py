@@ -1,4 +1,4 @@
-"""Typed load/save for the four BYOLSP config schemas."""
+"""Typed load/save for the four BYOR config schemas."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from pathlib import Path
 
 from ruamel.yaml.comments import CommentedMap
 
-from byolsp.errors import ConfigError, RepoNotInitialized
-from byolsp.yamlio import load_yaml_mapping, write_yaml_atomic
+from byor.errors import ConfigError, RepoNotInitialized
+from byor.yamlio import load_yaml_mapping, write_yaml_atomic
 
 CONFIG_VERSION = 1
 
@@ -18,9 +18,9 @@ class RepoPaths:
     """POSIX-style paths relative to the repo root."""
 
     sgconfig: str = "sgconfig.yml"
-    project_rules: str = ".byolsp/rules/project"
-    personal_local_rules: str = ".byolsp/rules/personal/local"
-    personal_global_rules: str = ".byolsp/rules/personal/global"
+    project_rules: str = ".byor/rules/project"
+    personal_local_rules: str = ".byor/rules/personal/local"
+    personal_global_rules: str = ".byor/rules/personal/global"
 
 
 @dataclass(frozen=True)
@@ -38,7 +38,7 @@ class CheckDef:
 
 @dataclass
 class RepoConfig:
-    """Tracked repository config: .byolsp/config.yml."""
+    """Tracked repository config: .byor/config.yml."""
 
     project_name: str | None = None
     paths: RepoPaths = field(default_factory=RepoPaths)
@@ -48,7 +48,7 @@ class RepoConfig:
 
 @dataclass
 class LocalConfig:
-    """Untracked per-user repository config: .byolsp/local.yml."""
+    """Untracked per-user repository config: .byor/local.yml."""
 
     excluded_rule_ids: list[str] = field(default_factory=list)
     excluded_checks: list[str] = field(default_factory=list)
@@ -92,11 +92,11 @@ def rule_dir_relpaths(paths: RepoPaths) -> list[str]:
 
 
 def repo_config_path(repo_root: Path) -> Path:
-    return repo_root / ".byolsp" / "config.yml"
+    return repo_root / ".byor" / "config.yml"
 
 
 def local_config_path(repo_root: Path) -> Path:
-    return repo_root / ".byolsp" / "local.yml"
+    return repo_root / ".byor" / "local.yml"
 
 
 def global_config_path(config_dir: Path) -> Path:
@@ -115,7 +115,7 @@ def load_repo_config(repo_root: Path) -> RepoConfig:
     path = repo_config_path(repo_root)
     if not path.is_file():
         raise RepoNotInitialized(
-            f"{repo_root} has no .byolsp/config.yml. Run `byolsp init` first."
+            f"{repo_root} has no .byor/config.yml. Run `byor init` first."
         )
     data = load_yaml_mapping(path)
     _check_version(data, path)
@@ -161,7 +161,7 @@ def save_repo_config(repo_root: Path, config: RepoConfig) -> None:
 
 
 def load_local_config(repo_root: Path) -> LocalConfig:
-    """Load .byolsp/local.yml, defaulting when absent (it is gitignored)."""
+    """Load .byor/local.yml, defaulting when absent (it is gitignored)."""
     path = local_config_path(repo_root)
     if not path.is_file():
         return LocalConfig()

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from byolsp.cli import main
+from byor.cli import main
 
 RULE_TEMPLATE = (
     "id: {rule_id}\n"
@@ -84,12 +84,12 @@ def write_rule(path: Path, rule_id: str, message: str = "Avoid this.") -> Path:
 
 
 def write_global_rule(home: Path, relpath: str, rule_id: str) -> Path:
-    return write_rule(home / "xdg" / "byolsp" / "rules" / relpath, rule_id)
+    return write_rule(home / "xdg" / "byor" / "rules" / relpath, rule_id)
 
 
 def mirror(repo: Path) -> Path:
     """The generated copy of global rules that ast-grep reads in this repo."""
-    return repo / ".byolsp" / "rules" / "personal" / "global"
+    return repo / ".byor" / "rules" / "personal" / "global"
 
 
 def make_editor(directory: Path, content: str) -> str:

@@ -6,21 +6,21 @@ import argparse
 from collections.abc import Sequence
 from pathlib import Path
 
-from byolsp.config import load_repo_config, save_repo_config
-from byolsp.errors import ConfigError
-from byolsp.fsio import MANAGED_MARKER, marked_text_status, write_marked_text
-from byolsp.harness import HARNESS_CHOICES, Harness
-from byolsp.hookconfig import (
+from byor.config import load_repo_config, save_repo_config
+from byor.errors import ConfigError
+from byor.fsio import MANAGED_MARKER, marked_text_status, write_marked_text
+from byor.harness import HARNESS_CHOICES, Harness
+from byor.hookconfig import (
     HookScope,
     install_hook,
     installed_scopes,
     supports_local_scope,
     uninstall_hook,
 )
-from byolsp.opencode import OPENCODE_MARKER, OPENCODE_PLUGIN, OPENCODE_PLUGIN_RELPATH
-from byolsp.paths import resolve_repo_root
-from byolsp.rules import SUPPRESSION_COMMENT
-from byolsp.skill import SKILL_MARKDOWN, SKILL_RELPATHS
+from byor.opencode import OPENCODE_MARKER, OPENCODE_PLUGIN, OPENCODE_PLUGIN_RELPATH
+from byor.paths import resolve_repo_root
+from byor.rules import SUPPRESSION_COMMENT
+from byor.skill import SKILL_MARKDOWN, SKILL_RELPATHS
 
 # The four real-hook harnesses: a set for membership, a map for Harness lookup.
 HOOK_HARNESSES: frozenset[str] = frozenset(HARNESS_CHOICES)
@@ -36,18 +36,18 @@ AGENT_CHOICES = (
     "skill",
 )
 
-AGENT_INSTRUCTIONS_RELPATH = ".byolsp/agents/README.md"
+AGENT_INSTRUCTIONS_RELPATH = ".byor/agents/README.md"
 
 CORE_INSTRUCTION = f"""\
-This repository uses BYOLSP to expose custom ast-grep diagnostics.
+This repository uses BYOR to expose custom ast-grep diagnostics.
 
 After writing or editing code, run:
 
 ```bash
-byolsp agent-check --scope diff --files <changed files>
+byor agent-check --scope diff --files <changed files>
 ```
 
-If BYOLSP reports a diagnostic, fix it before continuing.
+If BYOR reports a diagnostic, fix it before continuing.
 
 If a rule's instruction permits exceptions, only keep the violating code when
 genuinely necessary, and suppress it with
@@ -55,19 +55,19 @@ genuinely necessary, and suppress it with
 """
 
 GENERIC_AGENT_INSTRUCTIONS = (
-    f"{MANAGED_MARKER}\n\n# BYOLSP Agent Instructions\n\n{CORE_INSTRUCTION}"
+    f"{MANAGED_MARKER}\n\n# BYOR Agent Instructions\n\n{CORE_INSTRUCTION}"
 )
 
 # Every harness that auto-discovers skills gets the capture loop.
 SKILL_DISCOVERY_NOTE = (
-    "{harness} also auto-discovers the `byolsp` rule-capture skill at\n"
-    "`.agents/skills/byolsp/SKILL.md`; use it to turn the user's durable\n"
+    "{harness} also auto-discovers the `byor` rule-capture skill at\n"
+    "`.agents/skills/byor/SKILL.md`; use it to turn the user's durable\n"
     "code-style feedback into new ast-grep rules."
 )
 
 
 def run_hook(args: argparse.Namespace) -> int:
-    """`byolsp hook install|uninstall --agent NAME [--hook-scope SCOPE]`.
+    """`byor hook install|uninstall --agent NAME [--hook-scope SCOPE]`.
 
     Installed agents are recorded in ai.agents so doctor and uninstall know
     about them.
@@ -204,7 +204,7 @@ def _skill_render_problems(repo_root: Path) -> list[str]:
     """Both renders must exist and match the canonical content.
 
     A marker-bearing render that drifted from the canonical content counts:
-    `byolsp hook install --agent skill` refreshes it. Unmarked files at these
+    `byor hook install --agent skill` refreshes it. Unmarked files at these
     paths are user-owned and accepted as is.
     """
     problems: list[str] = []
@@ -220,7 +220,7 @@ def _skill_render_problems(repo_root: Path) -> list[str]:
 def _instructions_relpath(agent: str) -> str:
     if agent == "generic":
         return AGENT_INSTRUCTIONS_RELPATH
-    return f".byolsp/agents/{agent}.md"
+    return f".byor/agents/{agent}.md"
 
 
 # Display name and wiring note per instruction-file agent; _agent_instructions
@@ -228,31 +228,31 @@ def _instructions_relpath(agent: str) -> str:
 INSTRUCTION_AGENT_NOTES = {
     "claude-code": (
         "Claude Code",
-        "`byolsp hook install --agent claude-code` registers a real\n"
+        "`byor hook install --agent claude-code` registers a real\n"
         "PostToolUse hook that runs this check automatically; the command\n"
         "above is the manual fallback for files changed another way.",
     ),
     "codex": (
         "Codex",
-        "`byolsp hook install --agent codex` registers a real PostToolUse\n"
+        "`byor hook install --agent codex` registers a real PostToolUse\n"
         "hook (trust it via `/hooks`); Codex also reads repository guidance\n"
         "from `AGENTS.md`, so copy the instruction above there too.",
     ),
     "copilot": (
         "Copilot",
-        "`byolsp hook install --agent copilot` registers a real postToolUse\n"
+        "`byor hook install --agent copilot` registers a real postToolUse\n"
         "hook; GitHub Copilot also reads `.github/copilot-instructions.md`,\n"
         "so copy the instruction above there too.",
     ),
     "cursor": (
         "Cursor",
-        "`byolsp hook install --agent cursor` registers a real postToolUse\n"
+        "`byor hook install --agent cursor` registers a real postToolUse\n"
         "hook in `.cursor/hooks.json`; the command above is the manual\n"
         "fallback for files changed another way.",
     ),
     "opencode": (
         "OpenCode",
-        "The BYOLSP plugin at\n"
+        "The BYOR plugin at\n"
         f"`{OPENCODE_PLUGIN_RELPATH}` hooks `tool.execute.after` and appends\n"
         "diagnostics automatically when an `edit`, `write`, or `apply_patch`\n"
         "call names a single `filePath` — do not rerun `agent-check` for\n"
@@ -267,7 +267,7 @@ def _agent_instructions(agent: str) -> str:
         return GENERIC_AGENT_INSTRUCTIONS
     name, wiring_note = INSTRUCTION_AGENT_NOTES[agent]
     return _instruction_file(
-        f"BYOLSP {name} Instructions",
+        f"BYOR {name} Instructions",
         f"{wiring_note}\n\n{SKILL_DISCOVERY_NOTE.format(harness=name)}",
     )
 
@@ -281,7 +281,7 @@ def _write_managed_file(
 ) -> list[str]:
     result = write_marked_text(repo_root / relpath, content, marker)
     if result == "unmarked":
-        return [f"{relpath} exists without the BYOLSP marker; left untouched."]
+        return [f"{relpath} exists without the BYOR marker; left untouched."]
     if result == "unchanged":
         return []
     return [f"Wrote {relpath}"]
@@ -294,6 +294,6 @@ def _remove_managed_file(
     if not path.is_file():
         return []
     if marker not in path.read_text(encoding="utf-8"):
-        return [f"{relpath} exists without the BYOLSP marker; left untouched."]
+        return [f"{relpath} exists without the BYOR marker; left untouched."]
     path.unlink()
     return [f"Removed {relpath}"]

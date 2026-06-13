@@ -2,7 +2,7 @@
 
 Every harness stores its hooks as a JSON list of entries — at a harness-specific
 key path inside a harness-specific file — where each entry carries a shell
-command. byolsp owns the entries whose command runs `byolsp agent-check`, and
+command. byor owns the entries whose command runs `byor agent-check`, and
 converges them to the current command without touching entries a user added,
 exactly as the original claude-code settings logic did. `HookSpec` captures the
 four edges that differ per harness (file location, key path, entry shape, and
@@ -17,9 +17,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from byolsp.errors import ConfigError
-from byolsp.fsio import write_text_atomic
-from byolsp.harness import Harness, JsonValue
+from byor.errors import ConfigError
+from byor.fsio import write_text_atomic
+from byor.harness import Harness, JsonValue
 
 HookScope = Literal["project", "global", "local"]
 
@@ -27,7 +27,7 @@ HOOK_SCOPES: tuple[HookScope, ...] = ("project", "global")
 
 # agent-check exits 2 with diagnostics, which claude-code reads as feedback;
 # every other harness wants exit 0, so its guard ends with `|| true`.
-BYOLSP_COMMAND_SIGNATURE = "byolsp agent-check --stdin-hook"
+BYOR_COMMAND_SIGNATURE = "byor agent-check --stdin-hook"
 
 
 @dataclass(frozen=True)
@@ -72,8 +72,8 @@ HOOK_SPECS: dict[Harness, HookSpec] = {
     ),
     "copilot": HookSpec(
         harness="copilot",
-        project_relpath=".github/hooks/byolsp.json",
-        global_relpath="hooks/byolsp.json",
+        project_relpath=".github/hooks/byor.json",
+        global_relpath="hooks/byor.json",
         key_path=("postToolUse",),
         matcher=None,
         nests_command=False,
@@ -90,17 +90,17 @@ HOOK_SPECS: dict[Harness, HookSpec] = {
 
 
 def install_hook(repo_root: Path, harness: Harness, scope: HookScope) -> list[str]:
-    """Converge the harness's byolsp hook entry into its config."""
+    """Converge the harness's byor hook entry into its config."""
     spec = HOOK_SPECS[harness]
     path = _config_path(repo_root, spec, scope)
     relpath = _display_relpath(spec, scope)
     config = _load_config(path, relpath)
     entries = _entries(config, spec, relpath)
-    current = _byolsp_entry(spec, scope)
+    current = _byor_entry(spec, scope)
     if current in entries:
         return []
-    kept = [entry for entry in entries if not _is_byolsp_entry(entry)]
-    if any(_contains_byolsp_command(entry) for entry in kept):
+    kept = [entry for entry in entries if not _is_byor_entry(entry)]
+    if any(_contains_byor_command(entry) for entry in kept):
         return []
     _set_entries(config, spec, [*kept, current])
     _save_config(path, config)
@@ -108,7 +108,7 @@ def install_hook(repo_root: Path, harness: Harness, scope: HookScope) -> list[st
 
 
 def uninstall_hook(repo_root: Path, harness: Harness, scope: HookScope) -> list[str]:
-    """Drop byolsp-owned entries from the config; user entries stay."""
+    """Drop byor-owned entries from the config; user entries stay."""
     spec = HOOK_SPECS[harness]
     path = _config_path(repo_root, spec, scope)
     relpath = _display_relpath(spec, scope)
@@ -116,7 +116,7 @@ def uninstall_hook(repo_root: Path, harness: Harness, scope: HookScope) -> list[
         return []
     config = _load_config(path, relpath)
     entries = _entries(config, spec, relpath)
-    kept = [entry for entry in entries if not _is_byolsp_entry(entry)]
+    kept = [entry for entry in entries if not _is_byor_entry(entry)]
     if len(kept) == len(entries):
         return []
     _set_entries(config, spec, kept)
@@ -128,20 +128,20 @@ def uninstall_hook(repo_root: Path, harness: Harness, scope: HookScope) -> list[
 
 
 def hook_installed(repo_root: Path, harness: Harness, scope: HookScope) -> bool:
-    """Whether a byolsp-owned entry is present in the harness config."""
+    """Whether a byor-owned entry is present in the harness config."""
     spec = HOOK_SPECS[harness]
     path = _config_path(repo_root, spec, scope)
     if not path.is_file():
         return False
     relpath = _display_relpath(spec, scope)
     entries = _entries(_load_config(path, relpath), spec, relpath)
-    return any(_contains_byolsp_command(entry) for entry in entries)
+    return any(_contains_byor_command(entry) for entry in entries)
 
 
 def hook_command(harness: Harness, scope: HookScope) -> str:
     """The shell command an entry runs, guarded for shared project scope."""
     spec = HOOK_SPECS[harness]
-    base = f"{BYOLSP_COMMAND_SIGNATURE} {harness}"
+    base = f"{BYOR_COMMAND_SIGNATURE} {harness}"
     if spec.stderr_feedback:
         # The harness reads exit 2 + stderr; the others read JSON on stdout.
         base = f"{base} >&2"
@@ -149,7 +149,7 @@ def hook_command(harness: Harness, scope: HookScope) -> str:
     # global and local configs are personal.
     if scope != "project":
         return base
-    guard = "command -v byolsp >/dev/null 2>&1 &&"
+    guard = "command -v byor >/dev/null 2>&1 &&"
     return f"{guard} {base} || true"
 
 
@@ -200,7 +200,7 @@ def _local_relpath(spec: HookSpec) -> str:
     return spec.local_relpath
 
 
-def _byolsp_entry(spec: HookSpec, scope: HookScope) -> dict[str, JsonValue]:
+def _byor_entry(spec: HookSpec, scope: HookScope) -> dict[str, JsonValue]:
     command = hook_command(spec.harness, scope)
     if spec.nests_command:
         entry: dict[str, JsonValue] = {
@@ -282,18 +282,18 @@ def _descend(config: dict[str, JsonValue], keys: tuple[str, ...]) -> JsonValue:
     return node
 
 
-def _is_byolsp_entry(entry: JsonValue) -> bool:
+def _is_byor_entry(entry: JsonValue) -> bool:
     """True when every command in the entry is ours — the shape we install.
 
     An entry a user mixed their own commands into is user-edited and stays,
     matching the managed-marker rule for files.
     """
     commands = _entry_commands(entry)
-    return bool(commands) and all(_is_byolsp_command(command) for command in commands)
+    return bool(commands) and all(_is_byor_command(command) for command in commands)
 
 
-def _contains_byolsp_command(entry: JsonValue) -> bool:
-    return any(_is_byolsp_command(command) for command in _entry_commands(entry))
+def _contains_byor_command(entry: JsonValue) -> bool:
+    return any(_is_byor_command(command) for command in _entry_commands(entry))
 
 
 def _entry_commands(entry: JsonValue) -> Sequence[JsonValue]:
@@ -306,5 +306,5 @@ def _entry_commands(entry: JsonValue) -> Sequence[JsonValue]:
     return [entry.get("command")]
 
 
-def _is_byolsp_command(command: JsonValue) -> bool:
-    return isinstance(command, str) and BYOLSP_COMMAND_SIGNATURE in command
+def _is_byor_command(command: JsonValue) -> bool:
+    return isinstance(command, str) and BYOR_COMMAND_SIGNATURE in command

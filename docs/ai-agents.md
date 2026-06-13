@@ -1,10 +1,10 @@
 # AI Agents
 
-BYOLSP turns your ast-grep rules into directive feedback for AI coding
+BYOR turns your ast-grep rules into directive feedback for AI coding
 agents. Every agent integration wraps the same command:
 
 ```bash
-byolsp agent-check --scope diff --files <changed files>
+byor agent-check --scope diff --files <changed files>
 ```
 
 Humans keep using `ast-grep scan` directly; `agent-check` exists to render
@@ -13,10 +13,10 @@ use `--stdin-hook HARNESS` instead, which scopes to the exact edited lines.
 
 ## Generic integration
 
-`byolsp init` writes `.byolsp/agents/README.md` with the core instruction:
+`byor init` writes `.byor/agents/README.md` with the core instruction:
 
-> After writing or editing code, run `byolsp agent-check --scope diff --files
-> <changed files>`. If BYOLSP reports a diagnostic, fix it before continuing.
+> After writing or editing code, run `byor agent-check --scope diff --files
+> <changed files>`. If BYOR reports a diagnostic, fix it before continuing.
 > If a
 > rule's instruction permits exceptions, only keep the violating code when
 > genuinely necessary, and suppress it with
@@ -29,13 +29,13 @@ harness's own instruction location) and the loop works.
 ## agent-check
 
 ```bash
-byolsp agent-check [--repo PATH] [--files FILE ...] [--scope edit|diff|file]
+byor agent-check [--repo PATH] [--files FILE ...] [--scope edit|diff|file]
                    [--format text|json] [--max-results N]
 ```
 
 Runs `ast-grep scan --json=compact --include-metadata --color never` on the
 given files (the whole repository when `--files` is omitted) and renders each
-match with the rule's `metadata.byolsp.agent_prompt`, falling back to
+match with the rule's `metadata.byor.agent_prompt`, falling back to
 `message` when the rule has none. It then runs any configured extra checks (see
 [Extra checks](#extra-checks)) on the in-scope files.
 
@@ -50,7 +50,7 @@ Exit codes:
 Text output groups by file and sorts by line, then rule ID:
 
 ```text
-BYOLSP found 1 issue in AI-written code.
+BYOR found 1 issue in AI-written code.
 
 src/example.py:3:9
 Rule: no-python-cast
@@ -86,15 +86,15 @@ back to `diff` then `file` when the edit contents cannot be located. Under
 reads that harness's post-edit JSON payload on stdin, normalizes it to the
 edited file(s) and edit text, and replies in the harness's own feedback format
 (claude-code via stderr + exit 2; codex/copilot/cursor via a JSON envelope on
-stdout). Codex payloads carry an `apply_patch` envelope, which byolsp parses
+stdout). Codex payloads carry an `apply_patch` envelope, which byor parses
 for the added lines. Payloads without a recognizable file — including malformed
 ones — exit 0 without scanning, and hook mode is silent in a repo with no
-`.byolsp/config.yml`, so a hook can never block the agent loop.
+`.byor/config.yml`, so a hook can never block the agent loop.
 
 ## Extra checks
 
 `agent-check` can run extra command-line checks after ast-grep. Declare them
-under `checks:` in `.byolsp/config.yml` (committed, shared with the team) or in
+under `checks:` in `.byor/config.yml` (committed, shared with the team) or in
 the global config (personal, every repo):
 
 ```yaml
@@ -108,7 +108,7 @@ checks:
 the in-scope files whose extension is listed in `extensions` are appended as
 trailing arguments (an empty `extensions` matches every in-scope file). Checks
 merge by `name` with the repo config winning over the global one, and
-`.byolsp/local.yml` disables them per repo:
+`.byor/local.yml` disables them per repo:
 
 ```yaml
 checks:
@@ -119,8 +119,8 @@ checks:
 A check that exits nonzero has its raw stdout and stderr appended under a
 `### <name>` header on the same channel as the diagnostics, and makes
 `agent-check` exit `2`. A check whose command cannot be found prints one
-warning line to stderr and is skipped — it never crashes the hook. `byolsp
-list` and `byolsp doctor` show the effective checks with their origin and any
+warning line to stderr and is skipped — it never crashes the hook. `byor
+list` and `byor doctor` show the effective checks with their origin and any
 exclusions.
 
 Trust model: committed checks run on every contributor's machine, the same
@@ -129,26 +129,26 @@ model as pre-commit hooks. Only add checks whose commands you trust.
 ## Installing and removing integrations
 
 ```bash
-byolsp hook install --agent AGENT [--hook-scope project|global|local]
-byolsp hook uninstall --agent AGENT
+byor hook install --agent AGENT [--hook-scope project|global|local]
+byor hook uninstall --agent AGENT
 ```
 
 `AGENT` is one of `generic`, `claude-code`, `codex`, `copilot`, `cursor`,
 `opencode`, or `skill`. `--hook-scope` chooses where a real hook registers:
-`project` (committed config, with a `command -v byolsp` guard so teammates
-without byolsp are unaffected), `global` (under `~/`, personal), or `local`
-(claude-code's `.claude/settings.local.json` only). `byolsp init` installs the
+`project` (committed config, with a `command -v byor` guard so teammates
+without byor are unaffected), `global` (under `~/`, personal), or `local`
+(claude-code's `.claude/settings.local.json` only). `byor init` installs the
 agents you select (interactively or via `--agents`), plus the harness-neutral
 `skill` by default, asking project vs global once for all hook-capable agents.
-Installed agents are recorded under `ai.agents` in `.byolsp/config.yml`, which
+Installed agents are recorded under `ai.agents` in `.byor/config.yml`, which
 `doctor` and `hook uninstall` use.
 
 Generated files carry the marker
-`<!-- Managed by BYOLSP. Manual edits may be overwritten. -->` (a `//` comment
+`<!-- Managed by BYOR. Manual edits may be overwritten. -->` (a `//` comment
 equivalent in TypeScript). `uninstall` removes only marker-bearing files;
 anything you edited (the marker removed) is preserved with a message.
 
-The global config can carry an `init:` section whose values become `byolsp
+The global config can carry an `init:` section whose values become `byor
 init`'s defaults — the pre-selected answer for each interactive prompt and the
 answer used under `--non-interactive`. An explicit init flag always overrides
 the global default.
@@ -165,16 +165,16 @@ init:
 
 | Agent | Integration |
 | --- | --- |
-| `generic` | Instruction file: `.byolsp/agents/README.md` |
-| `claude-code` | Real `PostToolUse` hook (`.claude/settings.json`, `settings.local.json`, or `~/.claude/settings.json`) plus instruction file `.byolsp/agents/claude-code.md` |
+| `generic` | Instruction file: `.byor/agents/README.md` |
+| `claude-code` | Real `PostToolUse` hook (`.claude/settings.json`, `settings.local.json`, or `~/.claude/settings.json`) plus instruction file `.byor/agents/claude-code.md` |
 | `codex` | Real `PostToolUse` hook (`.codex/hooks.json` or `~/.codex/hooks.json`, matcher `Edit\|Write`) plus instruction file; trust the hook via `/hooks`, and copy the instruction into `AGENTS.md` |
-| `copilot` | Real `postToolUse` hook (`.github/hooks/byolsp.json` or `~/.copilot/hooks/byolsp.json`) plus instruction file; copy the instruction into `.github/copilot-instructions.md` |
-| `cursor` | Real `postToolUse` hook (`.cursor/hooks.json` or `~/.cursor/hooks.json`) plus instruction file `.byolsp/agents/cursor.md` |
-| `opencode` | Real `tool.execute.after` plugin `.opencode/plugin/byolsp.ts` plus instruction file `.byolsp/agents/opencode.md` |
-| `skill` | Rule-capture skill rendered identically into `.agents/skills/byolsp/SKILL.md` and `.claude/skills/byolsp/SKILL.md`; installed by `init` by default |
+| `copilot` | Real `postToolUse` hook (`.github/hooks/byor.json` or `~/.copilot/hooks/byor.json`) plus instruction file; copy the instruction into `.github/copilot-instructions.md` |
+| `cursor` | Real `postToolUse` hook (`.cursor/hooks.json` or `~/.cursor/hooks.json`) plus instruction file `.byor/agents/cursor.md` |
+| `opencode` | Real `tool.execute.after` plugin `.opencode/plugin/byor.ts` plus instruction file `.byor/agents/opencode.md` |
+| `skill` | Rule-capture skill rendered identically into `.agents/skills/byor/SKILL.md` and `.claude/skills/byor/SKILL.md`; installed by `init` by default |
 
-Codex, Copilot, Cursor, and OpenCode auto-discover the `byolsp` rule-capture
-skill from `.agents/skills/byolsp/SKILL.md`, so they get the capture loop
+Codex, Copilot, Cursor, and OpenCode auto-discover the `byor` rule-capture
+skill from `.agents/skills/byor/SKILL.md`, so they get the capture loop
 natively; their instruction files say so.
 
 ### skill
@@ -185,7 +185,7 @@ preference about code syntax or structure — "never use X", "always do Y" —
 the agent:
 
 1. **Drafts** a complete ast-grep rule: id, language, severity, message,
-   `rule.pattern`, and `metadata.byolsp` with a rationale, an imperative
+   `rule.pattern`, and `metadata.byor` with a rationale, an imperative
    `agent_prompt` for future AI readers, and tags.
 2. **Proposes a scope**: `project` for team policy voiced about this
    codebase, `global` for personal preferences that transcend the repo,
@@ -194,7 +194,7 @@ the agent:
    whether exceptions are acceptable — before writing anything. No rule is
    ever created from an offhand remark. When you allow exceptions, the drafted
    `agent_prompt` ends with the standard suppression sentence.
-4. **Creates** the rule via `byolsp add --scope SCOPE --from FILE` (which
+4. **Creates** the rule via `byor add --scope SCOPE --from FILE` (which
    validates, syncs, and runs doctor), then **verifies** it by running
    `ast-grep scan` against an in-repo example of the violation.
 
@@ -206,30 +206,30 @@ which together cover every major harness natively:
 
 | Harness | Reads the skill from |
 | --- | --- |
-| Claude Code | `.claude/skills/byolsp/SKILL.md` |
-| Codex | `.agents/skills/byolsp/SKILL.md` |
-| Copilot | `.agents/skills/byolsp/SKILL.md`; also reads `.claude/skills/` |
-| OpenCode | `.agents/skills/byolsp/SKILL.md`; also reads `.claude/skills/` |
+| Claude Code | `.claude/skills/byor/SKILL.md` |
+| Codex | `.agents/skills/byor/SKILL.md` |
+| Copilot | `.agents/skills/byor/SKILL.md`; also reads `.claude/skills/` |
+| OpenCode | `.agents/skills/byor/SKILL.md`; also reads `.claude/skills/` |
 
-`byolsp init` installs both renders by default;
-`byolsp hook install --agent skill` and `hook uninstall --agent skill` manage
+`byor init` installs both renders by default;
+`byor hook install --agent skill` and `hook uninstall --agent skill` manage
 them explicitly. Both renders are marker-managed: an unmarked file you placed
 at either path is never overwritten by init or hook install. `doctor` checks
 both renders exist and match the packaged content when `skill` is in
-`ai.agents`; a render without the BYOLSP marker is treated as user-owned and
+`ai.agents`; a render without the BYOR marker is treated as user-owned and
 accepted as is.
 
 ### opencode
 
 OpenCode supports real post-edit hooks through TypeScript plugins. Install
-writes `.opencode/plugin/byolsp.ts`, which hooks `tool.execute.after`: when
+writes `.opencode/plugin/byor.ts`, which hooks `tool.execute.after`: when
 the tool is `edit`, `write`, or `apply_patch`, it runs
-`byolsp agent-check --scope diff --files <file>` on the touched file and, on
+`byor agent-check --scope diff --files <file>` on the touched file and, on
 exit 2, appends the diagnostics to the tool output the model sees. Any other
-exit code appends nothing, so a byolsp configuration error never breaks the
+exit code appends nothing, so a byor configuration error never breaks the
 agent loop.
 
-Install also writes the standard instruction file `.byolsp/agents/opencode.md`,
+Install also writes the standard instruction file `.byor/agents/opencode.md`,
 which tells the model the plugin covers `edit`, `write`, and `apply_patch`
 calls that name a single `filePath` (a multi-file `apply_patch` is skipped)
 and to run `agent-check` manually for files changed another way (for example
@@ -240,7 +240,7 @@ via shell commands).
 Install writes a `PostToolUse` hook (matcher `Edit|Write`) into
 `.codex/hooks.json` (project) or `~/.codex/hooks.json` (global). Codex does not
 run a new hook until you trust it: run `/hooks` in the Codex session and approve
-the byolsp entry once. Install also writes the standard instruction file; copy
+the byor entry once. Install also writes the standard instruction file; copy
 its contents into `AGENTS.md`, which Codex reads as repository guidance.
 
 ### claude-code
@@ -259,7 +259,7 @@ preserving existing keys and hook groups:
         "hooks": [
           {
             "type": "command",
-            "command": "byolsp agent-check --stdin-hook claude-code >&2"
+            "command": "byor agent-check --stdin-hook claude-code >&2"
           }
         ]
       }
@@ -268,13 +268,13 @@ preserving existing keys and hook groups:
 }
 ```
 
-A project-scope command is wrapped in a `command -v byolsp` guard so a
-teammate without byolsp is unaffected. Claude Code pipes the tool-call JSON to
+A project-scope command is wrapped in a `command -v byor` guard so a
+teammate without byor is unaffected. Claude Code pipes the tool-call JSON to
 the hook on stdin (which `--stdin-hook claude-code` parses) and, on exit 2,
 feeds the hook's stderr back to the model — hence `>&2`: `agent-check` exits 2
 exactly when there are diagnostics, so the instructions reach the model only
 when something needs fixing.
 
 Install is idempotent. `uninstall` removes only hook groups whose every
-command is byolsp's; a group you mixed your own hooks into counts as
+command is byor's; a group you mixed your own hooks into counts as
 user-edited and stays.

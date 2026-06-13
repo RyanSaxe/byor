@@ -14,17 +14,17 @@ from typing import Literal
 
 from ruamel.yaml.comments import CommentedMap
 
-from byolsp.config import (
+from byor.config import (
     RepoPaths,
     load_local_config,
     load_repo_config,
     save_local_config,
 )
-from byolsp.doctor import quick_doctor_problems
-from byolsp.errors import ByolspError, ConfigError, UnsafeOverwrite
-from byolsp.fsio import write_text_atomic
-from byolsp.paths import display_path, global_config_dir, resolve_repo_root
-from byolsp.rules import (
+from byor.doctor import quick_doctor_problems
+from byor.errors import ByorError, ConfigError, UnsafeOverwrite
+from byor.fsio import write_text_atomic
+from byor.paths import display_path, global_config_dir, resolve_repo_root
+from byor.rules import (
     ALLOW_EXCEPTIONS_SENTENCE,
     Rule,
     RuleScope,
@@ -34,7 +34,7 @@ from byolsp.rules import (
     rule_id_warnings,
     scope_rules_dir,
 )
-from byolsp.sync import (
+from byor.sync import (
     CanonicalRules,
     SyncPlan,
     iter_registered_repos,
@@ -42,7 +42,7 @@ from byolsp.sync import (
     summarize_changes,
     sync_repo,
 )
-from byolsp.yamlio import dump_yaml, parse_yaml_mapping
+from byor.yamlio import dump_yaml, parse_yaml_mapping
 
 DEFAULT_EDITOR = "vi"
 
@@ -54,7 +54,7 @@ message: REPLACE_ME
 rule:
   pattern: REPLACE_ME
 metadata:
-  byolsp:
+  byor:
     rationale: REPLACE_ME
     agent_prompt: REPLACE_ME
     tags: []
@@ -97,7 +97,7 @@ def run_add(args: argparse.Namespace) -> int:
     if args.from_file is None:
         draft = _edit_in_draft(template)
         if draft is None:
-            raise ByolspError("Aborted: the template was left unedited.")
+            raise ByorError("Aborted: the template was left unedited.")
     try:
         if draft is not None:
             rule = load_rule(draft)
@@ -109,11 +109,11 @@ def run_add(args: argparse.Namespace) -> int:
         if destination.exists():
             raise UnsafeOverwrite(
                 f"{display_path(destination, context.repo_root)} already exists; "
-                f"use `byolsp edit {rule.id}` to change it."
+                f"use `byor edit {rule.id}` to change it."
             )
         rule = replace(rule, path=destination)
         _check_conflicts(context, scope, rule, removed=set())
-    except ByolspError as error:
+    except ByorError as error:
         raise _with_draft_hint(error, draft) from error
     if draft is not None:
         draft.unlink()
@@ -137,7 +137,7 @@ def run_edit(args: argparse.Namespace) -> int:
     try:
         rule = replace(load_rule(draft), path=found.path)
         _check_conflicts(context, scope, rule, removed={found.path})
-    except ByolspError as error:
+    except ByorError as error:
         raise _with_draft_hint(error, draft) from error
     draft.unlink()
     _warn_on_id_pattern(rule)
@@ -196,7 +196,7 @@ def run_exclude(args: argparse.Namespace) -> int:
     else:
         local.excluded_rule_ids.append(args.rule_id)
         save_local_config(context.repo_root, local)
-        print(f"Excluded '{args.rule_id}' in .byolsp/local.yml")
+        print(f"Excluded '{args.rule_id}' in .byor/local.yml")
     _sync_and_report(context.repo_root, context.canonical)
     return 0
 
@@ -225,7 +225,7 @@ def _build_template(rule_id: str | None, language: str | None) -> str:
 
 
 def _append_exception_sentence(content: str) -> str:
-    """Rule text whose metadata.byolsp.agent_prompt ends with the standard
+    """Rule text whose metadata.byor.agent_prompt ends with the standard
     exception sentence, creating the metadata path when absent.
 
     A missing agent_prompt is seeded from `message` — the documented fallback —
@@ -238,10 +238,10 @@ def _append_exception_sentence(content: str) -> str:
     if not isinstance(metadata, CommentedMap):
         metadata = CommentedMap()
         data["metadata"] = metadata
-    block = metadata.get("byolsp")
+    block = metadata.get("byor")
     if not isinstance(block, CommentedMap):
         block = CommentedMap()
-        metadata["byolsp"] = block
+        metadata["byor"] = block
     prompt = block.get("agent_prompt")
     if not isinstance(prompt, str):
         prompt = data.get("message")
@@ -268,7 +268,7 @@ def _find_rule(
             if rule.id == rule_id:
                 return scope, rule
     where = "any scope" if requested == "auto" else f"{requested} rules"
-    raise ByolspError(f"No rule with ID '{rule_id}' found in {where}.")
+    raise ByorError(f"No rule with ID '{rule_id}' found in {where}.")
 
 
 def _load_source_rule(source: Path) -> Rule:
@@ -282,7 +282,7 @@ def _edit_in_draft(content: str) -> Path | None:
     draft = _write_draft(content)
     try:
         _open_in_editor(draft)
-    except ByolspError:
+    except ByorError:
         draft.unlink(missing_ok=True)
         raise
     if draft.read_text(encoding="utf-8") == content:
@@ -292,7 +292,7 @@ def _edit_in_draft(content: str) -> Path | None:
 
 
 def _write_draft(content: str) -> Path:
-    handle, name = tempfile.mkstemp(prefix="byolsp-rule-", suffix=".yml")
+    handle, name = tempfile.mkstemp(prefix="byor-rule-", suffix=".yml")
     with os.fdopen(handle, "w", encoding="utf-8") as file:
         file.write(content)
     return Path(name)
@@ -303,10 +303,10 @@ def _open_in_editor(path: Path) -> None:
     argv = [*shlex.split(os.environ.get("EDITOR") or DEFAULT_EDITOR), str(path)]
     result = subprocess.run(argv)
     if result.returncode != 0:
-        raise ByolspError(f"Editor exited with status {result.returncode}; aborting.")
+        raise ByorError(f"Editor exited with status {result.returncode}; aborting.")
 
 
-def _with_draft_hint(error: ByolspError, draft: Path | None) -> ByolspError:
+def _with_draft_hint(error: ByorError, draft: Path | None) -> ByorError:
     """Point at the kept draft file so a failed add/edit never loses work."""
     if draft is None:
         return error
@@ -341,7 +341,7 @@ def _scope_rules(context: RepoContext, scope: RuleScope) -> list[Rule]:
 
 def _warn_on_id_pattern(rule: Rule) -> None:
     for warning in rule_id_warnings([rule]):
-        print(f"byolsp: warning: {warning}", file=sys.stderr)
+        print(f"byor: warning: {warning}", file=sys.stderr)
 
 
 def _scope_dir(context: RepoContext, scope: RuleScope) -> Path:

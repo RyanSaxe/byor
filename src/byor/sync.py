@@ -9,7 +9,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-from byolsp.config import (
+from byor.config import (
     global_rules_dir,
     load_global_config,
     load_local_config,
@@ -18,10 +18,10 @@ from byolsp.config import (
     repo_config_path,
     repo_registry_path,
 )
-from byolsp.fsio import write_text_atomic
-from byolsp.ignore import write_rule_visibility_file
-from byolsp.paths import global_config_dir, resolve_repo_root
-from byolsp.rules import Rule, check_id_conflicts, discover_rule_files, load_rules
+from byor.fsio import write_text_atomic
+from byor.ignore import write_rule_visibility_file
+from byor.paths import global_config_dir, resolve_repo_root
+from byor.rules import Rule, check_id_conflicts, discover_rule_files, load_rules
 
 STALE_EXIT_CODE = 3
 
@@ -101,7 +101,7 @@ def mirror_global_rules(mirror_dir: Path, desired: dict[str, str]) -> MirrorResu
     Copies new and changed files, deletes YAML files not in `desired`, prunes
     empty subdirectories, and leaves non-YAML files (.gitkeep) alone — except
     the `.ignore` file that keeps the git-ignored copies visible to ast-grep,
-    which the mirror restores because the directory is wholly byolsp-owned.
+    which the mirror restores because the directory is wholly byor-owned.
     """
     write_rule_visibility_file(mirror_dir)
     actual = mirror_contents(mirror_dir)
@@ -156,7 +156,7 @@ def heal_repo(repo_root: Path, config_dir: Path) -> str | None:
     _, result = sync_repo(repo_root, load_canonical_rules(config_dir))
     if not result.changed:
         return None
-    return f"byolsp: synced {summarize_changes(result)}"
+    return f"byor: synced {summarize_changes(result)}"
 
 
 def summarize_changes(result: MirrorResult) -> str:
@@ -174,18 +174,18 @@ def iter_registered_repos(config_dir: Path) -> Iterator[Path]:
     """Registered repo roots that exist and are initialized, for fan-out.
 
     Warns on stderr and skips registry entries whose path is gone or that have
-    no .byolsp/config.yml.
+    no .byor/config.yml.
     """
     registry_path = repo_registry_path(config_dir, load_global_config(config_dir))
     for repo_root in load_repo_registry(registry_path):
         if not repo_root.is_dir():
             print(
-                f"byolsp: skipping {repo_root}: path no longer exists",
+                f"byor: skipping {repo_root}: path no longer exists",
                 file=sys.stderr,
             )
         elif not repo_config_path(repo_root).is_file():
             print(
-                f"byolsp: skipping {repo_root}: no .byolsp/config.yml",
+                f"byor: skipping {repo_root}: no .byor/config.yml",
                 file=sys.stderr,
             )
         else:
@@ -228,7 +228,7 @@ def _sync_and_report(repo_root: Path, canonical: CanonicalRules) -> None:
 def _report_staleness(repo_root: Path, canonical: CanonicalRules) -> int:
     """`sync --check`: report without writing; exit 3 when stale."""
     if repo_is_stale(repo_root, canonical):
-        print(f"Sync is stale in {repo_root}; run `byolsp sync`.")
+        print(f"Sync is stale in {repo_root}; run `byor sync`.")
         return STALE_EXIT_CODE
     print(f"Sync is fresh in {repo_root}")
     return 0
@@ -246,7 +246,7 @@ def _skip_reason(
     if rule_id in local_ids:
         return "overridden by local rule"
     if rule_id in excluded:
-        return "excluded in .byolsp/local.yml"
+        return "excluded in .byor/local.yml"
     return None
 
 

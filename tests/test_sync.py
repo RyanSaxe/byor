@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from conftest import make_repo, mirror, write_global_rule, write_rule
 
-from byolsp.cli import main
+from byor.cli import main
 
 
 def sync(repo: Path, *extra: str) -> int:
@@ -71,7 +71,7 @@ def test_excluded_rule_is_skipped_and_its_copy_removed(
     write_global_rule(home, "no-cast.yml", "no-cast")
     sync(repo)
 
-    (repo / ".byolsp" / "local.yml").write_text(
+    (repo / ".byor" / "local.yml").write_text(
         "version: 1\nglobal:\n  excluded_rule_ids:\n    - no-cast\n"
     )
     capsys.readouterr()
@@ -81,7 +81,7 @@ def test_excluded_rule_is_skipped_and_its_copy_removed(
     out = capsys.readouterr().out
     assert f"Synced 0 global rules into {repo}" in out
     assert "Skipped 1 global rule:" in out
-    assert "  no-cast: excluded in .byolsp/local.yml" in out
+    assert "  no-cast: excluded in .byor/local.yml" in out
 
 
 def test_project_rule_with_same_id_suppresses_global_copy(
@@ -89,7 +89,7 @@ def test_project_rule_with_same_id_suppresses_global_copy(
 ) -> None:
     repo = make_repo(home)
     write_global_rule(home, "no-cast.yml", "no-cast")
-    write_rule(repo / ".byolsp" / "rules" / "project" / "no-cast.yml", "no-cast")
+    write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
     capsys.readouterr()
 
     assert sync(repo) == 0
@@ -104,7 +104,7 @@ def test_local_rule_with_same_id_suppresses_global_copy(
     repo = make_repo(home)
     write_global_rule(home, "no-cast.yml", "no-cast")
     write_rule(
-        repo / ".byolsp" / "rules" / "personal" / "local" / "no-cast.yml", "no-cast"
+        repo / ".byor" / "rules" / "personal" / "local" / "no-cast.yml", "no-cast"
     )
     capsys.readouterr()
 
@@ -161,7 +161,7 @@ def test_any_command_self_heals_a_stale_repo(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Running byolsp *anything* makes this repo correct."""
+    """Running byor *anything* makes this repo correct."""
     repo = make_repo(home)
     write_global_rule(home, "no-cast.yml", "no-cast")
     monkeypatch.chdir(repo)
@@ -170,10 +170,10 @@ def test_any_command_self_heals_a_stale_repo(
     main(["list"])
 
     assert (mirror(repo) / "no-cast.yml").is_file()
-    assert "byolsp: synced 1 updated global rule\n" in capsys.readouterr().err
+    assert "byor: synced 1 updated global rule\n" in capsys.readouterr().err
 
     main(["list"])
-    assert "byolsp: synced" not in capsys.readouterr().err
+    assert "byor: synced" not in capsys.readouterr().err
 
 
 def test_sync_all_syncs_registered_repos_and_skips_missing_paths(
@@ -191,6 +191,6 @@ def test_sync_all_syncs_registered_repos_and_skips_missing_paths(
     assert (mirror(first) / "no-cast.yml").is_file()
     assert (mirror(second) / "no-cast.yml").is_file()
     captured = capsys.readouterr()
-    assert f"byolsp: skipping {gone}: path no longer exists" in captured.err
+    assert f"byor: skipping {gone}: path no longer exists" in captured.err
     assert f"Synced 1 global rule into {first}" in captured.out
     assert f"Synced 1 global rule into {second}" in captured.out

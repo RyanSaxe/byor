@@ -3,14 +3,14 @@ from pathlib import Path
 
 import pytest
 
-from byolsp.astgrep import (
+from byor.astgrep import (
     NOT_FOUND_MESSAGE,
     VERSION_PATTERN,
     ast_grep_version,
     resolve_ast_grep,
     scan_files,
 )
-from byolsp.errors import AstGrepNotFound, ByolspError
+from byor.errors import AstGrepNotFound, ByorError
 
 # These tests run `#!/bin/sh` stand-in executables, which Windows cannot exec;
 # the real-ast-grep cases below still exercise the resolver there.
@@ -28,11 +28,11 @@ def fake_executable(path: Path, script: str = 'echo "ast-grep 9.9.9"') -> Path:
 
 @pytest.fixture
 def bin_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """An initially empty PATH, with $BYOLSP_AST_GREP unset."""
+    """An initially empty PATH, with $BYOR_AST_GREP unset."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     monkeypatch.setenv("PATH", str(bin_dir))
-    monkeypatch.delenv("BYOLSP_AST_GREP", raising=False)
+    monkeypatch.delenv("BYOR_AST_GREP", raising=False)
     return bin_dir
 
 
@@ -42,7 +42,7 @@ def test_env_override_wins_over_path(
 ) -> None:
     fake_executable(bin_dir / "ast-grep")
     override = fake_executable(tmp_path / "elsewhere" / "my-sg")
-    monkeypatch.setenv("BYOLSP_AST_GREP", str(override))
+    monkeypatch.setenv("BYOR_AST_GREP", str(override))
 
     assert resolve_ast_grep() == override
 
@@ -80,11 +80,11 @@ def test_resolution_falls_through_to_a_real_ast_grep(bin_dir: Path) -> None:
 def test_env_override_is_honored_or_fails_without_path_fallthrough(
     bin_dir: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # $BYOLSP_AST_GREP wins when set; a non-ast-grep override does
+    # $BYOR_AST_GREP wins when set; a non-ast-grep override does
     # not silently fall through to a valid ast-grep on PATH.
     fake_executable(bin_dir / "ast-grep")
     override = fake_executable(tmp_path / "elsewhere" / "sg", script="exit 1")
-    monkeypatch.setenv("BYOLSP_AST_GREP", str(override))
+    monkeypatch.setenv("BYOR_AST_GREP", str(override))
 
     with pytest.raises(AstGrepNotFound):
         resolve_ast_grep()
@@ -138,7 +138,7 @@ message: Avoid typing.cast in Python code.
 rule:
   pattern: cast($TYPE, $VALUE)
 metadata:
-  byolsp:
+  byor:
     agent_prompt: Fix the type by narrowing instead.
 """
 
@@ -192,5 +192,5 @@ def test_scan_failure_raises_with_ast_grep_message(tmp_path: Path) -> None:
     (tmp_path / "sgconfig.yml").write_text("ruleDirs: 5\n")
     (tmp_path / "src.py").write_text("x = 1\n")
 
-    with pytest.raises(ByolspError, match="scan` failed"):
+    with pytest.raises(ByorError, match="scan` failed"):
         scan_files(resolve_ast_grep(), tmp_path, [tmp_path / "src.py"])

@@ -2,13 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from byolsp.errors import ConfigError
-from byolsp.sgconfig import ensure_rule_dirs
+from byor.errors import ConfigError
+from byor.sgconfig import ensure_rule_dirs
 
 RULE_DIRS = [
-    ".byolsp/rules/project",
-    ".byolsp/rules/personal/local",
-    ".byolsp/rules/personal/global",
+    ".byor/rules/project",
+    ".byor/rules/personal/local",
+    ".byor/rules/personal/global",
 ]
 
 
@@ -28,7 +28,7 @@ def test_appends_missing_entries_preserving_user_content(tmp_path: Path) -> None
         "# team scanner config\n"
         "ruleDirs:\n"
         "  - custom-rules\n"
-        "  - .byolsp/rules/project\n"
+        "  - .byor/rules/project\n"
         "utilDirs:\n"
         "  - utils\n"
     )
@@ -39,9 +39,9 @@ def test_appends_missing_entries_preserving_user_content(tmp_path: Path) -> None
     content = path.read_text()
     assert "# team scanner config" in content
     assert "utils" in content
-    assert content.index("custom-rules") < content.index(".byolsp/rules/project")
-    assert ".byolsp/rules/personal/local" in content
-    assert ".byolsp/rules/personal/global" in content
+    assert content.index("custom-rules") < content.index(".byor/rules/project")
+    assert ".byor/rules/personal/local" in content
+    assert ".byor/rules/personal/global" in content
 
 
 def test_adds_rule_dirs_key_when_absent(tmp_path: Path) -> None:
@@ -49,7 +49,7 @@ def test_adds_rule_dirs_key_when_absent(tmp_path: Path) -> None:
     path.write_text("utilDirs:\n  - utils\n")
 
     assert ensure_rule_dirs(path, RULE_DIRS) == "Updated sgconfig.yml"
-    assert ".byolsp/rules/project" in path.read_text()
+    assert ".byor/rules/project" in path.read_text()
 
 
 def test_no_change_when_already_complete(tmp_path: Path) -> None:
@@ -79,7 +79,7 @@ def test_replace_overwrites_after_timestamped_backup(tmp_path: Path) -> None:
     message = ensure_rule_dirs(path, RULE_DIRS, replace=True)
 
     assert message is not None and "backup" in message
-    backups = list(tmp_path.glob("sgconfig.yml.byolsp-backup-*"))
+    backups = list(tmp_path.glob("sgconfig.yml.byor-backup-*"))
     assert len(backups) == 1
     assert backups[0].read_text() == "ruleDirs: not-a-list\n"
     assert all(rule_dir in path.read_text() for rule_dir in RULE_DIRS)

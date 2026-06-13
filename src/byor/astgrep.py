@@ -16,7 +16,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from byolsp.errors import AstGrepNotFound, ByolspError
+from byor.errors import AstGrepNotFound, ByorError
 
 NOT_FOUND_MESSAGE = (
     "ast-grep is required but was not found.\n"
@@ -34,7 +34,7 @@ VERSION_PATTERN = re.compile(r"\d+(\.\d+)+")
 def resolve_ast_grep(command: str = "auto") -> Path:
     """Locate the ast-grep executable.
 
-    `$BYOLSP_AST_GREP` wins when set. Otherwise a non-`auto` `command` (the
+    `$BYOR_AST_GREP` wins when set. Otherwise a non-`auto` `command` (the
     global config's `ast_grep.command`: a name or absolute path) is used
     exactly, and `auto` tries `ast-grep` then `sg` on PATH.
 
@@ -43,7 +43,7 @@ def resolve_ast_grep(command: str = "auto") -> Path:
     `/usr/bin/sg` is the unix setgroups tool, not ast-grep). Each resolved path
     is probed at most once per call.
     """
-    override = os.environ.get("BYOLSP_AST_GREP")
+    override = os.environ.get("BYOR_AST_GREP")
     if override:
         candidates: tuple[str, ...] = (override,)
     elif command != "auto":
@@ -85,7 +85,7 @@ class ScanMatch:
     """The full source line(s) the match spans."""
 
     agent_prompt: str | None
-    """metadata.byolsp.agent_prompt, when the rule carries one."""
+    """metadata.byor.agent_prompt, when the rule carries one."""
 
 
 @dataclass
@@ -105,7 +105,7 @@ def scan_files(
 
     With no `files`, ast-grep scans the whole repository. The exit code is
     ignored when stdout is valid JSON (error-severity matches make ast-grep
-    exit nonzero); unparseable output raises ByolspError with ast-grep's
+    exit nonzero); unparseable output raises ByorError with ast-grep's
     own message.
     """
     argv = [
@@ -124,7 +124,7 @@ def scan_files(
     if matches is None:
         detail = result.stderr.strip() or result.stdout.strip()
         message = f"`{executable.name} scan` failed (exit {result.returncode})"
-        raise ByolspError(f"{message}:\n{detail}" if detail else message)
+        raise ByorError(f"{message}:\n{detail}" if detail else message)
     return ScanResult(matches=matches, warnings=result.stderr.strip())
 
 
@@ -206,7 +206,7 @@ def _parse_match(match: dict[str, object]) -> ScanMatch:
 def _string_field(match: dict[str, object], key: str) -> str:
     value = match.get(key)
     if not isinstance(value, str):
-        raise ByolspError(f"unexpected ast-grep scan JSON: missing '{key}'")
+        raise ByorError(f"unexpected ast-grep scan JSON: missing '{key}'")
     return value
 
 
@@ -223,13 +223,13 @@ def _match_positions(match: dict[str, object]) -> tuple[int, int, int]:
         or not isinstance(column, int)
         or not isinstance(end_line, int)
     ):
-        raise ByolspError("unexpected ast-grep scan JSON: missing 'range' positions")
+        raise ByorError("unexpected ast-grep scan JSON: missing 'range' positions")
     return line + 1, column + 1, end_line + 1
 
 
 def _agent_prompt(match: dict[str, object]) -> str | None:
-    """metadata.byolsp.agent_prompt; lenient because metadata is optional."""
+    """metadata.byor.agent_prompt; lenient because metadata is optional."""
     metadata = match.get("metadata")
-    byolsp = metadata.get("byolsp") if isinstance(metadata, dict) else None
-    prompt = byolsp.get("agent_prompt") if isinstance(byolsp, dict) else None
+    byor = metadata.get("byor") if isinstance(metadata, dict) else None
+    prompt = byor.get("agent_prompt") if isinstance(byor, dict) else None
     return prompt if isinstance(prompt, str) else None

@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from conftest import make_repo, mirror, write_global_rule, write_rule
 
-from byolsp.cli import main
+from byor.cli import main
 
 
 def remove(repo: Path, rule_id: str, *extra: str) -> int:
@@ -14,22 +14,20 @@ def test_remove_deletes_a_project_rule(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home)
-    target = write_rule(
-        repo / ".byolsp" / "rules" / "project" / "no-cast.yml", "no-cast"
-    )
+    target = write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
     capsys.readouterr()
 
     assert remove(repo, "no-cast") == 0
 
     assert not target.exists()
     out = capsys.readouterr().out
-    assert "Removed project rule 'no-cast' at .byolsp/rules/project/no-cast.yml" in out
+    assert "Removed project rule 'no-cast' at .byor/rules/project/no-cast.yml" in out
 
 
 def test_remove_shadowing_project_rule_lets_the_global_copy_return(home: Path) -> None:
     repo = make_repo(home)
     write_global_rule(home, "no-cast.yml", "no-cast")
-    write_rule(repo / ".byolsp" / "rules" / "project" / "no-cast.yml", "no-cast")
+    write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
     main(["sync", "--repo", str(repo)])
     assert not (mirror(repo) / "no-cast.yml").exists()  # shadowed: copy skipped
 

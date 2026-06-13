@@ -10,9 +10,9 @@ from typing import Literal
 
 from ruamel.yaml.comments import CommentedMap
 
-from byolsp.config import RepoPaths
-from byolsp.errors import ConfigError, DuplicateRuleId, RuleValidationError
-from byolsp.yamlio import parse_yaml_mapping
+from byor.config import RepoPaths
+from byor.errors import ConfigError, DuplicateRuleId, RuleValidationError
+from byor.yamlio import parse_yaml_mapping
 
 RuleScope = Literal["project", "local", "global"]
 
@@ -25,7 +25,7 @@ RECOMMENDED_ID_PATTERN = re.compile(r"[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*")
 SUPPRESSION_COMMENT = "# ast-grep-ignore: <rule-id> -- <short reason>"
 
 # The standard exception sentence an agent_prompt ends with when a rule
-# tolerates exceptions. `byolsp add --allow-exceptions` appends it;
+# tolerates exceptions. `byor add --allow-exceptions` appends it;
 # the capture skill includes it when the user allows exceptions.
 ALLOW_EXCEPTIONS_SENTENCE = (
     f"If this is genuinely necessary, suppress with `{SUPPRESSION_COMMENT}` "
@@ -34,8 +34,8 @@ ALLOW_EXCEPTIONS_SENTENCE = (
 
 
 @dataclass
-class ByolspMetadata:
-    """The optional metadata.byolsp block of a rule file."""
+class ByorMetadata:
+    """The optional metadata.byor block of a rule file."""
 
     rationale: str | None = None
     agent_prompt: str | None = None
@@ -56,7 +56,7 @@ class Rule:
     """The raw file text, so sync can mirror the rule without rereading it."""
 
     severity: str | None = None
-    byolsp: ByolspMetadata = field(default_factory=ByolspMetadata)
+    byor: ByorMetadata = field(default_factory=ByorMetadata)
 
 
 def discover_rule_files(rules_dir: Path) -> list[Path]:
@@ -74,7 +74,7 @@ def load_rule(path: Path) -> Rule:
     """Minimally parse one rule file; every failure message names the file.
 
     Strict only about the fields ast-grep requires. The optional
-    metadata.byolsp block degrades to defaults when malformed: ast-grep
+    metadata.byor block degrades to defaults when malformed: ast-grep
     ignores metadata, and deep validation is doctor's job.
     """
     text = path.read_text(encoding="utf-8")
@@ -96,7 +96,7 @@ def load_rule(path: Path) -> Rule:
         path=path,
         content=text,
         severity=_lenient_string(data, "severity"),
-        byolsp=_byolsp_metadata(data),
+        byor=_byor_metadata(data),
     )
 
 
@@ -168,13 +168,13 @@ def _require_unique_ids(rules: list[Rule], where: str, hint: str | None = None) 
     raise DuplicateRuleId("\n".join(lines))
 
 
-def _byolsp_metadata(data: CommentedMap) -> ByolspMetadata:
+def _byor_metadata(data: CommentedMap) -> ByorMetadata:
     """Lenient by design: a malformed metadata value degrades to its default."""
     metadata = data.get("metadata")
-    block = metadata.get("byolsp") if isinstance(metadata, CommentedMap) else None
+    block = metadata.get("byor") if isinstance(metadata, CommentedMap) else None
     if not isinstance(block, CommentedMap):
-        return ByolspMetadata()
-    return ByolspMetadata(
+        return ByorMetadata()
+    return ByorMetadata(
         rationale=_lenient_string(block, "rationale"),
         agent_prompt=_lenient_string(block, "agent_prompt"),
         docs_url=_lenient_string(block, "docs_url"),

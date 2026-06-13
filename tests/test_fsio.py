@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from byolsp.fsio import write_text_atomic
+from byor.fsio import write_text_atomic
 
 
 def test_write_text_atomic_creates_parents_overwrites_and_leaves_no_temp_files(

@@ -1,4 +1,4 @@
-"""The byolsp rule-capture skill: rendering, installation, doctor."""
+"""The byor rule-capture skill: rendering, installation, doctor."""
 
 import re
 from pathlib import Path
@@ -6,12 +6,12 @@ from pathlib import Path
 import pytest
 from conftest import make_repo
 
-from byolsp.agents import MANAGED_MARKER
-from byolsp.cli import main
-from byolsp.config import load_repo_config
-from byolsp.rules import ALLOW_EXCEPTIONS_SENTENCE
-from byolsp.skill import SKILL_RELPATHS
-from byolsp.yamlio import parse_yaml_mapping
+from byor.agents import MANAGED_MARKER
+from byor.cli import main
+from byor.config import load_repo_config
+from byor.rules import ALLOW_EXCEPTIONS_SENTENCE
+from byor.skill import SKILL_RELPATHS
+from byor.yamlio import parse_yaml_mapping
 
 SKILL_NAME_PATTERN = r"[a-z0-9]+(-[a-z0-9]+)*"
 
@@ -54,7 +54,7 @@ def test_skill_teaches_the_full_capture_loop(home: Path) -> None:
     content = rendered_skill(make_repo(home))
 
     # Create, verify, decline, worked example, and the pattern primer.
-    assert "byolsp add --scope" in content
+    assert "byor add --scope" in content
     assert "--from" in content
     assert "ast-grep scan" in content
     assert "never use print for logging" in content
@@ -76,7 +76,7 @@ def test_hook_uninstall_removes_only_marked_renders(
 
     assert not (repo / SKILL_RELPATHS[0]).exists()
     assert user_render.read_text() == "my own skill\n"
-    assert "without the BYOLSP marker" in capsys.readouterr().out
+    assert "without the BYOR marker" in capsys.readouterr().out
     assert "skill" not in load_repo_config(repo).agents
 
 
@@ -106,6 +106,6 @@ def test_claude_code_install_writes_both_the_hook_and_instructions(home: Path) -
 
     assert main(["hook", "install", "--repo", str(repo), "--agent", "claude-code"]) == 0
 
-    assert (repo / ".byolsp" / "agents" / "claude-code.md").is_file()
+    assert (repo / ".byor" / "agents" / "claude-code.md").is_file()
     assert (repo / ".claude" / "settings.json").is_file()
     assert (repo / SKILL_RELPATHS[1]).is_file()

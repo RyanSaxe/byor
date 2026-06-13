@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 from conftest import make_repo, write_global_rule, write_rule
 
-from byolsp.cli import main
-from byolsp.config import (
+from byor.cli import main
+from byor.config import (
     CheckDef,
     GlobalConfig,
     LocalConfig,
@@ -21,9 +21,9 @@ def list_rules(repo: Path, *extra: str) -> int:
 
 
 def populate(home: Path, repo: Path) -> None:
-    write_rule(repo / ".byolsp" / "rules" / "project" / "no-foo.yml", "no-foo")
+    write_rule(repo / ".byor" / "rules" / "project" / "no-foo.yml", "no-foo")
     write_rule(
-        repo / ".byolsp" / "rules" / "personal" / "local" / "no-bar-local.yml",
+        repo / ".byor" / "rules" / "personal" / "local" / "no-bar-local.yml",
         "no-bar-local",
     )
     write_global_rule(home, "python/no-baz.yml", "no-baz")
@@ -39,9 +39,9 @@ def test_effective_listing_shows_scope_id_and_path(
     assert list_rules(repo) == 0
 
     assert capsys.readouterr().out == (
-        "project  no-foo        .byolsp/rules/project/no-foo.yml\n"
-        "local    no-bar-local  .byolsp/rules/personal/local/no-bar-local.yml\n"
-        "global   no-baz        .byolsp/rules/personal/global/python/no-baz.yml\n"
+        "project  no-foo        .byor/rules/project/no-foo.yml\n"
+        "local    no-bar-local  .byor/rules/personal/local/no-bar-local.yml\n"
+        "global   no-baz        .byor/rules/personal/global/python/no-baz.yml\n"
     )
 
 
@@ -51,8 +51,8 @@ def test_scope_all_appends_skipped_global_rules_with_reasons(
     repo = make_repo(home)
     write_global_rule(home, "no-cast.yml", "no-cast")
     write_global_rule(home, "no-wrap.yml", "no-wrap")
-    write_rule(repo / ".byolsp" / "rules" / "project" / "no-cast.yml", "no-cast")
-    (repo / ".byolsp" / "local.yml").write_text(
+    write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
+    (repo / ".byor" / "local.yml").write_text(
         "version: 1\nglobal:\n  excluded_rule_ids:\n    - no-wrap\n"
     )
     capsys.readouterr()
@@ -60,9 +60,9 @@ def test_scope_all_appends_skipped_global_rules_with_reasons(
     assert list_rules(repo, "--scope", "all") == 0
 
     out = capsys.readouterr().out
-    assert "project  no-cast  .byolsp/rules/project/no-cast.yml\n" in out
+    assert "project  no-cast  .byor/rules/project/no-cast.yml\n" in out
     assert "skipped  no-cast  overridden by project rule\n" in out
-    assert "skipped  no-wrap  excluded in .byolsp/local.yml\n" in out
+    assert "skipped  no-wrap  excluded in .byor/local.yml\n" in out
 
 
 def test_scope_filters_to_one_origin(
@@ -86,7 +86,7 @@ def test_json_lists_rules_and_skips(
     repo = make_repo(home)
     write_global_rule(home, "no-baz.yml", "no-baz")
     write_global_rule(home, "no-cast.yml", "no-cast")
-    write_rule(repo / ".byolsp" / "rules" / "project" / "no-cast.yml", "no-cast")
+    write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
     capsys.readouterr()
 
     assert list_rules(repo, "--scope", "all", "--json") == 0
@@ -95,7 +95,7 @@ def test_json_lists_rules_and_skips(
     assert {
         "scope": "global",
         "id": "no-baz",
-        "path": ".byolsp/rules/personal/global/no-baz.yml",
+        "path": ".byor/rules/personal/global/no-baz.yml",
     } in payload["rules"]
     assert payload["skipped"] == [
         {"id": "no-cast", "reason": "overridden by project rule"}
@@ -106,7 +106,7 @@ def test_list_surfaces_effective_checks_with_origin_and_exclusions(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home)
-    config_dir = home / "xdg" / "byolsp"
+    config_dir = home / "xdg" / "byor"
     save_global_config(
         config_dir,
         GlobalConfig(
@@ -138,5 +138,5 @@ def test_list_fails_cleanly_outside_an_initialized_repo(
     assert list_rules(repo) == 1
 
     captured = capsys.readouterr()
-    assert "byolsp init" in captured.err
+    assert "byor init" in captured.err
     assert "Traceback" not in captured.err

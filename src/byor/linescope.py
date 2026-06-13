@@ -12,7 +12,7 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
-from byolsp.gitio import git_stdout
+from byor.gitio import git_stdout
 
 Range = tuple[int, int]
 """A 1-based inclusive line range."""

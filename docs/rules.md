@@ -1,7 +1,7 @@
 # Rules
 
-BYOLSP rules are real ast-grep YAML files — no second rule language, no
-compiled format. Anything ast-grep accepts works; BYOLSP adds optional
+BYOR rules are real ast-grep YAML files — no second rule language, no
+compiled format. Anything ast-grep accepts works; BYOR adds optional
 metadata that AI hooks use.
 
 ## Rule file format
@@ -16,7 +16,7 @@ message: Avoid typing.cast in Python code.
 rule:
   pattern: cast($TYPE, $VALUE)
 metadata:
-  byolsp:
+  byor:
     rationale: >
       casting hides type model problems and can make invalid assumptions
       invisible to both reviewers and type checkers.
@@ -33,12 +33,12 @@ metadata:
 Required ast-grep fields: `id`, `language`, `rule`, `message`. Recommended:
 `severity`.
 
-Optional `metadata.byolsp` fields, all ignored by ast-grep itself:
+Optional `metadata.byor` fields, all ignored by ast-grep itself:
 
 | Field | Used for |
 | --- | --- |
 | `rationale` | Why the rule exists, for humans reading the file |
-| `agent_prompt` | What `byolsp agent-check` tells an AI agent to do; falls back to `message` when absent |
+| `agent_prompt` | What `byor agent-check` tells an AI agent to do; falls back to `message` when absent |
 | `docs_url` | Link to fuller documentation |
 | `tags` | Free-form labels (default `[]`) |
 
@@ -56,7 +56,7 @@ The comment goes on its own line directly above the violation. Always include
 the rule id (a bare `ast-grep-ignore` silences every rule on the next line)
 and keep the reason short.
 
-`byolsp add --allow-exceptions` ends the new rule's `agent_prompt` with the
+`byor add --allow-exceptions` ends the new rule's `agent_prompt` with the
 standard sentence:
 
 > If this is genuinely necessary, suppress with
@@ -80,11 +80,11 @@ treats duplicate IDs as a hard error).
 
 | Scope | Directory | Meaning |
 | --- | --- | --- |
-| `project` | `.byolsp/rules/project/` | Shared team policy, committed |
-| `local` | `.byolsp/rules/personal/local/` | Private to you and this repo: experiments, preferences, temporary diagnostics |
-| `global` | `~/.config/byolsp/rules/` (canonical) | Your personal rules across every repo |
+| `project` | `.byor/rules/project/` | Shared team policy, committed |
+| `local` | `.byor/rules/personal/local/` | Private to you and this repo: experiments, preferences, temporary diagnostics |
+| `global` | `~/.config/byor/rules/` (canonical) | Your personal rules across every repo |
 
-Global rules are copied into `.byolsp/rules/personal/global/` by sync so
+Global rules are copied into `.byor/rules/personal/global/` by sync so
 ast-grep can read them. That directory is a generated build artifact — never
 edit it by hand; sync mirrors it wholesale (see
 [sync-model.md](sync-model.md)). Organize rules in subdirectories by language
@@ -106,7 +106,7 @@ global copy, no error. Conflicts that ast-grep would see are errors:
 ## Adding rules
 
 ```bash
-byolsp add --scope project|local|global [--id RULE_ID] [--language LANGUAGE]
+byor add --scope project|local|global [--id RULE_ID] [--language LANGUAGE]
            [--from FILE | --edit] [--allow-exceptions]
 ```
 
@@ -118,7 +118,7 @@ byolsp add --scope project|local|global [--id RULE_ID] [--language LANGUAGE]
 - `--allow-exceptions` ends the rule's `agent_prompt` with the standard
   suppression sentence (see [Exceptions](#exceptions)): pre-filled in the
   `--edit` template, appended to the copied rule with `--from`. When the rule
-  has no `metadata.byolsp.agent_prompt`, it is created seeded from `message`
+  has no `metadata.byor.agent_prompt`, it is created seeded from `message`
   so the prompt still carries the fix instruction.
 
 The new rule is written as `<rule-id>.yml` at the scope's rule root, then
@@ -133,25 +133,25 @@ registered repo) and prints any failing `doctor --quick` checks.
 ## Editing rules
 
 ```bash
-byolsp edit RULE_ID [--scope project|local|global|auto]
+byor edit RULE_ID [--scope project|local|global|auto]
 ```
 
 Opens the rule in `$EDITOR`. `auto` (the default) resolves project, then
 local, then canonical global. The global scope always opens the canonical file
-under `~/.config/byolsp/rules/` — never a generated copy under
-`.byolsp/rules/personal/global/`. Leaving the file unchanged prints
+under `~/.config/byor/rules/` — never a generated copy under
+`.byor/rules/personal/global/`. Leaving the file unchanged prints
 `No changes to 'RULE_ID'` and exits 0. The post-action is the same as `add`:
 validate, sync (fan out for global scope), report doctor problems.
 
 ## Removing rules
 
 ```bash
-byolsp remove RULE_ID [--scope project|local|global|auto]
+byor remove RULE_ID [--scope project|local|global|auto]
 ```
 
 Deletes the rule file. Scope resolution is identical to `edit`: `auto` (the
 default) resolves project, then local, then canonical global, and the global
-scope always deletes the canonical file under `~/.config/byolsp/rules/` —
+scope always deletes the canonical file under `~/.config/byor/rules/` —
 never just a generated copy. The post-action is the same as `add` and `edit`:
 sync (global scope fans out to every registered repo, removing the generated
 copies) and `doctor --quick`.
@@ -162,7 +162,7 @@ global copy return on that same sync.
 ## Promotion
 
 ```bash
-byolsp promote RULE_ID --from local|global [--to project] [--replace]
+byor promote RULE_ID --from local|global [--to project] [--replace]
 ```
 
 - `--from local` copies the local rule into project rules and removes the
@@ -181,23 +181,23 @@ exists, promote fails unless `--replace`.
 ## Exclusion
 
 ```bash
-byolsp exclude RULE_ID
-byolsp include RULE_ID
+byor exclude RULE_ID
+byor include RULE_ID
 ```
 
-`exclude` adds the ID to `global.excluded_rule_ids` in `.byolsp/local.yml`
+`exclude` adds the ID to `global.excluded_rule_ids` in `.byor/local.yml`
 (private, gitignored) and syncs, removing the generated copy. `include`
 removes the ID and syncs; if a project or local rule still owns the ID, the
 global rule stays skipped and `include` says so. These commands only affect
 global rules. See what is excluded with:
 
 ```bash
-byolsp list --scope all
+byor list --scope all
 ```
 
 ```text
-project  no-python-cast       .byolsp/rules/project/python/no-python-cast.yml
-skipped  no-one-line-wrapper  excluded in .byolsp/local.yml
+project  no-python-cast       .byor/rules/project/python/no-python-cast.yml
+skipped  no-one-line-wrapper  excluded in .byor/local.yml
 ```
 
 ## Another worked example
@@ -214,7 +214,7 @@ rule:
     def $NAME($$$ARGS):
         return $CALLEE($$$CALL_ARGS)
 metadata:
-  byolsp:
+  byor:
     rationale: >
       A function that only routes to another function often adds call-stack
       noise without creating a useful abstraction.

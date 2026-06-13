@@ -4,8 +4,8 @@ import shlex
 import sys
 from pathlib import Path
 
-from byolsp.checks import EffectiveCheck, effective_checks, run_checks
-from byolsp.config import CheckDef, GlobalConfig, LocalConfig, RepoConfig
+from byor.checks import EffectiveCheck, effective_checks, run_checks
+from byor.config import CheckDef, GlobalConfig, LocalConfig, RepoConfig
 
 
 def _names(checks: list[EffectiveCheck]) -> list[str]:

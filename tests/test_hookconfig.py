@@ -6,10 +6,10 @@ from pathlib import Path
 import pytest
 from conftest import commands_in
 
-from byolsp.errors import ConfigError
-from byolsp.harness import HARNESS_CHOICES, Harness
-from byolsp.hookconfig import (
-    BYOLSP_COMMAND_SIGNATURE,
+from byor.errors import ConfigError
+from byor.harness import HARNESS_CHOICES, Harness
+from byor.hookconfig import (
+    BYOR_COMMAND_SIGNATURE,
     HOOK_SPECS,
     global_hook_dir,
     hook_command,
@@ -39,8 +39,8 @@ def test_project_install_writes_a_guarded_command(
     install_hook(tmp_path, harness, "project")
 
     [command] = commands_in(json.loads(config_text(tmp_path, harness)))
-    assert f"{BYOLSP_COMMAND_SIGNATURE} {harness}" in command
-    assert "command -v byolsp" in command
+    assert f"{BYOR_COMMAND_SIGNATURE} {harness}" in command
+    assert "command -v byor" in command
     assert command.endswith("|| true")
     assert hook_installed(tmp_path, harness, "project")
 
@@ -48,15 +48,15 @@ def test_project_install_writes_a_guarded_command(
 def test_claude_code_global_command_is_unguarded_and_redirects(tmp_path: Path) -> None:
     command = hook_command("claude-code", "global")
 
-    assert command == f"{BYOLSP_COMMAND_SIGNATURE} claude-code >&2"
+    assert command == f"{BYOR_COMMAND_SIGNATURE} claude-code >&2"
 
 
 def test_only_project_scope_carries_the_teammate_guard() -> None:
     # The guard protects shared (committed) project configs; global and local
-    # are personal, so they run byolsp directly.
-    assert "command -v byolsp" in hook_command("claude-code", "project")
-    assert "command -v byolsp" not in hook_command("claude-code", "local")
-    assert "command -v byolsp" not in hook_command("claude-code", "global")
+    # are personal, so they run byor directly.
+    assert "command -v byor" in hook_command("claude-code", "project")
+    assert "command -v byor" not in hook_command("claude-code", "local")
+    assert "command -v byor" not in hook_command("claude-code", "global")
 
 
 @pytest.mark.parametrize("harness", HARNESS_CHOICES)
@@ -69,7 +69,7 @@ def test_install_is_idempotent(harness: Harness, tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("harness", HARNESS_CHOICES)
-def test_uninstall_removes_only_the_byolsp_entry(
+def test_uninstall_removes_only_the_byor_entry(
     harness: Harness, tmp_path: Path
 ) -> None:
     spec = HOOK_SPECS[harness]
@@ -85,7 +85,7 @@ def test_uninstall_removes_only_the_byolsp_entry(
     assert uninstall_hook(tmp_path, harness, "project")
 
     remaining = commands_in(json.loads(config_text(tmp_path, harness)))
-    assert all(BYOLSP_COMMAND_SIGNATURE not in command for command in remaining)
+    assert all(BYOR_COMMAND_SIGNATURE not in command for command in remaining)
     assert not hook_installed(tmp_path, harness, "project")
 
 
@@ -107,7 +107,7 @@ def test_global_scope_writes_under_the_isolated_home(
     assert global_path.is_file()
     [command] = commands_in(json.loads(global_path.read_text()))
     # Global configs are personal: no teammate guard.
-    assert "command -v byolsp" not in command
+    assert "command -v byor" not in command
     assert hook_installed(tmp_path, harness, "global")
 
 
@@ -116,7 +116,7 @@ def test_claude_local_scope_uses_settings_local(tmp_path: Path) -> None:
 
     local = tmp_path / ".claude" / "settings.local.json"
     assert local.is_file()
-    assert BYOLSP_COMMAND_SIGNATURE in local.read_text()
+    assert BYOR_COMMAND_SIGNATURE in local.read_text()
 
 
 def test_install_preserves_unrelated_keys_and_user_entries(tmp_path: Path) -> None:

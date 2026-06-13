@@ -1,4 +1,4 @@
-"""`byolsp agent-check`: ast-grep diagnostics rendered for AI agents."""
+"""`byor agent-check`: ast-grep diagnostics rendered for AI agents."""
 
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
-from byolsp.astgrep import ScanMatch, resolve_ast_grep, scan_files
-from byolsp.checks import CheckOutcome, load_effective_checks, run_checks
-from byolsp.config import load_global_config, repo_config_path
-from byolsp.errors import ByolspError
-from byolsp.harness import EditPayload, Harness, emit, parse_payload
-from byolsp.linescope import Range, diff_ranges, edit_ranges, overlaps
-from byolsp.paths import display_path, global_config_dir, resolve_repo_root
+from byor.astgrep import ScanMatch, resolve_ast_grep, scan_files
+from byor.checks import CheckOutcome, load_effective_checks, run_checks
+from byor.config import load_global_config, repo_config_path
+from byor.errors import ByorError
+from byor.harness import EditPayload, Harness, emit, parse_payload
+from byor.linescope import Range, diff_ranges, edit_ranges, overlaps
+from byor.paths import display_path, global_config_dir, resolve_repo_root
 
 DIAGNOSTICS_EXIT_CODE = 2
 DEFAULT_RENDER_LIMIT = 20
@@ -35,7 +35,7 @@ class Diagnostic:
     message: str
     code: str
     instruction: str
-    """metadata.byolsp.agent_prompt, falling back to the rule message."""
+    """metadata.byor.agent_prompt, falling back to the rule message."""
 
 
 def run_agent_check(args: argparse.Namespace) -> int:
@@ -70,9 +70,9 @@ def _run_files(
 def _run_hook(args: argparse.Namespace, repo_root: Path, harness: Harness) -> int:
     """The `--stdin-hook HARNESS` path: fail-open, never block the agent.
 
-    Any internal byolsp error is swallowed to a silent exit 0 so a global-scope
+    Any internal byor error is swallowed to a silent exit 0 so a global-scope
     hook (which carries no shell `|| true` guard) cannot block the agent loop
-    on a byolsp bug or config problem.
+    on a byor bug or config problem.
     """
     try:
         return _hook_diagnostics(args, repo_root, harness)
@@ -85,8 +85,8 @@ def _hook_diagnostics(
 ) -> int:
     """Parse the payload, scan, and emit per harness.
 
-    Global hooks fire in every repo, so byolsp stays silent (exit 0) where
-    there is no `.byolsp/config.yml` to scope against.
+    Global hooks fire in every repo, so byor stays silent (exit 0) where
+    there is no `.byor/config.yml` to scope against.
     """
     if not repo_config_path(repo_root).is_file():
         return 0
@@ -173,7 +173,7 @@ def _resolve_scope(args: argparse.Namespace, harness: Harness | None) -> Scope:
     scope: str | None = args.scope
     if scope == "edit":
         if harness is None:
-            raise ByolspError(
+            raise ByorError(
                 "--scope edit needs a hook payload; use --stdin-hook, or --scope diff"
             )
         return "edit"
@@ -273,7 +273,7 @@ def render_diagnostics(diagnostics: list[Diagnostic], limit: int) -> list[str]:
         return []
     total = len(diagnostics)
     noun = "issue" if total == 1 else "issues"
-    lines = [f"BYOLSP found {total} {noun} in AI-written code."]
+    lines = [f"BYOR found {total} {noun} in AI-written code."]
     for diagnostic in diagnostics[:limit]:
         lines += [
             "",

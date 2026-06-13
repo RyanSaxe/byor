@@ -12,7 +12,7 @@ NEW_FILE_MODE = 0o666
 
 # The notice is load-bearing for ownership detection; markers in
 # other comment dialects must derive from it so they stay in lockstep.
-MANAGED_NOTICE = "Managed by BYOLSP. Manual edits may be overwritten."
+MANAGED_NOTICE = "Managed by BYOR. Manual edits may be overwritten."
 
 MANAGED_MARKER = f"<!-- {MANAGED_NOTICE} -->"
 
@@ -38,7 +38,7 @@ def marked_text_status(path: Path, content: str, marker: str) -> MarkedTextStatu
 
 
 def write_marked_text(path: Path, content: str, marker: str) -> MarkedWriteResult:
-    """Converge a BYOLSP-managed file to `content`.
+    """Converge a BYOR-managed file to `content`.
 
     Files without the marker are user-owned and never touched.
     """

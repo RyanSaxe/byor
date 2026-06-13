@@ -9,9 +9,9 @@ valid TypeScript.
 
 from __future__ import annotations
 
-from byolsp.fsio import MANAGED_NOTICE
+from byor.fsio import MANAGED_NOTICE
 
-OPENCODE_PLUGIN_RELPATH = ".opencode/plugin/byolsp.ts"
+OPENCODE_PLUGIN_RELPATH = ".opencode/plugin/byor.ts"
 
 OPENCODE_MARKER = f"// {MANAGED_NOTICE}"
 
@@ -19,7 +19,7 @@ OPENCODE_PLUGIN = (
     OPENCODE_MARKER
     + """
 //
-// Runs `byolsp agent-check` after every file-mutating tool call and appends
+// Runs `byor agent-check` after every file-mutating tool call and appends
 // any diagnostics to the tool output so the model fixes them immediately.
 import type { Plugin } from "@opencode-ai/plugin"
 
@@ -35,13 +35,13 @@ const filePathArgument = (args: unknown): string | undefined => {
   return typeof value === "string" ? value : undefined
 }
 
-export const ByolspPlugin: Plugin = async ({ $ }) => ({
+export const ByorPlugin: Plugin = async ({ $ }) => ({
   "tool.execute.after": async (input, output) => {
     if (!FILE_MUTATING_TOOLS.has(input.tool)) return
     const filePath = filePathArgument(input.args)
     if (filePath === undefined) return
-    // nothrow: a byolsp config error (exit 1) must never break the agent loop.
-    const result = await $`byolsp agent-check --scope diff --files ${filePath}`
+    // nothrow: a byor config error (exit 1) must never break the agent loop.
+    const result = await $`byor agent-check --scope diff --files ${filePath}`
       .quiet()
       .nothrow()
     if (result.exitCode === DIAGNOSTICS_EXIT_CODE) {

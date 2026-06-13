@@ -3,11 +3,11 @@ from pathlib import Path
 import pytest
 from conftest import make_repo, mirror, write_global_rule, write_rule
 
-from byolsp.cli import main
+from byor.cli import main
 
 
 def local_yml(repo: Path) -> str:
-    return (repo / ".byolsp" / "local.yml").read_text()
+    return (repo / ".byor" / "local.yml").read_text()
 
 
 def test_exclude_removes_copy_and_include_restores_it(
@@ -23,7 +23,7 @@ def test_exclude_removes_copy_and_include_restores_it(
     assert not (mirror(repo) / "no-cast.yml").exists()
     assert "- no-cast" in local_yml(repo)
     out = capsys.readouterr().out
-    assert "Excluded 'no-cast' in .byolsp/local.yml" in out
+    assert "Excluded 'no-cast' in .byor/local.yml" in out
     assert f"Synced 1 removed global rule into {repo}" in out
 
     assert main(["include", "--repo", str(repo), "no-cast"]) == 0
@@ -40,7 +40,7 @@ def test_include_leaves_rule_skipped_when_project_owns_the_id(
 ) -> None:
     repo = make_repo(home)
     write_global_rule(home, "no-cast.yml", "no-cast")
-    write_rule(repo / ".byolsp" / "rules" / "project" / "no-cast.yml", "no-cast")
+    write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
     main(["exclude", "--repo", str(repo), "no-cast"])
     capsys.readouterr()
 
@@ -71,6 +71,6 @@ def test_exclude_requires_an_initialized_repo(
     assert main(["exclude", "--repo", str(repo), "no-cast"]) == 1
 
     captured = capsys.readouterr()
-    assert "byolsp init" in captured.err
+    assert "byor init" in captured.err
     assert "Traceback" not in captured.err
-    assert not (repo / ".byolsp").exists()
+    assert not (repo / ".byor").exists()

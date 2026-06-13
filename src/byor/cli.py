@@ -1,4 +1,4 @@
-"""Command-line entry point for byolsp."""
+"""Command-line entry point for byor."""
 
 from __future__ import annotations
 
@@ -9,14 +9,14 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import get_args
 
-from byolsp.agents import AGENT_CHOICES
-from byolsp.errors import ByolspError
-from byolsp.harness import HARNESS_CHOICES
-from byolsp.hookconfig import HOOK_SCOPES, HookScope
-from byolsp.ignore import IgnoreMode
+from byor.agents import AGENT_CHOICES
+from byor.errors import ByorError
+from byor.harness import HARNESS_CHOICES
+from byor.hookconfig import HOOK_SCOPES, HookScope
+from byor.ignore import IgnoreMode
 
 COMMANDS = {
-    "init": "Initialize BYOLSP in a repository",
+    "init": "Initialize BYOR in a repository",
     "sync": "Mirror enabled global rules into the repository",
     "doctor": "Validate installation health",
     "add": "Create a new rule in a scope",
@@ -33,11 +33,11 @@ COMMANDS = {
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="byolsp",
+        prog="byor",
         description="Custom ast-grep diagnostics, easy to set up, share, and expose to AI agents.",
     )
     parser.add_argument(
-        "--version", action="version", version=f"byolsp {version('byolsp')}"
+        "--version", action="version", version=f"byor {version('byor')}"
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     for name, help_text in COMMANDS.items():
@@ -66,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
             actions = command.add_subparsers(dest="hook_action", required=True)
             for action_name, action_help in (
                 ("install", "Install agent integration files"),
-                ("uninstall", "Remove BYOLSP-managed agent files"),
+                ("uninstall", "Remove BYOR-managed agent files"),
             ):
                 action = actions.add_parser(action_name, help=action_help)
                 _add_repo_argument(action)
@@ -112,7 +112,7 @@ def _add_init_arguments(command: argparse.ArgumentParser) -> None:
         "--git-hooks",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Install post-merge/post-checkout shims that run `byolsp sync`",
+        help="Install post-merge/post-checkout shims that run `byor sync`",
     )
     command.add_argument(
         "--hook-scope",
@@ -127,7 +127,7 @@ def _add_init_arguments(command: argparse.ArgumentParser) -> None:
     command.add_argument(
         "--no-register",
         action="store_true",
-        help="Skip registering this repository for `byolsp sync --all`",
+        help="Skip registering this repository for `byor sync --all`",
     )
     command.add_argument(
         "--replace-sgconfig",
@@ -311,7 +311,7 @@ def run(args: argparse.Namespace) -> int:
     if args.command not in SELF_SYNCING_COMMANDS and not _is_hook_invocation(args):
         try:
             heal_message = _self_heal_preamble(args)
-        except ByolspError:
+        except ByorError:
             # Doctor's job is reporting problems (e.g. a rule file that does
             # not parse stops sync); its own checks render them as FAIL rows.
             if args.command != "doctor":
@@ -322,54 +322,54 @@ def run(args: argparse.Namespace) -> int:
             print(heal_message, file=sys.stderr)
     if args.command == "init":
         # Deferred so startup (--help, future hot paths) never pays for ruamel.
-        from byolsp.init import run_init
+        from byor.init import run_init
 
         return run_init(args)
     if args.command == "sync":
-        from byolsp.sync import run_sync
+        from byor.sync import run_sync
 
         return run_sync(args)
     if args.command == "doctor":
-        from byolsp.doctor import run_doctor
+        from byor.doctor import run_doctor
 
         return run_doctor(args)
     if args.command == "list":
-        from byolsp.listing import run_list
+        from byor.listing import run_list
 
         return run_list(args)
     if args.command == "add":
-        from byolsp.rule_commands import run_add
+        from byor.rule_commands import run_add
 
         return run_add(args)
     if args.command == "edit":
-        from byolsp.rule_commands import run_edit
+        from byor.rule_commands import run_edit
 
         return run_edit(args)
     if args.command == "remove":
-        from byolsp.rule_commands import run_remove
+        from byor.rule_commands import run_remove
 
         return run_remove(args)
     if args.command == "promote":
-        from byolsp.rule_commands import run_promote
+        from byor.rule_commands import run_promote
 
         return run_promote(args)
     if args.command == "exclude":
-        from byolsp.rule_commands import run_exclude
+        from byor.rule_commands import run_exclude
 
         return run_exclude(args)
     if args.command == "include":
-        from byolsp.rule_commands import run_include
+        from byor.rule_commands import run_include
 
         return run_include(args)
     if args.command == "agent-check":
-        from byolsp.agent_check import run_agent_check
+        from byor.agent_check import run_agent_check
 
         return run_agent_check(args)
     if args.command == "hook":
-        from byolsp.agents import run_hook
+        from byor.agents import run_hook
 
         return run_hook(args)
-    raise ByolspError(f"'{args.command}' is not implemented yet")
+    raise ByorError(f"'{args.command}' is not implemented yet")
 
 
 def _self_heal_preamble(args: argparse.Namespace) -> str | None:
@@ -378,8 +378,8 @@ def _self_heal_preamble(args: argparse.Namespace) -> str | None:
     Returns the one-line heal summary (None when nothing changed) so doctor
     can report what was healed. Uninitialized repos heal silently.
     """
-    from byolsp.paths import global_config_dir, resolve_repo_root
-    from byolsp.sync import heal_repo
+    from byor.paths import global_config_dir, resolve_repo_root
+    from byor.sync import heal_repo
 
     return heal_repo(resolve_repo_root(explicit=args.repo), global_config_dir())
 
@@ -388,8 +388,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return run(args)
-    except ByolspError as error:
-        print(f"byolsp: {error}", file=sys.stderr)
+    except ByorError as error:
+        print(f"byor: {error}", file=sys.stderr)
         return error.exit_code
 
 

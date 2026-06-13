@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 from conftest import git, mirror, write_global_rule, write_rule
 
-from byolsp.astgrep import resolve_ast_grep
-from byolsp.cli import main
+from byor.astgrep import resolve_ast_grep
+from byor.cli import main
 
 VIOLATION = 'from typing import cast\nx = cast(int, "5")\n'
 
@@ -47,7 +47,7 @@ def test_synced_global_rule_is_seen_by_ast_grep_scan(
 
 def test_local_personal_rule_is_seen_by_ast_grep_scan(home: Path) -> None:
     repo = git_repo(home)
-    local_rules = repo / ".byolsp" / "rules" / "personal" / "local"
+    local_rules = repo / ".byor" / "rules" / "personal" / "local"
     write_rule(local_rules / "my-local-rule.yml", "my-local-rule")
     (repo / "app.py").write_text(VIOLATION)
 

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from byolsp.paths import global_config_dir, resolve_repo_root
+from byor.paths import global_config_dir, resolve_repo_root
 
 
 def test_global_config_dir_prefers_xdg_config_home(
@@ -10,7 +10,7 @@ def test_global_config_dir_prefers_xdg_config_home(
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
 
-    assert global_config_dir() == tmp_path / "xdg" / "byolsp"
+    assert global_config_dir() == tmp_path / "xdg" / "byor"
 
 
 def test_global_config_dir_falls_back_to_home_dot_config(
@@ -21,7 +21,7 @@ def test_global_config_dir_falls_back_to_home_dot_config(
     # method so the fallback branch is exercised portably.
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
-    assert global_config_dir() == tmp_path / ".config" / "byolsp"
+    assert global_config_dir() == tmp_path / ".config" / "byor"
 
 
 def test_explicit_repo_wins_over_search(tmp_path: Path) -> None:
@@ -32,10 +32,10 @@ def test_explicit_repo_wins_over_search(tmp_path: Path) -> None:
     assert resolve_repo_root(explicit=elsewhere, start=tmp_path) == elsewhere.resolve()
 
 
-def test_prefers_byolsp_config_over_nearer_git_dir(tmp_path: Path) -> None:
+def test_prefers_byor_config_over_nearer_git_dir(tmp_path: Path) -> None:
     outer = tmp_path / "outer"
-    (outer / ".byolsp").mkdir(parents=True)
-    (outer / ".byolsp" / "config.yml").write_text("version: 1\n")
+    (outer / ".byor").mkdir(parents=True)
+    (outer / ".byor" / "config.yml").write_text("version: 1\n")
     inner = outer / "inner"
     (inner / ".git").mkdir(parents=True)
     start = inner / "src"

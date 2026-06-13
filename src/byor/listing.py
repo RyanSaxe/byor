@@ -1,4 +1,4 @@
-"""`byolsp list`: show rules and where they come from."""
+"""`byor list`: show rules and where they come from."""
 
 from __future__ import annotations
 
@@ -8,11 +8,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
-from byolsp.checks import EffectiveCheck, load_effective_checks
-from byolsp.config import load_repo_config
-from byolsp.paths import display_path, global_config_dir, resolve_repo_root
-from byolsp.rules import load_rules
-from byolsp.sync import load_canonical_rules, repo_sync_plan
+from byor.checks import EffectiveCheck, load_effective_checks
+from byor.config import load_repo_config
+from byor.paths import display_path, global_config_dir, resolve_repo_root
+from byor.rules import load_rules
+from byor.sync import load_canonical_rules, repo_sync_plan
 
 ListScope = Literal["project", "local", "global", "effective", "all"]
 

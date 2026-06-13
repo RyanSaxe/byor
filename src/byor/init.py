@@ -1,4 +1,4 @@
-"""`byolsp init`: create the repository layout and wire up ast-grep."""
+"""`byor init`: create the repository layout and wire up ast-grep."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from byolsp.agents import AGENT_CHOICES, HOOK_HARNESSES, install_agents
-from byolsp.config import (
+from byor.agents import AGENT_CHOICES, HOOK_HARNESSES, install_agents
+from byor.config import (
     GlobalConfig,
     InitDefaults,
     LocalConfig,
@@ -27,19 +27,19 @@ from byolsp.config import (
     save_repo_config,
     save_repo_registry,
 )
-from byolsp.doctor import quick_doctor_problems
-from byolsp.errors import ConfigError, RepoNotInitialized
-from byolsp.githooks import install_git_shims
-from byolsp.hookconfig import HOOK_SCOPES, HookScope
-from byolsp.ignore import (
+from byor.doctor import quick_doctor_problems
+from byor.errors import ConfigError, RepoNotInitialized
+from byor.githooks import install_git_shims
+from byor.hookconfig import HOOK_SCOPES, HookScope
+from byor.ignore import (
     IgnoreMode,
     ignore_file,
     write_ignore_block,
     write_rule_visibility_file,
 )
-from byolsp.paths import display_path, global_config_dir, resolve_repo_root
-from byolsp.sgconfig import ensure_rule_dirs
-from byolsp.sync import load_canonical_rules, summarize_changes, sync_repo
+from byor.paths import display_path, global_config_dir, resolve_repo_root
+from byor.sgconfig import ensure_rule_dirs
+from byor.sync import load_canonical_rules, summarize_changes, sync_repo
 
 
 @dataclass
@@ -61,7 +61,7 @@ def run_init(args: argparse.Namespace) -> int:
     options = _options_from_args(args, defaults)
     for message in initialize_repo(repo_root, config_dir, options):
         print(message)
-    print(f"Initialized BYOLSP in {repo_root}")
+    print(f"Initialized BYOR in {repo_root}")
     return 0
 
 
@@ -88,7 +88,7 @@ def initialize_repo(
     if options.register and register_repo(
         repo_root, repo_registry_path(config_dir, global_config)
     ):
-        messages.append("Registered repository for `byolsp sync --all`")
+        messages.append("Registered repository for `byor sync --all`")
     _, sync_result = sync_repo(repo_root, load_canonical_rules(config_dir))
     if sync_result.changed:
         messages.append(f"Synced {summarize_changes(sync_result)}")
@@ -112,7 +112,7 @@ def _bootstrap_global_dir(config_dir: Path) -> GlobalConfig:
 
 
 def _ensure_repo_layout(repo_root: Path, agents: list[str]) -> RepoConfig:
-    """Create .byolsp/ config files and rule directories."""
+    """Create .byor/ config files and rule directories."""
     config = _load_or_default_repo_config(repo_root)
     new_agents = [agent for agent in agents if agent not in config.agents]
     config.agents.extend(new_agents)
@@ -201,7 +201,7 @@ def _resolve_hook_scope(
 
 def _prompt_hook_scope(default: HookScope) -> HookScope:
     choice = _prompt_choice(
-        "Where should byolsp register agent hooks?",
+        "Where should byor register agent hooks?",
         ("project (committed, shared with the team)", "global (~/, personal)"),
         default=HOOK_SCOPES.index(default),
     )
@@ -246,7 +246,7 @@ def _default_agent_numbers(default: list[str] | None) -> str:
 
 def _prompt_ignore_mode(default: IgnoreMode) -> IgnoreMode:
     choice = _prompt_choice(
-        "Where should byolsp write its git ignore entries?",
+        "Where should byor write its git ignore entries?",
         ("project .gitignore (team-visible)", "local .git/info/exclude (private)"),
         default=1 if default == "local" else 0,
     )
@@ -255,7 +255,7 @@ def _prompt_ignore_mode(default: IgnoreMode) -> IgnoreMode:
 
 def _prompt_git_hooks(default: bool) -> bool:
     choice = _prompt_choice(
-        "Install git hook shims that run `byolsp sync` after merge and checkout?",
+        "Install git hook shims that run `byor sync` after merge and checkout?",
         ("no", "yes"),
         default=1 if default else 0,
     )

@@ -1,5 +1,5 @@
 [project]
-name = "byolsp"
+name = "byor"
 version = "0.1.0"
 description = "Make custom ast-grep diagnostics easy to set up, share, and expose to AI agents"
 readme = "README.md"
@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-byolsp = "byolsp.cli:main"
+byor = "byor.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.11.16,<0.12.0"]

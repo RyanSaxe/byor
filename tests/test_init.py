@@ -5,28 +5,28 @@ from pathlib import Path
 import pytest
 from conftest import git
 
-from byolsp.agents import MANAGED_MARKER
-from byolsp.cli import main
-from byolsp.config import (
+from byor.agents import MANAGED_MARKER
+from byor.cli import main
+from byor.config import (
     GlobalConfig,
     InitDefaults,
     load_repo_config,
     load_repo_registry,
     save_global_config,
 )
-from byolsp.ignore import IGNORED_PATTERNS
+from byor.ignore import IGNORED_PATTERNS
 
 TRACKED_FILES = (
     "sgconfig.yml",
-    ".byolsp/config.yml",
-    ".byolsp/rules/project/.gitkeep",
-    ".byolsp/rules/personal/local/.gitkeep",
-    ".byolsp/rules/personal/local/.ignore",
-    ".byolsp/rules/personal/global/.gitkeep",
-    ".byolsp/rules/personal/global/.ignore",
-    ".byolsp/agents/README.md",
-    ".agents/skills/byolsp/SKILL.md",
-    ".claude/skills/byolsp/SKILL.md",
+    ".byor/config.yml",
+    ".byor/rules/project/.gitkeep",
+    ".byor/rules/personal/local/.gitkeep",
+    ".byor/rules/personal/local/.ignore",
+    ".byor/rules/personal/global/.gitkeep",
+    ".byor/rules/personal/global/.ignore",
+    ".byor/agents/README.md",
+    ".agents/skills/byor/SKILL.md",
+    ".claude/skills/byor/SKILL.md",
 )
 
 
@@ -40,7 +40,7 @@ def repo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 
 def config_dir(repo: Path) -> Path:
-    return repo.parent / "xdg" / "byolsp"
+    return repo.parent / "xdg" / "byor"
 
 
 def init(repo: Path, *extra: str) -> int:
@@ -52,14 +52,14 @@ def test_init_creates_repository_and_global_layout(repo: Path) -> None:
 
     for relpath in TRACKED_FILES:
         assert (repo / relpath).is_file(), relpath
-    assert (repo / ".byolsp" / "local.yml").is_file()
-    assert MANAGED_MARKER in (repo / ".byolsp" / "agents" / "README.md").read_text()
+    assert (repo / ".byor" / "local.yml").is_file()
+    assert MANAGED_MARKER in (repo / ".byor" / "agents" / "README.md").read_text()
 
     sgconfig = (repo / "sgconfig.yml").read_text()
     for rule_dir in (
-        ".byolsp/rules/project",
-        ".byolsp/rules/personal/local",
-        ".byolsp/rules/personal/global",
+        ".byor/rules/project",
+        ".byor/rules/personal/local",
+        ".byor/rules/personal/global",
     ):
         assert rule_dir in sgconfig
 
@@ -93,7 +93,7 @@ def test_init_preserves_existing_sgconfig_content(repo: Path) -> None:
     assert "# team config" in content
     assert "custom-rules" in content
     assert "utils" in content
-    assert ".byolsp/rules/personal/global" in content
+    assert ".byor/rules/personal/global" in content
 
 
 def test_init_rejects_non_list_rule_dirs_without_traceback(
@@ -114,10 +114,10 @@ def test_replace_sgconfig_backs_up_then_overwrites(repo: Path) -> None:
 
     assert init(repo, "--replace-sgconfig") == 0
 
-    backups = list(repo.glob("sgconfig.yml.byolsp-backup-*"))
+    backups = list(repo.glob("sgconfig.yml.byor-backup-*"))
     assert len(backups) == 1
     assert backups[0].read_text() == "ruleDirs: not-a-list\n"
-    assert ".byolsp/rules/project" in (repo / "sgconfig.yml").read_text()
+    assert ".byor/rules/project" in (repo / "sgconfig.yml").read_text()
 
 
 def test_local_ignore_mode_uses_git_info_exclude(repo: Path) -> None:
@@ -127,7 +127,7 @@ def test_local_ignore_mode_uses_git_info_exclude(repo: Path) -> None:
     assert init(repo, "--ignore-mode", "local") == 0
 
     exclude = (repo / ".git" / "info" / "exclude").read_text()
-    assert exclude.count(".byolsp/local.yml") == 1
+    assert exclude.count(".byor/local.yml") == 1
     assert not (repo / ".gitignore").exists()
 
 
@@ -154,14 +154,14 @@ def test_no_register_creates_empty_registry(repo: Path) -> None:
 def test_unmarked_agent_instructions_are_preserved(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    readme = repo / ".byolsp" / "agents" / "README.md"
+    readme = repo / ".byor" / "agents" / "README.md"
     readme.parent.mkdir(parents=True)
     readme.write_text("my own notes\n")
 
     assert init(repo) == 0
 
     assert readme.read_text() == "my own notes\n"
-    assert "without the BYOLSP marker" in capsys.readouterr().out
+    assert "without the BYOR marker" in capsys.readouterr().out
 
 
 def test_git_hooks_without_a_git_dir_fail_cleanly(
@@ -181,13 +181,13 @@ def test_init_ends_with_quick_doctor_surfacing_problems(
     empty_bin = repo.parent / "empty-bin"
     empty_bin.mkdir()
     monkeypatch.setenv("PATH", str(empty_bin))
-    monkeypatch.delenv("BYOLSP_AST_GREP", raising=False)
+    monkeypatch.delenv("BYOR_AST_GREP", raising=False)
 
     assert init(repo) == 0
 
     out = capsys.readouterr().out
     assert "doctor: ast_grep_found: ast-grep is required but was not found." in out
-    assert f"Initialized BYOLSP in {repo}" in out
+    assert f"Initialized BYOR in {repo}" in out
 
 
 def test_interactive_prompts_drive_agents_ignore_mode_and_hooks(

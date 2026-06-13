@@ -11,7 +11,7 @@ from conftest import (
     write_rule,
 )
 
-from byolsp.cli import main
+from byor.cli import main
 
 
 def edit(repo: Path, rule_id: str, *extra: str) -> int:
@@ -26,9 +26,7 @@ def test_edit_updates_a_project_rule_in_place(
     home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home)
-    target = write_rule(
-        repo / ".byolsp" / "rules" / "project" / "no-cast.yml", "no-cast"
-    )
+    target = write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
     replacement = rule_text("no-cast")
     monkeypatch.setenv("EDITOR", make_editor(home, replacement))
     capsys.readouterr()
@@ -37,7 +35,7 @@ def test_edit_updates_a_project_rule_in_place(
 
     assert target.read_text() == replacement
     out = capsys.readouterr().out
-    assert "Updated project rule 'no-cast' at .byolsp/rules/project/no-cast.yml" in out
+    assert "Updated project rule 'no-cast' at .byor/rules/project/no-cast.yml" in out
 
 
 def test_edit_auto_prefers_project_over_global(
@@ -46,7 +44,7 @@ def test_edit_auto_prefers_project_over_global(
     repo = make_repo(home)
     canonical = write_global_rule(home, "no-cast.yml", "no-cast")
     project = write_rule(
-        repo / ".byolsp" / "rules" / "project" / "no-cast.yml", "no-cast"
+        repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast"
     )
     replacement = rule_text("no-cast")
     monkeypatch.setenv("EDITOR", make_editor(home, replacement))
@@ -94,9 +92,7 @@ def test_edit_rejects_an_invalid_result_and_keeps_the_original(
     home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home)
-    target = write_rule(
-        repo / ".byolsp" / "rules" / "project" / "no-cast.yml", "no-cast"
-    )
+    target = write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
     original = target.read_text()
     monkeypatch.setenv("EDITOR", make_editor(home, "id: no-cast\n"))
 
@@ -112,9 +108,7 @@ def test_edit_with_no_changes_is_a_quiet_no_op(
     home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home)
-    target = write_rule(
-        repo / ".byolsp" / "rules" / "project" / "no-cast.yml", "no-cast"
-    )
+    target = write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
     original = target.read_text()
     monkeypatch.setenv("EDITOR", noop_editor())
     capsys.readouterr()
@@ -129,9 +123,9 @@ def test_edit_rejects_an_id_change_that_collides_with_another_scope(
     home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home)
-    write_rule(repo / ".byolsp" / "rules" / "project" / "no-cast.yml", "no-cast")
+    write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
     local = write_rule(
-        repo / ".byolsp" / "rules" / "personal" / "local" / "mine.yml", "mine"
+        repo / ".byor" / "rules" / "personal" / "local" / "mine.yml", "mine"
     )
     original = local.read_text()
     monkeypatch.setenv("EDITOR", make_editor(home, rule_text("no-cast")))

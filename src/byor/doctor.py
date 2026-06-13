@@ -1,4 +1,4 @@
-"""`byolsp doctor`: actionable installation health checks."""
+"""`byor doctor`: actionable installation health checks."""
 
 from __future__ import annotations
 
@@ -8,10 +8,10 @@ from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from byolsp.agents import agent_file_problems
-from byolsp.astgrep import ast_grep_version, resolve_ast_grep
-from byolsp.checks import effective_checks
-from byolsp.config import (
+from byor.agents import agent_file_problems
+from byor.astgrep import ast_grep_version, resolve_ast_grep
+from byor.checks import effective_checks
+from byor.config import (
     GlobalConfig,
     RepoConfig,
     RepoPaths,
@@ -22,18 +22,18 @@ from byolsp.config import (
     repo_registry_path,
     rule_dir_relpaths,
 )
-from byolsp.errors import (
+from byor.errors import (
     AstGrepNotFound,
     ConfigError,
     DuplicateRuleId,
     RepoNotInitialized,
     RuleValidationError,
 )
-from byolsp.ignore import rule_visibility_ok
-from byolsp.paths import global_config_dir, resolve_repo_root
-from byolsp.rules import load_rules
-from byolsp.sync import compute_sync_plan, load_canonical_rules, mirror_contents
-from byolsp.yamlio import load_yaml_mapping
+from byor.ignore import rule_visibility_ok
+from byor.paths import global_config_dir, resolve_repo_root
+from byor.rules import load_rules
+from byor.sync import compute_sync_plan, load_canonical_rules, mirror_contents
+from byor.yamlio import load_yaml_mapping
 
 
 @dataclass
@@ -111,15 +111,13 @@ def _repo_config_check(repo_root: Path) -> tuple[RepoConfig, Check]:
         config = load_repo_config(repo_root)
     except (RepoNotInitialized, ConfigError) as error:
         return RepoConfig(), Check("repo_config", False, str(error))
-    return config, Check("repo_config", True, ".byolsp/config.yml is valid")
+    return config, Check("repo_config", True, ".byor/config.yml is valid")
 
 
 def _sgconfig_check(repo_root: Path, paths: RepoPaths) -> Check:
     sgconfig = repo_root / paths.sgconfig
     if not sgconfig.is_file():
-        return Check(
-            "sgconfig", False, f"{paths.sgconfig} is missing; run `byolsp init`"
-        )
+        return Check("sgconfig", False, f"{paths.sgconfig} is missing; run `byor init`")
     try:
         data = load_yaml_mapping(sgconfig)
     except ConfigError as error:
@@ -136,7 +134,7 @@ def _sgconfig_check(repo_root: Path, paths: RepoPaths) -> Check:
             False,
             f"{paths.sgconfig} ruleDirs is missing: {', '.join(missing)}",
         )
-    return Check("sgconfig", True, f"{paths.sgconfig} lists all BYOLSP rule dirs")
+    return Check("sgconfig", True, f"{paths.sgconfig} lists all BYOR rule dirs")
 
 
 def _rule_dirs_check(repo_root: Path, paths: RepoPaths) -> Check:
@@ -145,7 +143,7 @@ def _rule_dirs_check(repo_root: Path, paths: RepoPaths) -> Check:
         return Check(
             "rule_dirs",
             False,
-            f"missing rule directories: {', '.join(missing)}; run `byolsp init`",
+            f"missing rule directories: {', '.join(missing)}; run `byor init`",
         )
     return Check("rule_dirs", True, "all rule directories exist")
 
@@ -161,7 +159,7 @@ def _rule_visibility_check(repo_root: Path, paths: RepoPaths) -> Check:
             "rules_visible",
             False,
             f"{', '.join(broken)} lacks the .ignore negations ast-grep needs"
-            " to load git-ignored rules; run `byolsp init`",
+            " to load git-ignored rules; run `byor init`",
         )
     return Check(
         "rules_visible", True, "personal rule directories are visible to ast-grep"
@@ -186,7 +184,7 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, config_dir: Path) -> list[Ch
         return checks
     checks.append(Check("rule_ids_unique", True, "effective rule IDs are unique"))
     if mirror_contents(repo_root / paths.personal_global_rules) != plan.desired:
-        message = "global rule copies are stale; run `byolsp sync`"
+        message = "global rule copies are stale; run `byor sync`"
         checks.append(Check("sync_fresh", False, message))
     else:
         checks.append(Check("sync_fresh", True, "global rule copies are in sync"))
@@ -235,7 +233,7 @@ def _agent_files_check(repo_root: Path, repo_config: RepoConfig) -> Check:
         return Check(
             "agent_files",
             False,
-            f"{'; '.join(problems)}; run `byolsp hook install`",
+            f"{'; '.join(problems)}; run `byor hook install`",
         )
     agents = ", ".join(repo_config.agents)
     return Check("agent_files", True, f"agent files installed for: {agents}")

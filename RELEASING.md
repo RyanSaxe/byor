@@ -1,6 +1,6 @@
-# Releasing BYOLSP
+# Releasing BYOR
 
-Releases are published to [PyPI](https://pypi.org/project/byolsp/) by the
+Releases are published to [PyPI](https://pypi.org/project/byor/) by the
 `Release` workflow when a GitHub Release is published. The version lives in
 `pyproject.toml`; git tags and GitHub Releases drive the publish.
 
@@ -12,9 +12,9 @@ a **pending publisher** on PyPI (works before the project exists):
 
 1. Sign in at <https://pypi.org/manage/account/publishing/>.
 2. Add a pending publisher:
-   - PyPI Project Name: `byolsp`
+   - PyPI Project Name: `byor`
    - Owner: `RyanSaxe`
-   - Repository: `byolsp`
+   - Repository: `byor`
    - Workflow name: `release.yml`
    - Environment: `pypi`
 3. In the GitHub repo settings, create an Environment named `pypi`
@@ -41,7 +41,7 @@ a **pending publisher** on PyPI (works before the project exists):
    git push
    ```
 
-5. Publish a [GitHub Release](https://github.com/RyanSaxe/byolsp/releases/new)
+5. Publish a [GitHub Release](https://github.com/RyanSaxe/byor/releases/new)
    with tag `vX.Y.Z` (matching the bumped version) and notes from the changelog.
 
 The workflow then verifies the tag matches `pyproject.toml`, runs the gates,
