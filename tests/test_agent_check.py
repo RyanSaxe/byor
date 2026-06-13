@@ -2,26 +2,14 @@
 
 import io
 import json
-import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
-from conftest import make_repo
+from conftest import commit_file, git, make_repo
 
 from byolsp.cli import main
-
-
-@pytest.fixture(autouse=True)
-def clean_git_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """GIT_* vars leak in when pytest runs inside a git hook (pre-commit) and
-    would redirect the git calls below at the byolsp repo itself."""
-    for name in list(os.environ):
-        if name.startswith("GIT_"):
-            monkeypatch.delenv(name)
-
 
 CAST_PROMPT = (
     "Do not use typing.cast here. Fix the type by narrowing, changing the "
@@ -213,22 +201,9 @@ def test_stdin_hook_without_a_file_path_scans_nothing(
     assert capsys.readouterr().out == ""
 
 
-def git(repo: Path, *argv: str) -> None:
-    subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@t", *argv],
-        cwd=repo,
-        capture_output=True,
-        check=True,
-    )
-
-
 def commit_violation(repo: Path) -> Path:
     git(repo, "init", "--quiet")
-    source = repo / "src.py"
-    source.write_text("a = cast(int, 1)\n")
-    git(repo, "add", "src.py")
-    git(repo, "commit", "--quiet", "-m", "add src")
-    return source
+    return commit_file(repo, "src.py", "a = cast(int, 1)\n")
 
 
 def test_diff_scope_silences_committed_violations_file_scope_reports(

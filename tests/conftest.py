@@ -1,6 +1,8 @@
 """Shared scaffolding for CLI-level tests: an isolated home plus rule writers."""
 
+import os
 import shlex
+import subprocess
 import sys
 from pathlib import Path
 
@@ -22,6 +24,35 @@ def home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     """A sandbox holding repos and the global config dir (via XDG_CONFIG_HOME)."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     return tmp_path
+
+
+@pytest.fixture(autouse=True)
+def clean_git_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """GIT_* vars leak in when pytest itself runs inside a git hook (pre-commit)
+    and would redirect the nested git calls tests make at tmp repos."""
+    for name in list(os.environ):
+        if name.startswith("GIT_"):
+            monkeypatch.delenv(name)
+
+
+def git(repo: Path, *argv: str) -> str:
+    """Run git in `repo` with an inline throwaway identity; returns stdout."""
+    result = subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@t", *argv],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout
+
+
+def commit_file(repo: Path, name: str, content: str) -> Path:
+    file = repo / name
+    file.write_text(content)
+    git(repo, "add", name)
+    git(repo, "commit", "--quiet", "-m", f"add {name}")
+    return file
 
 
 def make_repo(home: Path, name: str = "repo", *extra: str) -> Path:

@@ -1,22 +1,10 @@
 """Line-range scoping: edit location, diff hunks, and overlap (SPEC 28.3)."""
 
-import os
-import subprocess
 from pathlib import Path
 
-import pytest
+from conftest import commit_file, git
 
 from byolsp.linescope import diff_ranges, edit_ranges, merge_ranges, overlaps
-
-
-@pytest.fixture(autouse=True)
-def clean_git_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """GIT_* vars leak in when pytest runs inside a git hook (pre-commit) and
-    would redirect the git calls below at the byolsp repo itself."""
-    for name in list(os.environ):
-        if name.startswith("GIT_"):
-            monkeypatch.delenv(name)
-
 
 TEXT = "alpha\nbravo\ncharlie\ndelta\necho\n"
 
@@ -64,25 +52,11 @@ def test_merge_ranges_coalesces_overlapping_and_adjacent() -> None:
     assert merge_ranges([(5, 6), (1, 2), (3, 3), (5, 9)]) == [(1, 3), (5, 9)]
 
 
-def git(repo: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
-
-
 def make_git_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir()
     git(repo, "init", "--quiet")
-    git(repo, "config", "user.email", "test@example.com")
-    git(repo, "config", "user.name", "Test")
     return repo
-
-
-def commit_file(repo: Path, name: str, content: str) -> Path:
-    file = repo / name
-    file.write_text(content)
-    git(repo, "add", name)
-    git(repo, "commit", "--quiet", "-m", f"add {name}")
-    return file
 
 
 def test_diff_ranges_reports_changed_and_inserted_lines(tmp_path: Path) -> None:
