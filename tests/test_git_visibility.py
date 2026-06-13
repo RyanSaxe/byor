@@ -9,10 +9,10 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from conftest import git, mirror, write_global_rule, write_rule
+from support import git, mirror, write_global_rule, write_rule
 
-from byor.astgrep import resolve_ast_grep
 from byor.cli import main
+from byor.scan.astgrep import resolve_ast_grep
 
 VIOLATION = 'from typing import cast\nx = cast(int, "5")\n'
 

@@ -9,11 +9,11 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import get_args
 
-from byor.agents import AGENT_CHOICES
+from byor.agents.harness import HARNESS_CHOICES
+from byor.agents.hookconfig import HOOK_SCOPES, HookScope
+from byor.agents.install import AGENT_CHOICES
 from byor.errors import ByorError
-from byor.harness import HARNESS_CHOICES
-from byor.hookconfig import HOOK_SCOPES, HookScope
-from byor.ignore import IgnoreMode
+from byor.scaffold.ignore import IgnoreMode
 
 COMMANDS = {
     "init": "Initialize BYOR in a repository",
@@ -322,51 +322,51 @@ def run(args: argparse.Namespace) -> int:
             print(heal_message, file=sys.stderr)
     if args.command == "init":
         # Deferred so startup (--help, future hot paths) never pays for ruamel.
-        from byor.init import run_init
+        from byor.commands.init import run_init
 
         return run_init(args)
     if args.command == "sync":
-        from byor.sync import run_sync
+        from byor.rules.sync import run_sync
 
         return run_sync(args)
     if args.command == "doctor":
-        from byor.doctor import run_doctor
+        from byor.commands.doctor import run_doctor
 
         return run_doctor(args)
     if args.command == "list":
-        from byor.listing import run_list
+        from byor.commands.listing import run_list
 
         return run_list(args)
     if args.command == "add":
-        from byor.rule_commands import run_add
+        from byor.rules.commands import run_add
 
         return run_add(args)
     if args.command == "edit":
-        from byor.rule_commands import run_edit
+        from byor.rules.commands import run_edit
 
         return run_edit(args)
     if args.command == "remove":
-        from byor.rule_commands import run_remove
+        from byor.rules.commands import run_remove
 
         return run_remove(args)
     if args.command == "promote":
-        from byor.rule_commands import run_promote
+        from byor.rules.commands import run_promote
 
         return run_promote(args)
     if args.command == "exclude":
-        from byor.rule_commands import run_exclude
+        from byor.rules.commands import run_exclude
 
         return run_exclude(args)
     if args.command == "include":
-        from byor.rule_commands import run_include
+        from byor.rules.commands import run_include
 
         return run_include(args)
     if args.command == "agent-check":
-        from byor.agent_check import run_agent_check
+        from byor.scan.agent_check import run_agent_check
 
         return run_agent_check(args)
     if args.command == "hook":
-        from byor.agents import run_hook
+        from byor.agents.install import run_hook
 
         return run_hook(args)
     raise ByorError(f"'{args.command}' is not implemented yet")
@@ -378,8 +378,8 @@ def _self_heal_preamble(args: argparse.Namespace) -> str | None:
     Returns the one-line heal summary (None when nothing changed) so doctor
     can report what was healed. Uninitialized repos heal silently.
     """
-    from byor.paths import global_config_dir, resolve_repo_root
-    from byor.sync import heal_repo
+    from byor.io.paths import global_config_dir, resolve_repo_root
+    from byor.rules.sync import heal_repo
 
     return heal_repo(resolve_repo_root(explicit=args.repo), global_config_dir())
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from ruamel.yaml.comments import CommentedMap
 
 from byor.errors import ConfigError, RepoNotInitialized
-from byor.yamlio import load_yaml_mapping, write_yaml_atomic
+from byor.io.yamlio import load_yaml_mapping, write_yaml_atomic
 
 CONFIG_VERSION = 1
 
