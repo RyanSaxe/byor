@@ -310,7 +310,7 @@ def _with_draft_hint(error: ByorError, draft: Path | None) -> ByorError:
     """Point at the kept draft file so a failed add/edit never loses work."""
     if draft is None:
         return error
-    return error.__class__(f"{error}\nYour draft is saved at {draft}.")
+    return type(error)(f"{error}\nYour draft is saved at {draft}.")
 
 
 def _check_conflicts(

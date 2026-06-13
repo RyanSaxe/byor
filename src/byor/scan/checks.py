@@ -121,7 +121,7 @@ def _run_one(
 
 def _matching_files(check: CheckDef, files: list[Path]) -> list[Path]:
     if not check.extensions:
-        return list(files)
+        return files
     suffixes = {f".{extension.lstrip('.')}" for extension in check.extensions}
     return [file for file in files if file.suffix in suffixes]
 
