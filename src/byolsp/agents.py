@@ -1,43 +1,35 @@
-"""AI agent adapters: instruction files and real hooks (SPEC 15.10, 16)."""
+"""AI agent adapters: instruction files and real hooks (SPEC 15.10, 16, 28.3)."""
 
 from __future__ import annotations
 
 import argparse
-import json
 from collections.abc import Sequence
-from itertools import takewhile
 from pathlib import Path
-from typing import TypeAlias
 
 from byolsp.config import load_repo_config, save_repo_config
 from byolsp.errors import ConfigError
-from byolsp.fsio import (
-    MANAGED_MARKER,
-    marked_text_status,
-    write_marked_text,
-    write_text_atomic,
-)
+from byolsp.fsio import MANAGED_MARKER, marked_text_status, write_marked_text
+from byolsp.harness import HARNESS_CHOICES, Harness
+from byolsp.hookconfig import HookScope, install_hook, uninstall_hook
 from byolsp.opencode import OPENCODE_MARKER, OPENCODE_PLUGIN, OPENCODE_PLUGIN_RELPATH
 from byolsp.paths import resolve_repo_root
 from byolsp.rules import SUPPRESSION_COMMENT
 from byolsp.skill import SKILL_MARKDOWN, SKILL_RELPATHS
 
-JsonValue: TypeAlias = (
-    "None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]"
+# The four real-hook harnesses plus the OpenCode plugin and the bare adapters.
+HOOK_HARNESSES: frozenset[str] = frozenset(HARNESS_CHOICES)
+
+AGENT_CHOICES = (
+    "generic",
+    "claude-code",
+    "codex",
+    "copilot",
+    "cursor",
+    "opencode",
+    "skill",
 )
 
-AGENT_CHOICES = ("generic", "claude-code", "codex", "copilot", "opencode", "skill")
-
 AGENT_INSTRUCTIONS_RELPATH = ".byolsp/agents/README.md"
-
-CLAUDE_SETTINGS_RELPATH = ".claude/settings.json"
-
-CLAUDE_HOOK_MATCHER = "Write|Edit|MultiEdit|NotebookEdit"
-
-# Claude Code pipes tool-call JSON to PostToolUse hooks on stdin, which
-# --stdin-hook parses directly; on exit 2 it feeds the hook's stderr back to
-# the model, hence the >&2 (agent-check exits 2 exactly with diagnostics).
-CLAUDE_HOOK_COMMAND = "byolsp agent-check --stdin-hook claude-code >&2"
 
 CORE_INSTRUCTION = f"""\
 This repository uses BYOLSP to expose custom ast-grep diagnostics.
@@ -68,7 +60,7 @@ SKILL_DISCOVERY_NOTE = (
 
 
 def run_hook(args: argparse.Namespace) -> int:
-    """`byolsp hook install|uninstall --agent NAME` (SPEC 15.10).
+    """`byolsp hook install|uninstall --agent NAME [--hook-scope SCOPE]` (SPEC 28.3).
 
     Installed agents are recorded in ai.agents so doctor and uninstall know
     about them (SPEC 10.1).
@@ -76,7 +68,9 @@ def run_hook(args: argparse.Namespace) -> int:
     repo_root = resolve_repo_root(explicit=args.repo)
     config = load_repo_config(repo_root)
     if args.hook_action == "install":
-        messages = install_agent(repo_root, args.agent)
+        if args.hook_scope == "local" and args.agent != "claude-code":
+            raise ConfigError("--hook-scope local is only supported for claude-code")
+        messages = install_agent(repo_root, args.agent, args.hook_scope)
         recorded = args.agent not in config.agents
         if recorded:
             config.agents.append(args.agent)
@@ -92,21 +86,23 @@ def run_hook(args: argparse.Namespace) -> int:
     return 0
 
 
-def install_agents(repo_root: Path, agents: Sequence[str]) -> list[str]:
+def install_agents(
+    repo_root: Path, agents: Sequence[str], hook_scope: HookScope = "project"
+) -> list[str]:
     """Init step 5: the generic README is part of the repository layout (SPEC 6);
     the explicitly requested agents get their adapters on top.
     """
-    messages = install_agent(repo_root, "generic")
+    messages = install_agent(repo_root, "generic", hook_scope)
     for agent in agents:
         if agent != "generic":
-            messages.extend(install_agent(repo_root, agent))
+            messages.extend(install_agent(repo_root, agent, hook_scope))
     return messages
 
 
-def install_agent(repo_root: Path, agent: str) -> list[str]:
+def install_agent(
+    repo_root: Path, agent: str, hook_scope: HookScope = "project"
+) -> list[str]:
     """Install one agent adapter; returns summary lines for changes made."""
-    if agent == "claude-code":
-        return _install_claude_code(repo_root)
     if agent == "skill":
         return _install_skill(repo_root)
     messages: list[str] = []
@@ -120,6 +116,9 @@ def install_agent(repo_root: Path, agent: str) -> list[str]:
                 marker=OPENCODE_MARKER,
             )
         )
+    harness = _as_harness(agent)
+    if harness is not None:
+        messages.extend(install_hook(repo_root, harness, hook_scope))
     messages.extend(
         _write_managed_file(
             repo_root, _instructions_relpath(agent), _agent_instructions(agent)
@@ -135,8 +134,10 @@ def uninstall_agent(repo_root: Path, agent: str) -> list[str]:
         for relpath in SKILL_RELPATHS:
             messages.extend(_remove_managed_file(repo_root, relpath))
         return messages
-    if agent == "claude-code":
-        messages.extend(_remove_claude_code_hook(repo_root))
+    harness = _as_harness(agent)
+    if harness is not None:
+        for scope in _agent_hook_scopes(agent):
+            messages.extend(uninstall_hook(repo_root, harness, scope))
     if agent == "opencode":
         messages.extend(
             _remove_managed_file(
@@ -154,14 +155,27 @@ def agent_file_problems(repo_root: Path, agents: Sequence[str]) -> list[str]:
         if agent == "skill":
             problems.extend(_skill_render_problems(repo_root))
             continue
-        if agent == "claude-code" and _claude_code_installed(repo_root):
-            continue
         if agent == "opencode":
             problems.extend(_opencode_plugin_problems(repo_root))
         relpath = _instructions_relpath(agent)
         if not (repo_root / relpath).is_file():
             problems.append(f"{relpath} is missing")
     return problems
+
+
+def _as_harness(agent: str) -> Harness | None:
+    """The Harness for an agent that drives a real hook, else None."""
+    for harness in HARNESS_CHOICES:
+        if harness == agent:
+            return harness
+    return None
+
+
+def _agent_hook_scopes(agent: str) -> tuple[HookScope, ...]:
+    """Scopes a harness may have written hooks to; uninstall sweeps all of them."""
+    if agent == "claude-code":
+        return ("project", "global", "local")
+    return ("project", "global")
 
 
 def _install_skill(repo_root: Path) -> list[str]:
@@ -212,17 +226,29 @@ def _instructions_relpath(agent: str) -> str:
 # Display name and wiring note per instruction-file agent; _agent_instructions
 # appends SKILL_DISCOVERY_NOTE to every entry, so notes stay pure wiring text.
 INSTRUCTION_AGENT_NOTES = {
+    "claude-code": (
+        "Claude Code",
+        "`byolsp hook install --agent claude-code` registers a real\n"
+        "PostToolUse hook that runs this check automatically; the command\n"
+        "above is the manual fallback for files changed another way.",
+    ),
     "codex": (
         "Codex",
-        "Codex reads repository guidance from `AGENTS.md`. Copy the\n"
-        "instruction above into `AGENTS.md` so Codex checks its changes\n"
-        "automatically.",
+        "`byolsp hook install --agent codex` registers a real PostToolUse\n"
+        "hook (trust it via `/hooks`); Codex also reads repository guidance\n"
+        "from `AGENTS.md`, so copy the instruction above there too.",
     ),
     "copilot": (
         "Copilot",
-        "GitHub Copilot reads repository guidance from\n"
-        "`.github/copilot-instructions.md`. Copy the instruction above into\n"
-        "that file so Copilot checks its changes automatically.",
+        "`byolsp hook install --agent copilot` registers a real postToolUse\n"
+        "hook; GitHub Copilot also reads `.github/copilot-instructions.md`,\n"
+        "so copy the instruction above there too.",
+    ),
+    "cursor": (
+        "Cursor",
+        "`byolsp hook install --agent cursor` registers a real postToolUse\n"
+        "hook in `.cursor/hooks.json`; the command above is the manual\n"
+        "fallback for files changed another way.",
     ),
     "opencode": (
         "OpenCode",
@@ -250,21 +276,6 @@ def _instruction_file(title: str, wiring_note: str) -> str:
     return f"{MANAGED_MARKER}\n\n# {title}\n\n{CORE_INSTRUCTION}\n{wiring_note}\n"
 
 
-def _claude_code_instructions() -> str:
-    wiring = json.dumps({"hooks": {"PostToolUse": [_claude_hook_group()]}}, indent=2)
-    note = (
-        "To check changes automatically, merge this PostToolUse hook into\n"
-        f"`{CLAUDE_SETTINGS_RELPATH}` (or rerun "
-        "`byolsp hook install --agent claude-code`\n"
-        "once `.claude/` exists):\n"
-        "\n"
-        "```json\n"
-        f"{wiring}\n"
-        "```"
-    )
-    return _instruction_file("BYOLSP Claude Code Instructions", note)
-
-
 def _write_managed_file(
     repo_root: Path, relpath: str, content: str, marker: str = MANAGED_MARKER
 ) -> list[str]:
@@ -286,167 +297,3 @@ def _remove_managed_file(
         return [f"{relpath} exists without the BYOLSP marker; left untouched."]
     path.unlink()
     return [f"Removed {relpath}"]
-
-
-def _install_claude_code(repo_root: Path) -> list[str]:
-    """A real PostToolUse hook when Claude Code is detectable, else instructions."""
-    if not _claude_code_detected(repo_root):
-        return _write_managed_file(
-            repo_root, _instructions_relpath("claude-code"), _claude_code_instructions()
-        )
-    settings_path = repo_root / CLAUDE_SETTINGS_RELPATH
-    settings = _load_claude_settings(settings_path)
-    groups = _post_tool_use_groups(settings)
-    current = _claude_hook_group()
-    if current in groups:
-        return []
-    # Converge byolsp-owned groups to the current hook (SPEC 17); a group the
-    # user mixed their own hooks into is user-edited and stays as is.
-    kept = [group for group in groups if not _is_byolsp_group(group)]
-    if any(_contains_byolsp_command(group) for group in kept):
-        return []
-    _set_post_tool_use_groups(settings, [*kept, current])
-    _save_claude_settings(settings_path, settings)
-    return [f"Installed a PostToolUse hook in {CLAUDE_SETTINGS_RELPATH}"]
-
-
-def _claude_code_detected(repo_root: Path) -> bool:
-    """True when .claude/ holds anything beyond the byolsp-managed skill render.
-
-    init plants the skill at the .claude path in SKILL_RELPATHS in every repo
-    (SPEC 27.1), so that subtree alone is byolsp's own output, not evidence of
-    Claude Code. An unmarked file there is user-owned (SPEC 17) and does count.
-    """
-    claude_dir = repo_root / ".claude"
-    if not claude_dir.is_dir():
-        return False
-    render = repo_root / _claude_skill_relpath()
-    render_subtree = {render, *takewhile(lambda p: p != claude_dir, render.parents)}
-    if set(claude_dir.rglob("*")) != render_subtree:
-        return True
-    return MANAGED_MARKER not in render.read_text(encoding="utf-8")
-
-
-def _claude_skill_relpath() -> str:
-    return next(p for p in SKILL_RELPATHS if p.startswith(".claude/"))
-
-
-def _claude_code_installed(repo_root: Path) -> bool:
-    """Either adapter form counts: the instruction file or the settings hook."""
-    if (repo_root / _instructions_relpath("claude-code")).is_file():
-        return True
-    settings_path = repo_root / CLAUDE_SETTINGS_RELPATH
-    if not settings_path.is_file():
-        return False
-    try:
-        settings = _load_claude_settings(settings_path)
-        groups = _post_tool_use_groups(settings)
-    except ConfigError:
-        return False
-    return any(_contains_byolsp_command(group) for group in groups)
-
-
-def _remove_claude_code_hook(repo_root: Path) -> list[str]:
-    """Drop the PostToolUse groups byolsp installed; user-edited groups stay."""
-    settings_path = repo_root / CLAUDE_SETTINGS_RELPATH
-    if not settings_path.is_file():
-        return []
-    settings = _load_claude_settings(settings_path)
-    groups = _post_tool_use_groups(settings)
-    kept = [group for group in groups if not _is_byolsp_group(group)]
-    if len(kept) == len(groups):
-        return []
-    _set_post_tool_use_groups(settings, kept)
-    _save_claude_settings(settings_path, settings)
-    return [f"Removed the BYOLSP PostToolUse hook from {CLAUDE_SETTINGS_RELPATH}"]
-
-
-def _is_byolsp_group(group: JsonValue) -> bool:
-    """True for a matcher group whose every command is ours: the shape we install.
-
-    A group where a user mixed in their own hooks counts as user-edited and is
-    preserved, matching the managed-marker rule for files.
-    """
-    hooks = _group_hooks(group)
-    return bool(hooks) and all(_is_byolsp_command(hook) for hook in hooks)
-
-
-def _claude_hook_group() -> dict[str, JsonValue]:
-    return {
-        "matcher": CLAUDE_HOOK_MATCHER,
-        "hooks": [{"type": "command", "command": CLAUDE_HOOK_COMMAND}],
-    }
-
-
-def _load_claude_settings(path: Path) -> dict[str, JsonValue]:
-    if not path.is_file():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as error:
-        raise ConfigError(
-            f"{CLAUDE_SETTINGS_RELPATH} is not valid JSON: {error}"
-        ) from error
-    if not isinstance(data, dict):
-        raise ConfigError(
-            f"{CLAUDE_SETTINGS_RELPATH}: expected a JSON object at the top level"
-        )
-    return data
-
-
-def _save_claude_settings(path: Path, settings: dict[str, JsonValue]) -> None:
-    write_text_atomic(path, json.dumps(settings, indent=2) + "\n")
-
-
-def _post_tool_use_groups(settings: dict[str, JsonValue]) -> list[JsonValue]:
-    """The hooks.PostToolUse list, [] when absent; raises on malformed types."""
-    hooks = settings.get("hooks")
-    if hooks is None:
-        return []
-    if not isinstance(hooks, dict):
-        raise ConfigError(
-            f"{CLAUDE_SETTINGS_RELPATH}: expected 'hooks' to be an object"
-        )
-    groups = hooks.get("PostToolUse")
-    if groups is None:
-        return []
-    if not isinstance(groups, list):
-        raise ConfigError(
-            f"{CLAUDE_SETTINGS_RELPATH}: expected hooks.PostToolUse to be a list"
-        )
-    return groups
-
-
-def _set_post_tool_use_groups(
-    settings: dict[str, JsonValue], groups: list[JsonValue]
-) -> None:
-    """Replace hooks.PostToolUse, dropping empty containers it leaves behind."""
-    hooks = settings.get("hooks")
-    if not isinstance(hooks, dict):
-        hooks = {}
-        settings["hooks"] = hooks
-    if groups:
-        hooks["PostToolUse"] = groups
-    else:
-        hooks.pop("PostToolUse", None)
-        if not hooks:
-            del settings["hooks"]
-
-
-def _group_hooks(group: JsonValue) -> list[JsonValue]:
-    """The group's hooks list, or [] when the group is not shaped like one."""
-    if not isinstance(group, dict):
-        return []
-    hooks = group.get("hooks")
-    return hooks if isinstance(hooks, list) else []
-
-
-def _contains_byolsp_command(group: JsonValue) -> bool:
-    return any(_is_byolsp_command(hook) for hook in _group_hooks(group))
-
-
-def _is_byolsp_command(hook: JsonValue) -> bool:
-    if not isinstance(hook, dict):
-        return False
-    command = hook.get("command")
-    return isinstance(command, str) and "byolsp agent-check" in command

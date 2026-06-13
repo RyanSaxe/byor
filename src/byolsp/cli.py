@@ -12,6 +12,7 @@ from typing import get_args
 from byolsp.agents import AGENT_CHOICES
 from byolsp.errors import ByolspError
 from byolsp.harness import HARNESS_CHOICES
+from byolsp.hookconfig import HookScope
 from byolsp.ignore import IgnoreMode
 
 COMMANDS = {
@@ -75,6 +76,17 @@ def build_parser() -> argparse.ArgumentParser:
                     required=True,
                     help="Which AI integration to manage",
                 )
+                if action_name == "install":
+                    action.set_defaults(hook_scope="project")
+                    action.add_argument(
+                        "--hook-scope",
+                        choices=get_args(HookScope),
+                        default="project",
+                        help=(
+                            "Where to register a real hook: project (committed),"
+                            " global (~/, personal), or local (claude-code only)"
+                        ),
+                    )
     return parser
 
 
