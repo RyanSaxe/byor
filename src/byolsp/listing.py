@@ -8,7 +8,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
-from byolsp.config import load_repo_config
+from byolsp.checks import EffectiveCheck, effective_checks
+from byolsp.config import load_global_config, load_local_config, load_repo_config
 from byolsp.paths import global_config_dir, resolve_repo_root
 from byolsp.rules import load_rules
 from byolsp.sync import load_canonical_rules, repo_sync_plan
@@ -26,15 +27,26 @@ class ListedRule:
 
 def run_list(args: argparse.Namespace) -> int:
     repo_root = resolve_repo_root(explicit=args.repo)
+    config_dir = global_config_dir()
     scope: ListScope = args.scope
     rules = collect_rules(repo_root, scope)
-    skipped = collect_skipped(repo_root, global_config_dir()) if scope == "all" else []
+    skipped = collect_skipped(repo_root, config_dir) if scope == "all" else []
+    checks = collect_effective_checks(repo_root, config_dir)
     if args.json:
-        print(json.dumps(_json_payload(rules, skipped), indent=2))
+        print(json.dumps(_json_payload(rules, skipped, checks), indent=2))
     else:
-        for line in render_listing(rules, skipped):
+        for line in render_listing(rules, skipped, checks):
             print(line)
     return 0
+
+
+def collect_effective_checks(repo_root: Path, config_dir: Path) -> list[EffectiveCheck]:
+    """The extra checks agent-check would run, tagged by origin (SPEC 28.4)."""
+    return effective_checks(
+        load_repo_config(repo_root),
+        load_global_config(config_dir),
+        load_local_config(repo_root),
+    )
 
 
 def collect_rules(repo_root: Path, scope: ListScope) -> list[ListedRule]:
@@ -70,10 +82,15 @@ def collect_skipped(repo_root: Path, config_dir: Path) -> list[tuple[str, str]]:
 
 
 def render_listing(
-    rules: list[ListedRule], skipped: list[tuple[str, str]]
+    rules: list[ListedRule],
+    skipped: list[tuple[str, str]],
+    checks: list[EffectiveCheck],
 ) -> list[str]:
     rows = [(rule.scope, rule.id, rule.path) for rule in rules]
     rows += [("skipped", rule_id, reason) for rule_id, reason in skipped]
+    rows += [
+        (f"check/{check.origin}", check.name, check.definition.run) for check in checks
+    ]
     if not rows:
         return []
     scope_width = max(len(scope) for scope, _, _ in rows)
@@ -85,9 +102,15 @@ def render_listing(
 
 
 def _json_payload(
-    rules: list[ListedRule], skipped: list[tuple[str, str]]
+    rules: list[ListedRule],
+    skipped: list[tuple[str, str]],
+    checks: list[EffectiveCheck],
 ) -> dict[str, list[dict[str, str]]]:
     return {
         "rules": [asdict(rule) for rule in rules],
         "skipped": [{"id": rule_id, "reason": reason} for rule_id, reason in skipped],
+        "checks": [
+            {"name": check.name, "origin": check.origin, "run": check.definition.run}
+            for check in checks
+        ],
     }

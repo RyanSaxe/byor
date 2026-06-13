@@ -5,6 +5,15 @@ import pytest
 from conftest import make_repo, write_global_rule, write_rule
 
 from byolsp.cli import main
+from byolsp.config import (
+    CheckDef,
+    GlobalConfig,
+    LocalConfig,
+    load_repo_config,
+    save_global_config,
+    save_local_config,
+    save_repo_config,
+)
 
 
 def list_rules(repo: Path, *extra: str) -> int:
@@ -91,6 +100,33 @@ def test_json_lists_rules_and_skips(
     assert payload["skipped"] == [
         {"id": "no-cast", "reason": "overridden by project rule"}
     ]
+
+
+def test_list_surfaces_effective_checks_with_origin_and_exclusions(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    config_dir = home / "xdg" / "byolsp"
+    save_global_config(
+        config_dir,
+        GlobalConfig(
+            checks=[
+                CheckDef("ruff", ["py"], "global-ruff"),
+                CheckDef("mypy", ["py"], "mypy"),
+            ]
+        ),
+    )
+    repo_config = load_repo_config(repo)
+    repo_config.checks.append(CheckDef("ruff", ["py"], "repo-ruff"))
+    save_repo_config(repo, repo_config)
+    save_local_config(repo, LocalConfig(excluded_checks=["mypy"]))
+    capsys.readouterr()
+
+    assert list_rules(repo) == 0
+
+    out = capsys.readouterr().out
+    assert "check/repo  ruff  repo-ruff" in out
+    assert "mypy" not in out  # excluded in local.yml
 
 
 def test_list_fails_cleanly_outside_an_initialized_repo(

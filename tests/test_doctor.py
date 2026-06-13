@@ -7,6 +7,13 @@ from conftest import make_repo, write_rule
 
 from byolsp.astgrep import NOT_FOUND_MESSAGE
 from byolsp.cli import main
+from byolsp.config import (
+    CheckDef,
+    LocalConfig,
+    load_repo_config,
+    save_local_config,
+    save_repo_config,
+)
 from byolsp.doctor import collect_checks
 
 
@@ -53,6 +60,37 @@ def test_doctor_json_matches_the_spec_shape(
         "registered_repos",
         "agent_files",
     }
+
+
+def test_doctor_surfaces_configured_checks_with_origin(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    config = load_repo_config(repo)
+    config.checks.append(CheckDef("ruff", ["py"], "uv run ruff check"))
+    save_repo_config(repo, config)
+    capsys.readouterr()
+
+    assert doctor(repo) == 0
+
+    out = capsys.readouterr().out
+    assert "extra_checks" in out
+    assert "checks: ruff (repo)" in out
+
+
+def test_doctor_extra_checks_reports_when_all_are_excluded(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    config = load_repo_config(repo)
+    config.checks.append(CheckDef("ruff", ["py"], "uv run ruff check"))
+    save_repo_config(repo, config)
+    save_local_config(repo, LocalConfig(excluded_checks=["ruff"]))
+    capsys.readouterr()
+
+    assert doctor(repo) == 0
+
+    assert "all configured checks are excluded" in capsys.readouterr().out
 
 
 def test_doctor_reports_missing_ast_grep_with_the_install_message(

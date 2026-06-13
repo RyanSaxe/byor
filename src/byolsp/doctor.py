@@ -10,8 +10,10 @@ from pathlib import Path
 
 from byolsp.agents import agent_file_problems
 from byolsp.astgrep import ast_grep_version, resolve_ast_grep
+from byolsp.checks import effective_checks
 from byolsp.config import (
     GlobalConfig,
+    LocalConfig,
     RepoConfig,
     RepoPaths,
     load_global_config,
@@ -71,6 +73,9 @@ def collect_checks(repo_root: Path, config_dir: Path, quick: bool) -> list[Check
         checks.extend(_rule_checks(repo_root, repo_config.paths, config_dir))
     checks.append(_registry_check(config_dir, global_config))
     checks.append(_agent_files_check(repo_root, repo_config))
+    extra = _extra_checks_check(repo_root, repo_config, global_config)
+    if extra is not None:
+        checks.append(extra)
     return checks
 
 
@@ -201,6 +206,31 @@ def _registry_check(config_dir: Path, global_config: GlobalConfig) -> Check:
     if problems:
         return Check("registered_repos", False, "; ".join(problems))
     return Check("registered_repos", True, "all registered repository paths exist")
+
+
+def _extra_checks_check(
+    repo_root: Path, repo_config: RepoConfig, global_config: GlobalConfig
+) -> Check | None:
+    """List the extra checks agent-check would run, with origin (SPEC 28.4).
+
+    Informational (always ok); absent when no check is configured so the
+    default doctor output is unchanged.
+    """
+    if not repo_config.checks and not global_config.checks:
+        return None
+    local_config = _load_local_config(repo_root)
+    effective = effective_checks(repo_config, global_config, local_config)
+    if not effective:
+        return Check("extra_checks", True, "all configured checks are excluded")
+    listed = ", ".join(f"{check.name} ({check.origin})" for check in effective)
+    return Check("extra_checks", True, f"checks: {listed}")
+
+
+def _load_local_config(repo_root: Path) -> LocalConfig:
+    try:
+        return load_local_config(repo_root)
+    except ConfigError:
+        return LocalConfig()
 
 
 def _agent_files_check(repo_root: Path, repo_config: RepoConfig) -> Check:
