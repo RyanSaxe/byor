@@ -167,7 +167,7 @@ init:
 | --- | --- |
 | `generic` | Instruction file: `.byolsp/agents/README.md` |
 | `claude-code` | Real `PostToolUse` hook (`.claude/settings.json`, `settings.local.json`, or `~/.claude/settings.json`) plus instruction file `.byolsp/agents/claude-code.md` |
-| `codex` | Real `PostToolUse` hook (`.codex/hooks.json` or `~/.codex/hooks.json`, matcher `Edit\|Write`) plus instruction file; copy the instruction into `AGENTS.md` |
+| `codex` | Real `PostToolUse` hook (`.codex/hooks.json` or `~/.codex/hooks.json`, matcher `Edit\|Write`) plus instruction file; trust the hook via `/hooks`, and copy the instruction into `AGENTS.md` |
 | `copilot` | Real `postToolUse` hook (`.github/hooks/byolsp.json` or `~/.copilot/hooks/byolsp.json`) plus instruction file; copy the instruction into `.github/copilot-instructions.md` |
 | `cursor` | Real `postToolUse` hook (`.cursor/hooks.json` or `~/.cursor/hooks.json`) plus instruction file `.byolsp/agents/cursor.md` |
 | `opencode` | Real `tool.execute.after` plugin `.opencode/plugin/byolsp.ts` plus instruction file `.byolsp/agents/opencode.md` |
@@ -234,6 +234,14 @@ which tells the model the plugin covers `edit`, `write`, and `apply_patch`
 calls that name a single `filePath` (a multi-file `apply_patch` is skipped)
 and to run `agent-check` manually for files changed another way (for example
 via shell commands).
+
+### codex
+
+Install writes a `PostToolUse` hook (matcher `Edit|Write`) into
+`.codex/hooks.json` (project) or `~/.codex/hooks.json` (global). Codex does not
+run a new hook until you trust it: run `/hooks` in the Codex session and approve
+the byolsp entry once. Install also writes the standard instruction file; copy
+its contents into `AGENTS.md`, which Codex reads as repository guidance.
 
 ### claude-code
 
