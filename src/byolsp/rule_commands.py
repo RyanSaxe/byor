@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import io
 import os
 import shlex
 import subprocess
@@ -43,7 +42,7 @@ from byolsp.sync import (
     summarize_changes,
     sync_repo,
 )
-from byolsp.yamlio import new_yaml, parse_yaml_mapping
+from byolsp.yamlio import dump_yaml, parse_yaml_mapping
 
 DEFAULT_EDITOR = "vi"
 
@@ -249,9 +248,7 @@ def _append_exception_sentence(content: str, source: Path) -> str:
     prompt = block.get("agent_prompt")
     existing = prompt.strip() if isinstance(prompt, str) else ""
     block["agent_prompt"] = f"{existing} {ALLOW_EXCEPTIONS_SENTENCE}".lstrip()
-    stream = io.StringIO()
-    new_yaml().dump(data, stream)
-    return stream.getvalue()
+    return dump_yaml(data)
 
 
 def _find_rule(

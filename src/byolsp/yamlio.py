@@ -50,8 +50,13 @@ def parse_yaml_mapping(text: str, source: Path) -> CommentedMap:
     return data
 
 
-def write_yaml_atomic(path: Path, data: CommentedMap) -> None:
-    """Serialize a mapping and write it atomically."""
+def dump_yaml(data: CommentedMap) -> str:
+    """Serialize a mapping with BYOLSP's output conventions."""
     stream = io.StringIO()
     new_yaml().dump(data, stream)
-    write_text_atomic(path, stream.getvalue())
+    return stream.getvalue()
+
+
+def write_yaml_atomic(path: Path, data: CommentedMap) -> None:
+    """Serialize a mapping and write it atomically."""
+    write_text_atomic(path, dump_yaml(data))
