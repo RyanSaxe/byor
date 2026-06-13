@@ -8,8 +8,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
-from byolsp.checks import EffectiveCheck, effective_checks
-from byolsp.config import load_global_config, load_local_config, load_repo_config
+from byolsp.checks import EffectiveCheck, load_effective_checks
+from byolsp.config import load_repo_config
 from byolsp.paths import global_config_dir, resolve_repo_root
 from byolsp.rules import load_rules
 from byolsp.sync import load_canonical_rules, repo_sync_plan
@@ -31,22 +31,13 @@ def run_list(args: argparse.Namespace) -> int:
     scope: ListScope = args.scope
     rules = collect_rules(repo_root, scope)
     skipped = collect_skipped(repo_root, config_dir) if scope == "all" else []
-    checks = collect_effective_checks(repo_root, config_dir)
+    checks = load_effective_checks(repo_root, config_dir)
     if args.json:
         print(json.dumps(_json_payload(rules, skipped, checks), indent=2))
     else:
         for line in render_listing(rules, skipped, checks):
             print(line)
     return 0
-
-
-def collect_effective_checks(repo_root: Path, config_dir: Path) -> list[EffectiveCheck]:
-    """The extra checks agent-check would run, tagged by origin (SPEC 28.4)."""
-    return effective_checks(
-        load_repo_config(repo_root),
-        load_global_config(config_dir),
-        load_local_config(repo_root),
-    )
 
 
 def collect_rules(repo_root: Path, scope: ListScope) -> list[ListedRule]:

@@ -16,7 +16,16 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from byolsp.config import CheckDef, GlobalConfig, LocalConfig, RepoConfig
+from byolsp.config import (
+    CheckDef,
+    GlobalConfig,
+    LocalConfig,
+    RepoConfig,
+    load_global_config,
+    load_local_config,
+    load_repo_config,
+    repo_config_path,
+)
 
 
 @dataclass(frozen=True)
@@ -61,6 +70,23 @@ def effective_checks(
         for check in merged
         if check.name not in excluded
     ]
+
+
+def load_effective_checks(repo_root: Path, config_dir: Path) -> list[EffectiveCheck]:
+    """Load the repo, global, and local configs and merge into effective checks.
+
+    The single I/O wrapper around the pure `effective_checks`; every surface
+    (`agent-check`, `list`, `doctor`) routes through it so a missing repo config
+    or a malformed `.byolsp/local.yml` behaves identically everywhere. Returns
+    `[]` when the repo is not initialized.
+    """
+    if not repo_config_path(repo_root).is_file():
+        return []
+    return effective_checks(
+        load_repo_config(repo_root),
+        load_global_config(config_dir),
+        load_local_config(repo_root),
+    )
 
 
 def run_checks(

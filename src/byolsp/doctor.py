@@ -13,7 +13,6 @@ from byolsp.astgrep import ast_grep_version, resolve_ast_grep
 from byolsp.checks import effective_checks
 from byolsp.config import (
     GlobalConfig,
-    LocalConfig,
     RepoConfig,
     RepoPaths,
     load_global_config,
@@ -218,19 +217,13 @@ def _extra_checks_check(
     """
     if not repo_config.checks and not global_config.checks:
         return None
-    local_config = _load_local_config(repo_root)
-    effective = effective_checks(repo_config, global_config, local_config)
+    effective = effective_checks(
+        repo_config, global_config, load_local_config(repo_root)
+    )
     if not effective:
         return Check("extra_checks", True, "all configured checks are excluded")
     listed = ", ".join(f"{check.name} ({check.origin})" for check in effective)
     return Check("extra_checks", True, f"checks: {listed}")
-
-
-def _load_local_config(repo_root: Path) -> LocalConfig:
-    try:
-        return load_local_config(repo_root)
-    except ConfigError:
-        return LocalConfig()
 
 
 def _agent_files_check(repo_root: Path, repo_config: RepoConfig) -> Check:
