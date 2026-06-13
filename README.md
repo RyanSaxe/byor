@@ -85,6 +85,21 @@ Stale copies are self-healing, not prevented by user discipline: every byolsp
 command syncs the current repo first, and `byolsp sync --all` heals every
 registered repo. See [docs/sync-model.md](docs/sync-model.md).
 
+## Continuous integration
+
+Project rules are tracked plain files, so CI gates on them with zero byolsp
+installed — a fresh clone already carries everything `ast-grep scan` needs.
+Install ast-grep, then scan with `--error` so warning severities fail the
+build (a plain `ast-grep scan` exits 0 on warnings):
+
+```yaml
+- run: npm install -g @ast-grep/cli
+- run: ast-grep scan --error
+```
+
+See [docs/sync-model.md](docs/sync-model.md) for the full workflow file and
+why a fresh clone needs no byolsp.
+
 ## Commands
 
 ```text
