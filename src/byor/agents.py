@@ -1,4 +1,10 @@
-"""AI agent adapters: instruction files and real hooks."""
+"""AI agent adapters: real post-edit hooks, the OpenCode plugin, and the skill.
+
+Agents are discoverable by their harness (the skill via the cross-agent
+`SKILL.md` standard, diagnostics via the installed post-edit hook), so byor
+writes no instruction files — the hook runs `byor agent-check` automatically and
+the harness surfaces the skill on its own.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +18,7 @@ from byor.fsio import MANAGED_MARKER, marked_text_status, write_marked_text
 from byor.harness import HARNESS_CHOICES, Harness
 from byor.hookconfig import (
     HookScope,
+    hook_installed,
     install_hook,
     installed_scopes,
     supports_local_scope,
@@ -19,7 +26,6 @@ from byor.hookconfig import (
 )
 from byor.opencode import OPENCODE_MARKER, OPENCODE_PLUGIN, OPENCODE_PLUGIN_RELPATH
 from byor.paths import resolve_repo_root
-from byor.rules import SUPPRESSION_COMMENT
 from byor.skill import SKILL_MARKDOWN, SKILL_RELPATHS
 
 # The four real-hook harnesses: a set for membership, a map for Harness lookup.
@@ -27,7 +33,6 @@ HOOK_HARNESSES: frozenset[str] = frozenset(HARNESS_CHOICES)
 HARNESS_BY_NAME: dict[str, Harness] = {harness: harness for harness in HARNESS_CHOICES}
 
 AGENT_CHOICES = (
-    "generic",
     "claude-code",
     "codex",
     "copilot",
@@ -36,34 +41,11 @@ AGENT_CHOICES = (
     "skill",
 )
 
-AGENT_INSTRUCTIONS_RELPATH = ".byor/agents/README.md"
-
-CORE_INSTRUCTION = f"""\
-This repository uses BYOR to expose custom ast-grep diagnostics.
-
-After writing or editing code, run:
-
-```bash
-byor agent-check --scope diff --files <changed files>
-```
-
-If BYOR reports a diagnostic, fix it before continuing.
-
-If a rule's instruction permits exceptions, only keep the violating code when
-genuinely necessary, and suppress it with
-`{SUPPRESSION_COMMENT}` on its own line above the violation.
-"""
-
-GENERIC_AGENT_INSTRUCTIONS = (
-    f"{MANAGED_MARKER}\n\n# BYOR Agent Instructions\n\n{CORE_INSTRUCTION}"
-)
-
-# Every harness that auto-discovers skills gets the capture loop.
-SKILL_DISCOVERY_NOTE = (
-    "{harness} also auto-discovers the `byor` rule-capture skill at\n"
-    "`.agents/skills/byor/SKILL.md`; use it to turn the user's durable\n"
-    "code-style feedback into new ast-grep rules."
-)
+# Harnesses that need a one-time manual step before their hook will fire; printed
+# after install so the user is not left wondering why nothing happens.
+HARNESS_MANUAL_STEPS: dict[Harness, str] = {
+    "codex": "Codex only runs trusted hooks: run `/hooks` in Codex to trust it.",
+}
 
 
 def run_hook(args: argparse.Namespace) -> int:
@@ -99,13 +81,10 @@ def run_hook(args: argparse.Namespace) -> int:
 def install_agents(
     repo_root: Path, agents: Sequence[str], hook_scope: HookScope = "project"
 ) -> list[str]:
-    """Init step 5: the generic README is part of the repository layout;
-    the explicitly requested agents get their adapters on top.
-    """
-    messages = install_agent(repo_root, "generic", hook_scope)
+    """Init step 5: install each requested agent's hook, plugin, or skill."""
+    messages: list[str] = []
     for agent in agents:
-        if agent != "generic":
-            messages.extend(install_agent(repo_root, agent, hook_scope))
+        messages.extend(install_agent(repo_root, agent, hook_scope))
     return messages
 
 
@@ -115,62 +94,65 @@ def install_agent(
     """Install one agent adapter; returns summary lines for changes made."""
     if agent == "skill":
         return _install_skill(repo_root)
-    messages: list[str] = []
     if agent == "opencode":
-        # A real post-edit plugin on top of the instruction file.
-        messages.extend(
-            _write_managed_file(
-                repo_root,
-                OPENCODE_PLUGIN_RELPATH,
-                OPENCODE_PLUGIN,
-                marker=OPENCODE_MARKER,
-            )
+        return _write_managed_file(
+            repo_root, OPENCODE_PLUGIN_RELPATH, OPENCODE_PLUGIN, marker=OPENCODE_MARKER
         )
     harness = _as_harness(agent)
-    if harness is not None:
-        messages.extend(install_hook(repo_root, harness, hook_scope))
-    messages.extend(
-        _write_managed_file(
-            repo_root, _instructions_relpath(agent), _agent_instructions(agent)
-        )
-    )
+    if harness is None:
+        return []
+    messages = install_hook(repo_root, harness, hook_scope)
+    manual_step = HARNESS_MANUAL_STEPS.get(harness)
+    if manual_step is not None and messages:
+        messages.append(manual_step)
     return messages
 
 
 def uninstall_agent(repo_root: Path, agent: str) -> list[str]:
     """Remove one agent adapter; only marker-bearing files are deleted."""
-    messages: list[str] = []
     if agent == "skill":
+        messages: list[str] = []
         for relpath in SKILL_RELPATHS:
             messages.extend(_remove_managed_file(repo_root, relpath))
         return messages
-    harness = _as_harness(agent)
-    if harness is not None:
-        for scope in installed_scopes(harness):
-            messages.extend(uninstall_hook(repo_root, harness, scope))
     if agent == "opencode":
-        messages.extend(
-            _remove_managed_file(
-                repo_root, OPENCODE_PLUGIN_RELPATH, marker=OPENCODE_MARKER
-            )
+        return _remove_managed_file(
+            repo_root, OPENCODE_PLUGIN_RELPATH, marker=OPENCODE_MARKER
         )
-    messages.extend(_remove_managed_file(repo_root, _instructions_relpath(agent)))
+    harness = _as_harness(agent)
+    if harness is None:
+        return []
+    messages = []
+    for scope in installed_scopes(harness):
+        messages.extend(uninstall_hook(repo_root, harness, scope))
     return messages
 
 
 def agent_file_problems(repo_root: Path, agents: Sequence[str]) -> list[str]:
-    """Human-readable integration-file problems for doctor's agent_files check."""
+    """Integration problems for doctor's agent_files check.
+
+    The skill renders and the OpenCode plugin are byor-managed files; the other
+    harnesses' integration is their hook config, so each is verified by checking
+    a byor hook is present in one of its registration scopes.
+    """
     problems: list[str] = []
     for agent in agents:
         if agent == "skill":
             problems.extend(_skill_render_problems(repo_root))
-            continue
-        if agent == "opencode":
+        elif agent == "opencode":
             problems.extend(_opencode_plugin_problems(repo_root))
-        relpath = _instructions_relpath(agent)
-        if not (repo_root / relpath).is_file():
-            problems.append(f"{relpath} is missing")
+        elif (harness := _as_harness(agent)) is not None and not _hook_present(
+            repo_root, harness
+        ):
+            problems.append(f"the {agent} hook is not installed")
     return problems
+
+
+def _hook_present(repo_root: Path, harness: Harness) -> bool:
+    """Whether a byor hook is installed in any of the harness's scopes."""
+    return any(
+        hook_installed(repo_root, harness, scope) for scope in installed_scopes(harness)
+    )
 
 
 def _as_harness(agent: str) -> Harness | None:
@@ -215,65 +197,6 @@ def _skill_render_problems(repo_root: Path) -> list[str]:
         elif status == "drifted":
             problems.append(f"{relpath} is out of date")
     return problems
-
-
-def _instructions_relpath(agent: str) -> str:
-    if agent == "generic":
-        return AGENT_INSTRUCTIONS_RELPATH
-    return f".byor/agents/{agent}.md"
-
-
-# Display name and wiring note per instruction-file agent; _agent_instructions
-# appends SKILL_DISCOVERY_NOTE to every entry, so notes stay pure wiring text.
-INSTRUCTION_AGENT_NOTES = {
-    "claude-code": (
-        "Claude Code",
-        "`byor hook install --agent claude-code` registers a real\n"
-        "PostToolUse hook that runs this check automatically; the command\n"
-        "above is the manual fallback for files changed another way.",
-    ),
-    "codex": (
-        "Codex",
-        "`byor hook install --agent codex` registers a real PostToolUse\n"
-        "hook (trust it via `/hooks`); Codex also reads repository guidance\n"
-        "from `AGENTS.md`, so copy the instruction above there too.",
-    ),
-    "copilot": (
-        "Copilot",
-        "`byor hook install --agent copilot` registers a real postToolUse\n"
-        "hook; GitHub Copilot also reads `.github/copilot-instructions.md`,\n"
-        "so copy the instruction above there too.",
-    ),
-    "cursor": (
-        "Cursor",
-        "`byor hook install --agent cursor` registers a real postToolUse\n"
-        "hook in `.cursor/hooks.json`; the command above is the manual\n"
-        "fallback for files changed another way.",
-    ),
-    "opencode": (
-        "OpenCode",
-        "The BYOR plugin at\n"
-        f"`{OPENCODE_PLUGIN_RELPATH}` hooks `tool.execute.after` and appends\n"
-        "diagnostics automatically when an `edit`, `write`, or `apply_patch`\n"
-        "call names a single `filePath` — do not rerun `agent-check` for\n"
-        "those. Run the command above for files changed another way (a\n"
-        "multi-file `apply_patch`, or shell commands).",
-    ),
-}
-
-
-def _agent_instructions(agent: str) -> str:
-    if agent == "generic":
-        return GENERIC_AGENT_INSTRUCTIONS
-    name, wiring_note = INSTRUCTION_AGENT_NOTES[agent]
-    return _instruction_file(
-        f"BYOR {name} Instructions",
-        f"{wiring_note}\n\n{SKILL_DISCOVERY_NOTE.format(harness=name)}",
-    )
-
-
-def _instruction_file(title: str, wiring_note: str) -> str:
-    return f"{MANAGED_MARKER}\n\n# {title}\n\n{CORE_INSTRUCTION}\n{wiring_note}\n"
 
 
 def _write_managed_file(

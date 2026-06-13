@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 from conftest import git
 
-from byor.agents import MANAGED_MARKER
 from byor.cli import main
 from byor.config import (
     GlobalConfig,
@@ -24,7 +23,6 @@ TRACKED_FILES = (
     ".byor/rules/personal/local/.ignore",
     ".byor/rules/personal/global/.gitkeep",
     ".byor/rules/personal/global/.ignore",
-    ".byor/agents/README.md",
     ".agents/skills/byor/SKILL.md",
     ".claude/skills/byor/SKILL.md",
 )
@@ -53,7 +51,6 @@ def test_init_creates_repository_and_global_layout(repo: Path) -> None:
     for relpath in TRACKED_FILES:
         assert (repo / relpath).is_file(), relpath
     assert (repo / ".byor" / "local.yml").is_file()
-    assert MANAGED_MARKER in (repo / ".byor" / "agents" / "README.md").read_text()
 
     sgconfig = (repo / "sgconfig.yml").read_text()
     for rule_dir in (
@@ -133,9 +130,9 @@ def test_local_ignore_mode_uses_git_info_exclude(repo: Path) -> None:
 
 def test_agents_are_recorded_and_merged_without_duplicates(repo: Path) -> None:
     init(repo, "--agents", "claude-code,codex")
-    init(repo, "--agents", "claude-code,generic")
+    init(repo, "--agents", "claude-code,cursor")
 
-    assert load_repo_config(repo).agents == ["claude-code", "codex", "skill", "generic"]
+    assert load_repo_config(repo).agents == ["claude-code", "codex", "skill", "cursor"]
 
 
 def test_unknown_agent_fails_cleanly(
@@ -149,19 +146,6 @@ def test_no_register_creates_empty_registry(repo: Path) -> None:
     assert init(repo, "--no-register") == 0
 
     assert load_repo_registry(config_dir(repo) / "repos.yml") == []
-
-
-def test_unmarked_agent_instructions_are_preserved(
-    repo: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    readme = repo / ".byor" / "agents" / "README.md"
-    readme.parent.mkdir(parents=True)
-    readme.write_text("my own notes\n")
-
-    assert init(repo) == 0
-
-    assert readme.read_text() == "my own notes\n"
-    assert "without the BYOR marker" in capsys.readouterr().out
 
 
 def test_git_hooks_without_a_git_dir_fail_cleanly(
@@ -198,7 +182,7 @@ def test_interactive_prompts_drive_agents_ignore_mode_and_hooks(
     git(repo, "init", "--quiet")
     # Answers: agents -> claude-code, ignore -> local, git hooks -> yes,
     # hook scope -> project (claude-code is hook-capable, so it is asked).
-    monkeypatch.setattr(sys, "stdin", io.StringIO("2\n2\n2\n1\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO("1\n2\n2\n1\n"))
 
     assert main(["init", "--repo", str(repo)]) == 0
 

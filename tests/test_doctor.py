@@ -215,10 +215,10 @@ def test_doctor_flags_registered_repos_whose_path_is_gone(
 def test_doctor_flags_missing_agent_files(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    repo = make_repo(home, "repo", "--agents", "claude-code")
-    (repo / ".byor" / "agents" / "claude-code.md").unlink()
+    repo = make_repo(home)  # the skill render is the default agent file
+    (repo / ".agents" / "skills" / "byor" / "SKILL.md").unlink()
     capsys.readouterr()
 
     assert doctor(repo, "--quick") == 1
 
-    assert ".byor/agents/claude-code.md is missing" in capsys.readouterr().out
+    assert ".agents/skills/byor/SKILL.md is missing" in capsys.readouterr().out

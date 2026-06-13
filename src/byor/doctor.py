@@ -225,7 +225,7 @@ def _extra_checks_check(
 
 
 def _agent_files_check(repo_root: Path, repo_config: RepoConfig) -> Check:
-    """Each agent in ai.agents needs its integration files."""
+    """Each agent in ai.agents needs its managed files (skill renders, plugin)."""
     if not repo_config.agents:
         return Check("agent_files", True, "no AI agents configured")
     problems = agent_file_problems(repo_root, repo_config.agents)
@@ -236,4 +236,4 @@ def _agent_files_check(repo_root: Path, repo_config: RepoConfig) -> Check:
             f"{'; '.join(problems)}; run `byor hook install`",
         )
     agents = ", ".join(repo_config.agents)
-    return Check("agent_files", True, f"agent files installed for: {agents}")
+    return Check("agent_files", True, f"agent integrations installed for: {agents}")

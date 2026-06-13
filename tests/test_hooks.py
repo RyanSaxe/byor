@@ -6,12 +6,9 @@ from pathlib import Path
 import pytest
 from conftest import commands_in, make_repo
 
-from byor.agents import MANAGED_MARKER
 from byor.cli import main
 from byor.config import load_repo_config
 from byor.hookconfig import BYOR_COMMAND_SIGNATURE
-
-AGENTS_DIR = Path(".byor") / "agents"
 
 SETTINGS_RELPATH = Path(".claude") / "settings.json"
 
@@ -30,18 +27,6 @@ def claude_command(repo: Path) -> str:
     ]
     [command] = commands
     return command
-
-
-def test_init_installs_instruction_files_for_requested_agents(home: Path) -> None:
-    repo = make_repo(home, "repo", "--agents", "codex,copilot")
-
-    for name in ("codex.md", "copilot.md"):
-        content = (repo / AGENTS_DIR / name).read_text()
-        assert MANAGED_MARKER in content
-        assert "byor agent-check" in content
-        # Both harnesses auto-discover the rule-capture skill.
-        assert "`byor` rule-capture skill" in content
-        assert ".agents/skills/byor" in content
 
 
 def test_claude_code_install_writes_a_guarded_project_hook(home: Path) -> None:
@@ -71,7 +56,7 @@ def test_claude_code_install_merges_into_existing_settings(home: Path) -> None:
     assert init_with_agents(repo, "claude-code") == 0
     assert settings.read_text() == snapshot
 
-    # The settings hook plus instruction file satisfy doctor's agent_files check.
+    # The settings hook plus the skill render satisfy doctor's agent_files check.
     assert main(["doctor", "--repo", str(repo), "--quick"]) == 0
 
 
@@ -113,9 +98,18 @@ def test_hook_install_writes_the_adapter_and_records_the_agent(home: Path) -> No
 
     assert hook("install", repo, "codex") == 0
 
-    assert MANAGED_MARKER in (repo / AGENTS_DIR / "codex.md").read_text()
     assert (repo / ".codex" / "hooks.json").is_file()
     assert load_repo_config(repo).agents == ["skill", "codex"]
+
+
+def test_codex_install_prints_the_trust_step(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+
+    assert hook("install", repo, "codex") == 0
+
+    assert "/hooks" in capsys.readouterr().out
 
 
 def test_cursor_is_a_full_agent_choice(home: Path) -> None:
@@ -123,10 +117,6 @@ def test_cursor_is_a_full_agent_choice(home: Path) -> None:
 
     assert hook("install", repo, "cursor") == 0
 
-    instructions = (repo / AGENTS_DIR / "cursor.md").read_text()
-    assert MANAGED_MARKER in instructions
-    assert "Cursor" in instructions
-    assert "`byor` rule-capture skill" in instructions
     hooks = json.loads((repo / ".cursor" / "hooks.json").read_text())
     assert BYOR_COMMAND_SIGNATURE in json.dumps(hooks)
     assert load_repo_config(repo).agents == ["skill", "cursor"]
@@ -162,25 +152,23 @@ def test_hook_install_requires_an_initialized_repo(
     repo = home / "bare"
     repo.mkdir()
 
-    assert hook("install", repo, "generic") == 1
+    assert hook("install", repo, "codex") == 1
 
     err = capsys.readouterr().err
     assert "byor init" in err
     assert "Traceback" not in err
 
 
-def test_hook_uninstall_removes_only_marker_bearing_files(
+def test_doctor_flags_a_recorded_harness_whose_hook_was_removed(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    repo = make_repo(home)
-    hook("install", repo, "copilot")
-    (repo / AGENTS_DIR / "copilot.md").write_text("my own notes\n")
+    repo = make_repo(home, "repo", "--agents", "codex")
+    (repo / ".codex" / "hooks.json").unlink()
+    capsys.readouterr()
 
-    assert hook("uninstall", repo, "copilot") == 0
+    assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
 
-    assert (repo / AGENTS_DIR / "copilot.md").read_text() == "my own notes\n"
-    assert "without the BYOR marker" in capsys.readouterr().out
-    assert load_repo_config(repo).agents == ["skill"]
+    assert "the codex hook is not installed" in capsys.readouterr().out
 
 
 def test_hook_uninstall_removes_the_installed_adapter_and_hook(home: Path) -> None:
@@ -188,7 +176,6 @@ def test_hook_uninstall_removes_the_installed_adapter_and_hook(home: Path) -> No
 
     assert hook("uninstall", repo, "codex") == 0
 
-    assert not (repo / AGENTS_DIR / "codex.md").exists()
     assert not (repo / ".codex" / "hooks.json").exists()
     assert load_repo_config(repo).agents == ["skill"]
     # Idempotent: a second uninstall has nothing to do and still succeeds.

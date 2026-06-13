@@ -98,14 +98,13 @@ def test_doctor_flags_missing_or_drifted_renders_and_install_repairs(
     assert main(["doctor", "--repo", str(repo), "--quick"]) == 0
 
 
-def test_claude_code_install_writes_both_the_hook_and_instructions(home: Path) -> None:
-    """claude-code installs a real hook plus its instruction file,
-    alongside the skill render the layout already plants under .claude/skills/.
+def test_claude_code_install_writes_the_hook_and_skill_render(home: Path) -> None:
+    """claude-code installs a real hook alongside the skill render the layout
+    already plants under .claude/skills/.
     """
     repo = make_repo(home)
 
     assert main(["hook", "install", "--repo", str(repo), "--agent", "claude-code"]) == 0
 
-    assert (repo / ".byor" / "agents" / "claude-code.md").is_file()
     assert (repo / ".claude" / "settings.json").is_file()
     assert (repo / SKILL_RELPATHS[1]).is_file()

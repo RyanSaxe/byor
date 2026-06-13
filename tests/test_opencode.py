@@ -1,19 +1,16 @@
-"""The OpenCode adapter: post-edit plugin plus instruction file."""
+"""The OpenCode adapter: post-edit plugin."""
 
 from pathlib import Path
 
 import pytest
 from conftest import make_repo
 
-from byor.agents import MANAGED_MARKER
 from byor.cli import main
 from byor.config import load_repo_config
 from byor.opencode import OPENCODE_MARKER, OPENCODE_PLUGIN_RELPATH
 
-INSTRUCTIONS_RELPATH = ".byor/agents/opencode.md"
 
-
-def test_install_writes_the_plugin_and_the_instruction_file(home: Path) -> None:
+def test_install_writes_the_plugin(home: Path) -> None:
     repo = make_repo(home, "repo", "--agents", "opencode")
 
     # The plugin cannot run against a real OpenCode here; assert its shape.
@@ -25,10 +22,6 @@ def test_install_writes_the_plugin_and_the_instruction_file(home: Path) -> None:
     assert ".nothrow()" in plugin  # exit codes other than 2 never break the loop
     assert "output.output" in plugin
 
-    instructions = (repo / INSTRUCTIONS_RELPATH).read_text()
-    assert MANAGED_MARKER in instructions
-    assert "byor agent-check --scope diff --files <changed files>" in instructions
-    assert OPENCODE_PLUGIN_RELPATH in instructions
     assert "opencode" in load_repo_config(repo).agents
 
 
@@ -42,7 +35,6 @@ def test_uninstall_removes_only_marker_bearing_files(
     assert main(["hook", "uninstall", "--repo", str(repo), "--agent", "opencode"]) == 0
 
     assert plugin.read_text() == "export const MyPlugin = {}\n"
-    assert not (repo / INSTRUCTIONS_RELPATH).exists()
     assert "without the BYOR marker" in capsys.readouterr().out
     assert "opencode" not in load_repo_config(repo).agents
 

@@ -13,9 +13,9 @@ share across repositories, and expose to AI coding agents.
 
 ### Added
 
-- `byor init` — creates the repository layout, writes/merges `sgconfig.yml`
-  (preserving existing keys), the git ignore block, and AI-agent instructions,
-  so plain `ast-grep scan` and `ast-grep lsp` work with no byor in the loop.
+- `byor init` — creates the repository layout and writes/merges `sgconfig.yml`
+  (preserving existing keys) and the git ignore block, so plain `ast-grep scan`
+  and `ast-grep lsp` work with no byor in the loop.
 - Three rule scopes — project (shared), local personal, and global personal —
   with a self-healing sync that mirrors global rules into each repo and a
   conflict model where project and local rules override global by ID.

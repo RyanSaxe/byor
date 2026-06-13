@@ -11,20 +11,10 @@ Humans keep using `ast-grep scan` directly; `agent-check` exists to render
 rule-specific instructions back into an agent's context. Real post-edit hooks
 use `--stdin-hook HARNESS` instead, which scopes to the exact edited lines.
 
-## Generic integration
-
-`byor init` writes `.byor/agents/README.md` with the core instruction:
-
-> After writing or editing code, run `byor agent-check --scope diff --files
-> <changed files>`. If BYOR reports a diagnostic, fix it before continuing.
-> If a
-> rule's instruction permits exceptions, only keep the violating code when
-> genuinely necessary, and suppress it with
-> `# ast-grep-ignore: <rule-id> -- <short reason>` on its own line above the
-> violation.
-
-Point any agent harness at that file (or copy the instruction into the
-harness's own instruction location) and the loop works.
+byor writes no instruction files: a harness discovers the rule-capture skill on
+its own (the cross-agent `SKILL.md` standard) and the installed post-edit hook
+runs `agent-check` automatically, so the loop needs no prose telling the agent
+to run byor.
 
 ## agent-check
 
@@ -133,7 +123,7 @@ byor hook install --agent AGENT [--hook-scope project|global|local]
 byor hook uninstall --agent AGENT
 ```
 
-`AGENT` is one of `generic`, `claude-code`, `codex`, `copilot`, `cursor`,
+`AGENT` is one of `claude-code`, `codex`, `copilot`, `cursor`,
 `opencode`, or `skill`. `--hook-scope` chooses where a real hook registers:
 `project` (committed config, with a `command -v byor` guard so teammates
 without byor are unaffected), `global` (under `~/`, personal), or `local`
@@ -165,17 +155,16 @@ init:
 
 | Agent | Integration |
 | --- | --- |
-| `generic` | Instruction file: `.byor/agents/README.md` |
-| `claude-code` | Real `PostToolUse` hook (`.claude/settings.json`, `settings.local.json`, or `~/.claude/settings.json`) plus instruction file `.byor/agents/claude-code.md` |
-| `codex` | Real `PostToolUse` hook (`.codex/hooks.json` or `~/.codex/hooks.json`, matcher `Edit\|Write`) plus instruction file; trust the hook via `/hooks`, and copy the instruction into `AGENTS.md` |
-| `copilot` | Real `postToolUse` hook (`.github/hooks/byor.json` or `~/.copilot/hooks/byor.json`) plus instruction file; copy the instruction into `.github/copilot-instructions.md` |
-| `cursor` | Real `postToolUse` hook (`.cursor/hooks.json` or `~/.cursor/hooks.json`) plus instruction file `.byor/agents/cursor.md` |
-| `opencode` | Real `tool.execute.after` plugin `.opencode/plugin/byor.ts` plus instruction file `.byor/agents/opencode.md` |
+| `claude-code` | Real `PostToolUse` hook (`.claude/settings.json`, `settings.local.json`, or `~/.claude/settings.json`) |
+| `codex` | Real `PostToolUse` hook (`.codex/hooks.json` or `~/.codex/hooks.json`, matcher `Edit\|Write`); trust the hook via `/hooks` |
+| `copilot` | Real `postToolUse` hook (`.github/hooks/byor.json` or `~/.copilot/hooks/byor.json`) |
+| `cursor` | Real `postToolUse` hook (`.cursor/hooks.json` or `~/.cursor/hooks.json`) |
+| `opencode` | Real `tool.execute.after` plugin `.opencode/plugin/byor.ts` |
 | `skill` | Rule-capture skill rendered identically into `.agents/skills/byor/SKILL.md` and `.claude/skills/byor/SKILL.md`; installed by `init` by default |
 
 Codex, Copilot, Cursor, and OpenCode auto-discover the `byor` rule-capture
 skill from `.agents/skills/byor/SKILL.md`, so they get the capture loop
-natively; their instruction files say so.
+natively.
 
 ### skill
 
@@ -229,19 +218,16 @@ exit 2, appends the diagnostics to the tool output the model sees. Any other
 exit code appends nothing, so a byor configuration error never breaks the
 agent loop.
 
-Install also writes the standard instruction file `.byor/agents/opencode.md`,
-which tells the model the plugin covers `edit`, `write`, and `apply_patch`
-calls that name a single `filePath` (a multi-file `apply_patch` is skipped)
-and to run `agent-check` manually for files changed another way (for example
-via shell commands).
+The plugin covers `edit`, `write`, and `apply_patch` calls that name a single
+`filePath`; a multi-file `apply_patch` or a file changed another way (for
+example via a shell command) is not auto-checked.
 
 ### codex
 
 Install writes a `PostToolUse` hook (matcher `Edit|Write`) into
 `.codex/hooks.json` (project) or `~/.codex/hooks.json` (global). Codex does not
 run a new hook until you trust it: run `/hooks` in the Codex session and approve
-the byor entry once. Install also writes the standard instruction file; copy
-its contents into `AGENTS.md`, which Codex reads as repository guidance.
+the byor entry once — `byor hook install --agent codex` prints this reminder.
 
 ### claude-code
 

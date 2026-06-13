@@ -30,9 +30,9 @@ byor sync --all
 byor agent-check --files src/example.py
 ```
 
-`init` creates `sgconfig.yml`, the `.byor/` rule directories, a git ignore
-block, and AI agent instructions — after which `ast-grep scan` and
-`ast-grep lsp` work directly, with no byor in the loop.
+`init` creates `sgconfig.yml`, the `.byor/` rule directories, and a git ignore
+block — after which `ast-grep scan` and `ast-grep lsp` work directly, with no
+byor in the loop.
 
 ## Rule scopes
 
@@ -66,13 +66,13 @@ files and folds their failures into the same agent feedback. The global config
 also carries an `init:` section whose defaults seed `byor init`'s prompts and
 `--non-interactive` answers. See [docs/ai-agents.md](docs/ai-agents.md).
 
-| Harness | Skill | Instructions | Real hook | Payload precision | Registration |
-| --- | --- | --- | --- | --- | --- |
-| Claude Code | yes | yes | `PostToolUse` | edited lines | project, global, local |
-| Codex | yes | yes | `PostToolUse` | apply_patch added lines | project, global |
-| Copilot CLI | yes | yes | `postToolUse` | best-effort path | project, global |
-| Cursor | yes | yes | `postToolUse` | edited lines | project, global |
-| OpenCode | yes | yes | `tool.execute.after` plugin | changed file | project, global |
+| Harness | Skill | Real hook | Payload precision | Registration |
+| --- | --- | --- | --- | --- |
+| Claude Code | yes | `PostToolUse` | edited lines | project, global, local |
+| Codex | yes | `PostToolUse` | apply_patch added lines | project, global |
+| Copilot CLI | yes | `postToolUse` | best-effort path | project, global |
+| Cursor | yes | `postToolUse` | edited lines | project, global |
+| OpenCode | yes | `tool.execute.after` plugin | changed file | project, global |
 
 ## Why copies, not symlinks
 
