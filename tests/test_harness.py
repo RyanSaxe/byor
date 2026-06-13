@@ -138,11 +138,13 @@ def test_cursor_emitter_uses_additional_context() -> None:
 
 
 def test_copilot_emitter_truncates_to_the_ten_kb_cap() -> None:
-    stdout, code = emit("copilot", "x" * (COPILOT_CONTEXT_CAP * 2))
+    # Newlines double under JSON escaping, so the encoded envelope, not the raw
+    # text, must stay within the cap.
+    stdout, code = emit("copilot", "line\n" * (COPILOT_CONTEXT_CAP // 2))
 
     assert code == 0
     assert len(stdout) <= COPILOT_CONTEXT_CAP
-    assert json.loads(stdout)["additionalContext"].startswith("xxxx")
+    assert json.loads(stdout)["additionalContext"].startswith("line")
 
 
 def test_empty_diagnostics_emit_plain_exit_zero_everywhere() -> None:

@@ -214,11 +214,17 @@ def _emit_cursor(rendered: str) -> tuple[str, int]:
 
 
 def _truncate_to_cap(rendered: str) -> str:
-    """Trim diagnostics so the encoded copilot envelope fits the 10KB cap."""
-    if len(_compact({"additionalContext": rendered})) <= COPILOT_CONTEXT_CAP:
-        return rendered
-    envelope_overhead = len(_compact({"additionalContext": ""}))
-    return rendered[: COPILOT_CONTEXT_CAP - envelope_overhead]
+    """Trim diagnostics so the encoded copilot envelope fits the 10KB cap.
+
+    JSON-escaping a newline doubles its byte count, so the encoded length is
+    bounded by trimming the raw text until the envelope fits rather than by a
+    fixed character budget.
+    """
+    text = rendered
+    while text and len(_compact({"additionalContext": text})) > COPILOT_CONTEXT_CAP:
+        overshoot = len(_compact({"additionalContext": text})) - COPILOT_CONTEXT_CAP
+        text = text[: -max(overshoot, 1)]
+    return text
 
 
 def _compact(envelope: dict[str, JsonValue]) -> str:
