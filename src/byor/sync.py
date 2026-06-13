@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from byor.config import (
+    RepoConfig,
     global_rules_dir,
     load_global_config,
     load_local_config,
@@ -18,10 +19,11 @@ from byor.config import (
     repo_config_path,
     repo_registry_path,
 )
-from byor.fsio import write_text_atomic
+from byor.fsio import MANAGED_MARKER, write_marked_text, write_text_atomic
 from byor.ignore import write_rule_visibility_file
 from byor.paths import global_config_dir, resolve_repo_root
 from byor.rules import Rule, check_id_conflicts, discover_rule_files, load_rules
+from byor.skill import SKILL_MARKDOWN, SKILL_RELPATHS
 
 STALE_EXIT_CODE = 3
 
@@ -146,17 +148,30 @@ def repo_is_stale(repo_root: Path, canonical: CanonicalRules) -> bool:
 
 
 def heal_repo(repo_root: Path, config_dir: Path) -> str | None:
-    """The self-heal preamble: sync, returning one line when changed.
+    """The self-heal preamble: sync rules and skill renders, one line when changed.
 
     Uninitialized repositories are skipped silently: the command being run
     will fail with its own clearer RepoNotInitialized error.
     """
     if not repo_config_path(repo_root).is_file():
         return None
+    refresh_skill_renders(repo_root, load_repo_config(repo_root))
     _, result = sync_repo(repo_root, load_canonical_rules(config_dir))
     if not result.changed:
         return None
     return f"byor: synced {summarize_changes(result)}"
+
+
+def refresh_skill_renders(repo_root: Path, config: RepoConfig) -> None:
+    """Rewrite any byor-owned skill render that drifted from the packaged skill.
+
+    byor owns the skill, so running any command keeps it current with the
+    installed version; an unmarked render a user took over is left untouched.
+    """
+    if "skill" not in config.agents:
+        return
+    for relpath in SKILL_RELPATHS:
+        write_marked_text(repo_root / relpath, SKILL_MARKDOWN, MANAGED_MARKER)
 
 
 def summarize_changes(result: MirrorResult) -> str:

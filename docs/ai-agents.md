@@ -187,11 +187,17 @@ the agent:
    validates, syncs, and runs doctor), then **verifies** it by running
    `ast-grep scan` against an in-repo example of the violation.
 
-Preferences no syntax pattern can express (naming philosophy, architectural
-taste) are declined with a pointer to the harness's instruction file instead.
+The skill body that drives this ships with byor as Markdown (`byor/data/skill.md`);
+when a feedback policy is really better solved by a linter, type checker, or
+formatter (line length, import order, a wrong type), the skill has the agent
+say so and offer to configure that tool and wire it in — as a byor `check`, in
+CI, or as a pre-commit hook. A preference no tool can express (naming
+philosophy, architectural taste) is declined with a pointer to the harness's
+own instruction file (CLAUDE.md, AGENTS.md, …).
 
-The skill is one canonical document rendered identically into two locations,
-which together cover every major harness natively:
+### The skill is byor-owned
+
+The skill lives at two paths because no single one is read by every harness:
 
 | Harness | Reads the skill from |
 | --- | --- |
@@ -200,13 +206,18 @@ which together cover every major harness natively:
 | Copilot | `.agents/skills/byor/SKILL.md`; also reads `.claude/skills/` |
 | OpenCode | `.agents/skills/byor/SKILL.md`; also reads `.claude/skills/` |
 
-`byor init` installs both renders by default;
-`byor hook install --agent skill` and `hook uninstall --agent skill` manage
-them explicitly. Both renders are marker-managed: an unmarked file you placed
-at either path is never overwritten by init or hook install. `doctor` checks
-both renders exist and match the packaged content when `skill` is in
-`ai.agents`; a render without the BYOR marker is treated as user-owned and
-accepted as is.
+byor owns both renders, like the OpenCode plugin or the generated rule copies.
+It writes them from the packaged skill (`byor/data/skill.md`) and keeps them
+current with the **same self-heal that runs on every byor command**: a render
+that drifts from the installed byor's skill is silently rewritten, so the skill
+can never go stale against a changed CLI, and there is no refresh command to
+remember. doctor does not check the skill — there is nothing for it to report.
+
+To take a render over, **remove its BYOR marker**: byor then leaves that file
+alone (the standard ownership escape hatch), and you maintain it. The frontmatter
+is intentionally just `name` + `description`, the only fields every harness reads,
+so the one file works everywhere. `hook uninstall --agent skill` removes the
+marker-bearing renders.
 
 ### opencode
 

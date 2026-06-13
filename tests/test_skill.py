@@ -80,22 +80,29 @@ def test_hook_uninstall_removes_only_marked_renders(
     assert "skill" not in load_repo_config(repo).agents
 
 
-def test_doctor_flags_missing_or_drifted_renders_and_install_repairs(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_self_heal_refreshes_a_drifted_skill_render(home: Path) -> None:
+    """byor owns the skill, so running any command rewrites a managed render
+    that drifted from the packaged skill — no explicit reinstall needed."""
     repo = make_repo(home)
-    (repo / SKILL_RELPATHS[0]).unlink()
-    drifted = repo / SKILL_RELPATHS[1]
+    drifted = repo / SKILL_RELPATHS[0]
     drifted.write_text(f"{MANAGED_MARKER}\nstale render\n")
-    capsys.readouterr()
 
-    assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
-    out = capsys.readouterr().out
-    assert SKILL_RELPATHS[0] in out
-    assert SKILL_RELPATHS[1] in out
+    assert main(["list", "--repo", str(repo)]) == 0  # any command self-heals
 
-    assert main(["hook", "install", "--repo", str(repo), "--agent", "skill"]) == 0
-    assert main(["doctor", "--repo", str(repo), "--quick"]) == 0
+    assert drifted.read_text() == (repo / SKILL_RELPATHS[1]).read_text()
+    assert "BYOR Rule Capture" in drifted.read_text()
+
+
+def test_self_heal_leaves_a_user_owned_render_untouched(home: Path) -> None:
+    """Dropping the marker hands the file to the user; self-heal never clobbers
+    it, the standard ownership escape hatch."""
+    repo = make_repo(home)
+    owned = repo / SKILL_RELPATHS[0]
+    owned.write_text("# our house skill\n")  # no marker: user-owned
+
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    assert owned.read_text() == "# our house skill\n"
 
 
 def test_claude_code_install_writes_the_hook_and_skill_render(home: Path) -> None:

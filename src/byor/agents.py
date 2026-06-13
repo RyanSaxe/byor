@@ -131,15 +131,14 @@ def uninstall_agent(repo_root: Path, agent: str) -> list[str]:
 def agent_file_problems(repo_root: Path, agents: Sequence[str]) -> list[str]:
     """Integration problems for doctor's agent_files check.
 
-    The skill renders and the OpenCode plugin are byor-managed files; the other
-    harnesses' integration is their hook config, so each is verified by checking
-    a byor hook is present in one of its registration scopes.
+    The OpenCode plugin is a byor-managed file; the other harnesses' integration
+    is their hook config, verified by checking a byor hook is present in one of
+    its scopes. The skill renders are not checked here — self-heal keeps them
+    current on every byor command, so there is no drift for doctor to report.
     """
     problems: list[str] = []
     for agent in agents:
-        if agent == "skill":
-            problems.extend(_skill_render_problems(repo_root))
-        elif agent == "opencode":
+        if agent == "opencode":
             problems.extend(_opencode_plugin_problems(repo_root))
         elif (harness := _as_harness(agent)) is not None and not _hook_present(
             repo_root, harness
@@ -161,7 +160,11 @@ def _as_harness(agent: str) -> Harness | None:
 
 
 def _install_skill(repo_root: Path) -> list[str]:
-    """Render the rule-capture skill into both discovery locations."""
+    """Write the byor-owned skill to every discovery location.
+
+    Both renders are byor-managed copies of the packaged skill; an unmarked file
+    a user placed at either path is left untouched, like any managed file.
+    """
     messages: list[str] = []
     for relpath in SKILL_RELPATHS:
         messages.extend(_write_managed_file(repo_root, relpath, SKILL_MARKDOWN))
@@ -180,23 +183,6 @@ def _opencode_plugin_problems(repo_root: Path) -> list[str]:
     if status == "drifted":
         return [f"{OPENCODE_PLUGIN_RELPATH} is out of date"]
     return []
-
-
-def _skill_render_problems(repo_root: Path) -> list[str]:
-    """Both renders must exist and match the canonical content.
-
-    A marker-bearing render that drifted from the canonical content counts:
-    `byor hook install --agent skill` refreshes it. Unmarked files at these
-    paths are user-owned and accepted as is.
-    """
-    problems: list[str] = []
-    for relpath in SKILL_RELPATHS:
-        status = marked_text_status(repo_root / relpath, SKILL_MARKDOWN, MANAGED_MARKER)
-        if status == "missing":
-            problems.append(f"{relpath} is missing")
-        elif status == "drifted":
-            problems.append(f"{relpath} is out of date")
-    return problems
 
 
 def _write_managed_file(
