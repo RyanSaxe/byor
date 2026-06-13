@@ -1,5 +1,15 @@
 name: Release
 
+# Publishes to PyPI when a GitHub Release is published. To cut a release:
+# bump the version (`uv version --bump <part>`), commit, then publish a Release
+# with tag `vX.Y.Z` matching pyproject.toml.
+#
+# One-time setup before the first release:
+#   1. Register a pending Trusted Publisher at
+#      https://pypi.org/manage/account/publishing/ — project `byor`, owner
+#      `RyanSaxe`, repo `byor`, workflow `release.yml`, environment `pypi`.
+#   2. Create a GitHub Environment named `pypi` (Settings -> Environments).
+
 on:
   release:
     types: [published]
