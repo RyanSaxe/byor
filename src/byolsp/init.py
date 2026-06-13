@@ -10,6 +10,7 @@ from pathlib import Path
 from byolsp.agents import AGENT_CHOICES, HOOK_HARNESSES, install_agents
 from byolsp.config import (
     GlobalConfig,
+    InitDefaults,
     LocalConfig,
     RepoConfig,
     global_config_path,
@@ -55,8 +56,10 @@ class InitOptions:
 
 def run_init(args: argparse.Namespace) -> int:
     repo_root = resolve_repo_root(explicit=args.repo)
-    options = _options_from_args(args)
-    for message in initialize_repo(repo_root, global_config_dir(), options):
+    config_dir = global_config_dir()
+    defaults = load_global_config(config_dir).init
+    options = _options_from_args(args, defaults)
+    for message in initialize_repo(repo_root, config_dir, options):
         print(message)
     print(f"Initialized BYOLSP in {repo_root}")
     return 0
@@ -136,21 +139,28 @@ def _load_or_default_repo_config(repo_root: Path) -> RepoConfig:
         return RepoConfig()
 
 
-def _options_from_args(args: argparse.Namespace) -> InitOptions:
+def _options_from_args(args: argparse.Namespace, defaults: InitDefaults) -> InitOptions:
+    """Resolve init choices: explicit flag > global default > prompt/built-in.
+
+    Global defaults (SPEC 28.5) seed interactive prompts and stand in as the
+    answers under `--non-interactive`; an explicit flag always overrides both.
+    """
     interactive = not args.non_interactive
     if args.agents is not None:
         agents = _parse_agents(args.agents)
+    elif interactive:
+        agents = _prompt_agents(defaults.agents)
     else:
-        agents = _prompt_agents() if interactive else []
+        agents = list(defaults.agents) if defaults.agents is not None else []
     if args.ignore_mode is not None:
         ignore_mode: IgnoreMode = args.ignore_mode
     else:
-        ignore_mode = _prompt_ignore_mode() if interactive else "project"
+        ignore_mode = _resolve_ignore_mode(defaults.ignore_mode, interactive)
     if args.git_hooks is not None:
         git_hooks: bool = args.git_hooks
     else:
-        git_hooks = _prompt_git_hooks() if interactive else False
-    hook_scope = _resolve_hook_scope(args, agents, interactive)
+        git_hooks = _resolve_git_hooks(defaults.git_hooks, interactive)
+    hook_scope = _resolve_hook_scope(args, agents, interactive, defaults.hook_scope)
     # The harness-neutral rule-capture skill installs by default (SPEC 27.2).
     if "skill" not in agents:
         agents.append("skill")
@@ -164,21 +174,36 @@ def _options_from_args(args: argparse.Namespace) -> InitOptions:
     )
 
 
+def _resolve_ignore_mode(default: str | None, interactive: bool) -> IgnoreMode:
+    fallback: IgnoreMode = "local" if default == "local" else "project"
+    return _prompt_ignore_mode(fallback) if interactive else fallback
+
+
+def _resolve_git_hooks(default: bool | None, interactive: bool) -> bool:
+    fallback = default if default is not None else False
+    return _prompt_git_hooks(fallback) if interactive else fallback
+
+
 def _resolve_hook_scope(
-    args: argparse.Namespace, agents: list[str], interactive: bool
+    args: argparse.Namespace,
+    agents: list[str],
+    interactive: bool,
+    default: str | None,
 ) -> HookScope:
     """Ask hook scope once for all selected hook-capable agents (SPEC 28.3)."""
     if args.hook_scope is not None:
         return args.hook_scope
+    fallback: HookScope = "global" if default == "global" else "project"
     if interactive and any(agent in HOOK_HARNESSES for agent in agents):
-        return _prompt_hook_scope()
-    return "project"
+        return _prompt_hook_scope(fallback)
+    return fallback
 
 
-def _prompt_hook_scope() -> HookScope:
+def _prompt_hook_scope(default: HookScope) -> HookScope:
     choice = _prompt_choice(
         "Where should byolsp register agent hooks?",
         ("project (committed, shared with the team)", "global (~/, personal)"),
+        default=HOOK_SCOPES.index(default),
     )
     return HOOK_SCOPES[choice]
 
@@ -196,37 +221,52 @@ def _parse_agents(raw: str) -> list[str]:
     return agents
 
 
-def _prompt_agents() -> list[str]:
+def _prompt_agents(default: list[str] | None) -> list[str]:
     _print_options("AI integrations to install:", AGENT_CHOICES)
+    answer = _default_agent_numbers(default)
     while True:
-        raw = _ask("Enter numbers separated by commas", default="1")
+        raw = _ask("Enter numbers separated by commas", default=answer)
         agents = _numbers_to_choices(raw, AGENT_CHOICES)
         if agents is not None:
             return agents
         print(f"Please enter numbers between 1 and {len(AGENT_CHOICES)}.")
 
 
-def _prompt_ignore_mode() -> IgnoreMode:
+def _default_agent_numbers(default: list[str] | None) -> str:
+    """The comma-separated prompt default seeded from the global agents list."""
+    if not default:
+        return "1"
+    numbers = [
+        str(AGENT_CHOICES.index(agent) + 1)
+        for agent in default
+        if agent in AGENT_CHOICES
+    ]
+    return ",".join(numbers) if numbers else "1"
+
+
+def _prompt_ignore_mode(default: IgnoreMode) -> IgnoreMode:
     choice = _prompt_choice(
         "Where should byolsp write its git ignore entries?",
         ("project .gitignore (team-visible)", "local .git/info/exclude (private)"),
+        default=1 if default == "local" else 0,
     )
     return "local" if choice == 1 else "project"
 
 
-def _prompt_git_hooks() -> bool:
+def _prompt_git_hooks(default: bool) -> bool:
     choice = _prompt_choice(
         "Install git hook shims that run `byolsp sync` after merge and checkout?",
         ("no", "yes"),
+        default=1 if default else 0,
     )
     return choice == 1
 
 
-def _prompt_choice(intro: str, options: Sequence[str]) -> int:
+def _prompt_choice(intro: str, options: Sequence[str], default: int = 0) -> int:
     """Ask a numbered single-choice question; returns the zero-based index."""
     _print_options(intro, options)
     while True:
-        raw = _ask("Enter a number", default="1")
+        raw = _ask("Enter a number", default=str(default + 1))
         if raw.isdigit() and 1 <= int(raw) <= len(options):
             return int(raw) - 1
         print(f"Please enter a number between 1 and {len(options)}.")

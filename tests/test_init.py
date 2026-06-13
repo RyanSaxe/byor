@@ -7,7 +7,13 @@ from conftest import git
 
 from byolsp.agents import MANAGED_MARKER
 from byolsp.cli import main
-from byolsp.config import load_repo_config, load_repo_registry
+from byolsp.config import (
+    GlobalConfig,
+    InitDefaults,
+    load_repo_config,
+    load_repo_registry,
+    save_global_config,
+)
 from byolsp.ignore import IGNORED_PATTERNS
 
 TRACKED_FILES = (
@@ -215,3 +221,59 @@ def test_init_hook_scope_global_writes_configs_under_home(
 
     assert (fake_home / ".cursor" / "hooks.json").is_file()
     assert not (repo / ".cursor" / "hooks.json").exists()
+
+
+def seed_init_defaults(repo: Path, defaults: InitDefaults) -> None:
+    directory = config_dir(repo)
+    save_global_config(directory, GlobalConfig(init=defaults))
+
+
+def test_non_interactive_honors_global_init_defaults(repo: Path) -> None:
+    git(repo, "init", "--quiet")
+    seed_init_defaults(
+        repo, InitDefaults(agents=["claude-code"], ignore_mode="local", git_hooks=True)
+    )
+
+    assert init(repo) == 0
+
+    assert load_repo_config(repo).agents == ["claude-code", "skill"]
+    assert (repo / ".git" / "info" / "exclude").is_file()
+    assert (repo / ".git" / "hooks" / "post-merge").is_file()
+
+
+def test_global_hook_scope_default_routes_hooks_under_home(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_home = repo.parent / "fake-home"
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+    seed_init_defaults(repo, InitDefaults(agents=["cursor"], hook_scope="global"))
+
+    assert init(repo) == 0
+
+    assert (fake_home / ".cursor" / "hooks.json").is_file()
+    assert not (repo / ".cursor" / "hooks.json").exists()
+
+
+def test_explicit_flag_overrides_global_init_default(repo: Path) -> None:
+    seed_init_defaults(repo, InitDefaults(ignore_mode="local"))
+
+    assert init(repo, "--ignore-mode", "project") == 0
+
+    assert (repo / ".gitignore").is_file()
+    assert not (repo / ".git" / "info" / "exclude").exists()
+
+
+def test_global_default_seeds_interactive_prompt(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    git(repo, "init", "--quiet")
+    seed_init_defaults(repo, InitDefaults(ignore_mode="local"))
+    # Empty answers accept each prompt's default; the global default makes the
+    # ignore-mode prompt default to local rather than project.
+    monkeypatch.setattr(sys, "stdin", io.StringIO("\n\n\n"))
+
+    assert main(["init", "--repo", str(repo)]) == 0
+
+    assert (repo / ".git" / "info" / "exclude").is_file()
+    assert not (repo / ".gitignore").exists()
