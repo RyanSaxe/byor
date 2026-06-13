@@ -37,7 +37,7 @@ This repository uses BYOLSP to expose custom ast-grep diagnostics.
 After writing or editing code, run:
 
 ```bash
-byolsp agent-check --files <changed files>
+byolsp agent-check --scope diff --files <changed files>
 ```
 
 If BYOLSP reports a diagnostic, fix it before continuing.

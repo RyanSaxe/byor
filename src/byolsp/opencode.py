@@ -41,7 +41,7 @@ export const ByolspPlugin: Plugin = async ({ $ }) => ({
     const filePath = filePathArgument(input.args)
     if (filePath === undefined) return
     // nothrow: a byolsp config error (exit 1) must never break the agent loop.
-    const result = await $`byolsp agent-check --files ${filePath}`
+    const result = await $`byolsp agent-check --scope diff --files ${filePath}`
       .quiet()
       .nothrow()
     if (result.exitCode === DIAGNOSTICS_EXIT_CODE) {

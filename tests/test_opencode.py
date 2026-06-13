@@ -21,13 +21,13 @@ def test_install_writes_the_plugin_and_the_instruction_file(home: Path) -> None:
     assert plugin.startswith(OPENCODE_MARKER)
     assert '"tool.execute.after"' in plugin
     assert '["edit", "write", "apply_patch"]' in plugin
-    assert "byolsp agent-check --files" in plugin
+    assert "byolsp agent-check --scope diff --files" in plugin
     assert ".nothrow()" in plugin  # exit codes other than 2 never break the loop
     assert "output.output" in plugin
 
     instructions = (repo / INSTRUCTIONS_RELPATH).read_text()
     assert MANAGED_MARKER in instructions
-    assert "byolsp agent-check --files <changed files>" in instructions
+    assert "byolsp agent-check --scope diff --files <changed files>" in instructions
     assert OPENCODE_PLUGIN_RELPATH in instructions
     assert "opencode" in load_repo_config(repo).agents
 
