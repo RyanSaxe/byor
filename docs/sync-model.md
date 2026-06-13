@@ -3,13 +3,19 @@
 ## Why copies, not symlinks
 
 Your global rules are canonical in `~/.config/byor/rules/` and copied into
-each repo's `.byor/rules/personal/global/`. Copies, because ast-grep needs
-plain files in plain `ruleDirs`: it follows a `ruleDirs` entry that is itself
-a symlink, but does not load symlinked files or symlinked child directories
-inside a rule directory, and `ruleDirs` does not accept globs. Since v0.1
-requires plain `ast-grep scan` and plain `ast-grep lsp` to work with a normal
-`sgconfig.yml`, BYOR copies. The cost is duplication; the benefit is
-compatibility.
+each repo's `.byor/rules/personal/global/`. The primary reason is the override
+model: because each repo holds its own copy of a global rule, a project or
+local rule can shadow it by ID, a rule can be promoted from global into the
+project, and a teammate's committed rule can win on the next sync — behaviors a
+single shared symlink target could not express. Copies are also what let a
+fresh clone lint with zero byor installed.
+
+A symlinked *directory* in `ruleDirs` would in fact load, so symlinking is not
+strictly impossible — but ast-grep does not follow symlinked rule *files* or
+symlinked child directories inside a rule directory, and `ruleDirs` does not
+accept globs, so copies are also the only approach that works reliably with
+plain `ast-grep scan` and `ast-grep lsp`. The cost is duplication; the benefits
+are the override model and compatibility.
 
 Copies can go stale. The UX principle:
 
