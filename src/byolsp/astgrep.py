@@ -32,11 +32,16 @@ VERSION_PATTERN = re.compile(r"\d+(\.\d+)+")
 
 
 def resolve_ast_grep(command: str = "auto") -> Path:
-    """Locate the ast-grep executable (SPEC 5).
+    """Locate the ast-grep executable (SPEC 5, 28.6).
 
     `$BYOLSP_AST_GREP` wins when set. Otherwise a non-`auto` `command` (the
     global config's `ast_grep.command`: a name or absolute path) is used
     exactly, and `auto` tries `ast-grep` then `sg` on PATH.
+
+    A candidate is accepted only if `<candidate> --version` reports an
+    ast-grep version; otherwise resolution continues down the chain (Ubuntu's
+    `/usr/bin/sg` is the unix setgroups tool, not ast-grep). Each resolved path
+    is probed at most once per call.
     """
     override = os.environ.get("BYOLSP_AST_GREP")
     if override:
@@ -45,10 +50,17 @@ def resolve_ast_grep(command: str = "auto") -> Path:
         candidates = (command,)
     else:
         candidates = ("ast-grep", "sg")
+    probed: set[Path] = set()
     for candidate in candidates:
         found = shutil.which(candidate)
-        if found is not None:
-            return Path(found)
+        if found is None:
+            continue
+        executable = Path(found)
+        if executable in probed:
+            continue
+        probed.add(executable)
+        if _reports_ast_grep_version(executable):
+            return executable
     raise AstGrepNotFound(NOT_FOUND_MESSAGE)
 
 
@@ -126,12 +138,37 @@ def ast_grep_version(executable: Path) -> str:
         raise AstGrepNotFound(
             f"could not run `{executable} --version`: {error}"
         ) from error
-    match = VERSION_PATTERN.search(result.stdout) if result.returncode == 0 else None
-    if match is None:
+    version = _parse_ast_grep_version(result)
+    if version is None:
         raise AstGrepNotFound(
             f"could not read an ast-grep version from `{executable} --version`"
         )
-    return match.group(0)
+    return version
+
+
+def _reports_ast_grep_version(executable: Path) -> bool:
+    """Whether `executable --version` succeeds and names an ast-grep version."""
+    try:
+        result = subprocess.run(
+            [str(executable), "--version"], capture_output=True, text=True
+        )
+    except OSError:
+        return False
+    return _parse_ast_grep_version(result) is not None
+
+
+def _parse_ast_grep_version(result: subprocess.CompletedProcess[str]) -> str | None:
+    """The ast-grep version named in a `--version` result, or None.
+
+    ast-grep prints `ast-grep 0.43.0`; a bare version number alone is rejected
+    so the unix `sg` (setgroups) tool, which has no such output, falls through.
+    """
+    if result.returncode != 0:
+        return None
+    if "ast-grep" not in result.stdout:
+        return None
+    match = VERSION_PATTERN.search(result.stdout)
+    return match.group(0) if match is not None else None
 
 
 def _parse_scan_output(stdout: str) -> list[ScanMatch] | None:

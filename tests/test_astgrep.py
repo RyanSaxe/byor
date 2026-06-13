@@ -48,6 +48,23 @@ def test_path_resolution_prefers_ast_grep_over_sg(bin_dir: Path) -> None:
     assert resolve_ast_grep() == ast_grep
 
 
+def test_resolution_skips_a_candidate_that_is_not_ast_grep(bin_dir: Path) -> None:
+    # Ubuntu's /usr/bin/sg is the setgroups tool: --version is not ast-grep's.
+    fake_executable(bin_dir / "sg", script='echo "sg from util-linux"')
+
+    with pytest.raises(AstGrepNotFound) as excinfo:
+        resolve_ast_grep()
+
+    assert str(excinfo.value) == NOT_FOUND_MESSAGE
+
+
+def test_resolution_falls_through_to_a_real_ast_grep(bin_dir: Path) -> None:
+    fake_executable(bin_dir / "sg", script="exit 1")
+    ast_grep = fake_executable(bin_dir / "ast-grep")
+
+    assert resolve_ast_grep() == ast_grep
+
+
 def test_configured_command_is_used_exactly(bin_dir: Path, tmp_path: Path) -> None:
     fake_executable(bin_dir / "ast-grep")
     configured = fake_executable(tmp_path / "custom" / "ast-grep")
