@@ -114,12 +114,23 @@ def test_scan_parses_matches_with_metadata(tmp_path: Path) -> None:
     assert result.warnings == ""
     (match,) = result.matches
     assert match.file == str(project / "src.py")
-    assert (match.line, match.column) == (0, 4)  # 0-based, as ast-grep reports
+    # 0-based, as ast-grep reports.
+    assert (match.line, match.column, match.end_line) == (0, 4, 0)
     assert match.rule_id == "no-python-cast"
     assert match.severity == "warning"
     assert match.message == "Avoid typing.cast in Python code."
     assert match.lines == 'x = cast(int, "1")'
     assert match.agent_prompt == "Fix the type by narrowing instead."
+
+
+def test_scan_reports_the_end_line_of_a_multi_line_match(tmp_path: Path) -> None:
+    project = ast_grep_project(tmp_path)
+    (project / "src.py").write_text('pad = 0\nx = cast(\n    int,\n    "1",\n)\n')
+
+    result = scan_files(resolve_ast_grep(), project, [project / "src.py"])
+
+    (match,) = result.matches
+    assert (match.line, match.end_line) == (1, 4)
 
 
 def test_scan_without_metadata_yields_no_agent_prompt(tmp_path: Path) -> None:

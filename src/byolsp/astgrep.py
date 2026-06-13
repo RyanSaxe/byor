@@ -63,6 +63,9 @@ class ScanMatch:
     file: str
     line: int
     column: int
+    end_line: int
+    """range.end.line: the last line the match spans, 0-based as reported."""
+
     rule_id: str
     severity: str
     message: str
@@ -148,11 +151,12 @@ def _parse_scan_output(stdout: str) -> list[ScanMatch] | None:
 
 
 def _parse_match(match: dict[str, object]) -> ScanMatch:
-    line, column = _start_position(match)
+    line, column, end_line = _match_positions(match)
     return ScanMatch(
         file=_string_field(match, "file"),
         line=line,
         column=column,
+        end_line=end_line,
         rule_id=_string_field(match, "ruleId"),
         severity=_string_field(match, "severity"),
         message=_string_field(match, "message"),
@@ -168,14 +172,20 @@ def _string_field(match: dict[str, object], key: str) -> str:
     return value
 
 
-def _start_position(match: dict[str, object]) -> tuple[int, int]:
+def _match_positions(match: dict[str, object]) -> tuple[int, int, int]:
     span = match.get("range")
     start = span.get("start") if isinstance(span, dict) else None
+    end = span.get("end") if isinstance(span, dict) else None
     line = start.get("line") if isinstance(start, dict) else None
     column = start.get("column") if isinstance(start, dict) else None
-    if not isinstance(line, int) or not isinstance(column, int):
-        raise ByolspError("unexpected ast-grep scan JSON: missing 'range.start'")
-    return line, column
+    end_line = end.get("line") if isinstance(end, dict) else None
+    if (
+        not isinstance(line, int)
+        or not isinstance(column, int)
+        or not isinstance(end_line, int)
+    ):
+        raise ByolspError("unexpected ast-grep scan JSON: missing 'range' positions")
+    return line, column, end_line
 
 
 def _agent_prompt(match: dict[str, object]) -> str | None:
