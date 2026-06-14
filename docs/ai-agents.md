@@ -1,6 +1,6 @@
 # AI Agents
 
-BYOR turns your ast-grep rules into directive feedback for AI coding
+byor turns your ast-grep rules into directive feedback for AI coding
 agents. Every agent integration wraps the same command:
 
 ```bash
@@ -213,7 +213,7 @@ that drifts from the installed byor's skill is silently rewritten, so the skill
 can never go stale against a changed CLI, and there is no refresh command to
 remember.
 
-To take a render over, **remove its BYOR marker**: byor then leaves that file
+To take a render over, **remove its byor marker**: byor then leaves that file
 alone (the standard ownership escape hatch), and you maintain it. The frontmatter
 is intentionally just `name` + `description`, the only fields every harness reads,
 so the one file works everywhere. `hook uninstall --agent skill` removes the
@@ -252,10 +252,8 @@ Install writes a `PostToolUse` hook (matcher `Edit|Write`) into
 
 ### claude-code
 
-Install merges a `PostToolUse` hook into the settings file for the chosen
-scope — `.claude/settings.json` (project), `.claude/settings.local.json`
-(local), or `~/.claude/settings.json` (global) — creating it if absent and
-preserving existing keys and hook groups:
+Install merges a `PostToolUse` hook into `~/.claude/settings.json`, creating it
+if absent and preserving existing keys and hook groups:
 
 ```json
 {
@@ -275,12 +273,11 @@ preserving existing keys and hook groups:
 }
 ```
 
-A project-scope command is wrapped in a `command -v byor` guard so a
-teammate without byor is unaffected. Claude Code pipes the tool-call JSON to
-the hook on stdin (which `--stdin-hook claude-code` parses) and, on exit 2,
-feeds the hook's stderr back to the model — hence `>&2`: `agent-check` exits 2
-exactly when there are diagnostics, so the instructions reach the model only
-when something needs fixing.
+Claude Code pipes the tool-call JSON to the hook on stdin (which
+`--stdin-hook claude-code` parses) and, on exit 2, feeds the hook's stderr back
+to the model — hence `>&2`. `agent-check` exits 2 exactly when there are
+diagnostics, so the instructions reach the model only when something needs
+fixing.
 
 Install is idempotent. `uninstall` removes only hook groups whose every
 command is byor's; a group you mixed your own hooks into counts as

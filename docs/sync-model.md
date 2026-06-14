@@ -91,7 +91,7 @@ local rule still owns the ID, in which case it stays skipped.
 **A fresh clone, before byor is installed.** Tracked `.gitkeep` and
 `.ignore` files keep the rule directories present and ast-grep-visible, so
 `ast-grep scan` works with project rules immediately. Personal rules appear
-after `uvx byor init` (or any byor command) runs.
+after `byor init` (or any byor command) runs.
 
 That property is what makes CI cheap: a fresh clone can gate on the committed
 project rules with zero byor installed. Use `--error` so warning severities
@@ -117,8 +117,8 @@ IDs) until sync removes the now-overridden copy. Any byor command heals it —
 but editor-only sessions never run byor.
 
 That gap is closed by opt-in git hook shims: `byor init --git-hooks` (or
-answering yes to init's third question) installs `post-merge` and
-`post-checkout` hooks:
+answering yes when `byor init` asks) installs `post-merge` and `post-checkout`
+hooks:
 
 ```sh
 #!/bin/sh

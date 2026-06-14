@@ -1,8 +1,7 @@
 # Rules
 
-BYOR rules are real ast-grep YAML files — no second rule language, no
-compiled format. Anything ast-grep accepts works; BYOR adds optional
-metadata that AI hooks use.
+byor rules are ordinary ast-grep YAML files. Anything ast-grep accepts works,
+plus optional metadata that the AI hooks read.
 
 ## Rule file format
 
