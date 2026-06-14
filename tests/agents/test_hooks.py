@@ -40,8 +40,9 @@ def test_claude_code_install_writes_an_unguarded_global_hook(home: Path) -> None
     assert f"{BYOR_COMMAND_SIGNATURE} claude-code" in command
     # Global hooks are personal: no teammate guard.
     assert "command -v byor" not in command
-    # The skill render still lands in the repo (until it goes global too).
-    assert (repo / ".claude" / "skills" / "byor" / "SKILL.md").is_file()
+    # The skill render lands globally too, never in the repo.
+    assert (home / ".claude" / "skills" / "byor" / "SKILL.md").is_file()
+    assert not (repo / ".claude" / "skills").exists()
 
 
 def test_claude_code_install_merges_into_existing_global_settings(home: Path) -> None:

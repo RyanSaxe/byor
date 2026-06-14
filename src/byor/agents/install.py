@@ -24,7 +24,7 @@ from byor.agents.pi import PI_EXTENSION, PI_EXTENSION_RELPATH, PI_MARKER
 from byor.config import load_repo_config, save_repo_config
 from byor.io.fsio import MANAGED_MARKER, marked_text_status, write_marked_text
 from byor.io.paths import resolve_repo_root
-from byor.rules.skill import SKILL_MARKDOWN, SKILL_RELPATHS
+from byor.rules.skill import SKILL_MARKDOWN, global_skill_paths
 
 # The four real-hook harnesses: a set for membership, a map for Harness lookup.
 HOOK_HARNESSES: frozenset[str] = frozenset(HARNESS_CHOICES)
@@ -102,7 +102,7 @@ def install_agents(repo_root: Path, agents: Sequence[str]) -> list[str]:
 def install_agent(repo_root: Path, agent: str) -> list[str]:
     """Install one agent adapter; returns summary lines for changes made."""
     if agent == "skill":
-        return _install_skill(repo_root)
+        return _install_skill()
     plugin = PLUGIN_AGENTS.get(agent)
     if plugin is not None:
         return _write_managed_file(
@@ -122,8 +122,8 @@ def uninstall_agent(repo_root: Path, agent: str) -> list[str]:
     """Remove one agent adapter; only marker-bearing files are deleted."""
     if agent == "skill":
         messages: list[str] = []
-        for relpath in SKILL_RELPATHS:
-            messages.extend(_remove_managed_file(repo_root, relpath))
+        for path in global_skill_paths():
+            messages.extend(_remove_managed_path(path, _home_display(path)))
         return messages
     plugin = PLUGIN_AGENTS.get(agent)
     if plugin is not None:
@@ -161,15 +161,15 @@ def _as_harness(agent: str) -> Harness | None:
     return HARNESS_BY_NAME.get(agent)
 
 
-def _install_skill(repo_root: Path) -> list[str]:
-    """Write the byor-owned skill to every discovery location.
+def _install_skill() -> list[str]:
+    """Write the byor-owned skill to its global discovery locations.
 
     Both renders are byor-managed copies of the packaged skill; an unmarked file
     a user placed at either path is left untouched, like any managed file.
     """
     messages: list[str] = []
-    for relpath in SKILL_RELPATHS:
-        messages.extend(_write_managed_file(repo_root, relpath, SKILL_MARKDOWN))
+    for path in global_skill_paths():
+        messages.extend(_write_managed_path(path, SKILL_MARKDOWN, _home_display(path)))
     return messages
 
 
@@ -190,21 +190,40 @@ def _plugin_problems(repo_root: Path, plugin: PluginAgent) -> list[str]:
 def _write_managed_file(
     repo_root: Path, relpath: str, content: str, marker: str = MANAGED_MARKER
 ) -> list[str]:
-    result = write_marked_text(repo_root / relpath, content, marker)
-    if result == "unmarked":
-        return [f"{relpath} exists without the BYOR marker; left untouched."]
-    if result == "unchanged":
-        return []
-    return [f"Wrote {relpath}"]
+    return _write_managed_path(repo_root / relpath, content, relpath, marker)
 
 
 def _remove_managed_file(
     repo_root: Path, relpath: str, marker: str = MANAGED_MARKER
 ) -> list[str]:
-    path = repo_root / relpath
+    return _remove_managed_path(repo_root / relpath, relpath, marker)
+
+
+def _write_managed_path(
+    path: Path, content: str, display: str, marker: str = MANAGED_MARKER
+) -> list[str]:
+    result = write_marked_text(path, content, marker)
+    if result == "unmarked":
+        return [f"{display} exists without the BYOR marker; left untouched."]
+    if result == "unchanged":
+        return []
+    return [f"Wrote {display}"]
+
+
+def _remove_managed_path(
+    path: Path, display: str, marker: str = MANAGED_MARKER
+) -> list[str]:
     if not path.is_file():
         return []
     if marker not in path.read_text(encoding="utf-8"):
-        return [f"{relpath} exists without the BYOR marker; left untouched."]
+        return [f"{display} exists without the BYOR marker; left untouched."]
     path.unlink()
-    return [f"Removed {relpath}"]
+    return [f"Removed {display}"]
+
+
+def _home_display(path: Path) -> str:
+    """A `~/...` label for a global file under the user's home."""
+    try:
+        return f"~/{path.relative_to(Path.home()).as_posix()}"
+    except ValueError:
+        return str(path)

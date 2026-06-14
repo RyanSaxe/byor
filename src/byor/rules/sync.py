@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from byor.config import (
-    RepoConfig,
     global_rules_dir,
     load_global_config,
     load_local_config,
@@ -22,7 +21,7 @@ from byor.config import (
 from byor.io.fsio import MANAGED_MARKER, write_marked_text, write_text_atomic
 from byor.io.paths import global_config_dir, resolve_repo_root
 from byor.rules.rules import Rule, check_id_conflicts, discover_rule_files, load_rules
-from byor.rules.skill import SKILL_MARKDOWN, SKILL_RELPATHS
+from byor.rules.skill import SKILL_MARKDOWN, global_skill_paths
 from byor.scaffold.ignore import write_rule_visibility_file
 
 STALE_EXIT_CODE = 3
@@ -155,23 +154,22 @@ def heal_repo(repo_root: Path, config_dir: Path) -> str | None:
     """
     if not repo_config_path(repo_root).is_file():
         return None
-    refresh_skill_renders(repo_root, load_repo_config(repo_root))
+    refresh_skill_renders()
     _, result = sync_repo(repo_root, load_canonical_rules(config_dir))
     if not result.changed:
         return None
     return f"byor: synced {summarize_changes(result)}"
 
 
-def refresh_skill_renders(repo_root: Path, config: RepoConfig) -> None:
-    """Rewrite any byor-owned skill render that drifted from the packaged skill.
+def refresh_skill_renders() -> None:
+    """Rewrite any byor-owned global skill render that drifted from the package.
 
-    byor owns the skill, so running any command keeps it current with the
-    installed version; an unmarked render a user took over is left untouched.
+    byor owns the skill, so running any command keeps the global render current
+    with the installed version; an unmarked render a user took over is left
+    untouched.
     """
-    if "skill" not in config.agents:
-        return
-    for relpath in SKILL_RELPATHS:
-        write_marked_text(repo_root / relpath, SKILL_MARKDOWN, MANAGED_MARKER)
+    for path in global_skill_paths():
+        write_marked_text(path, SKILL_MARKDOWN, MANAGED_MARKER)
 
 
 def summarize_changes(result: MirrorResult) -> str:

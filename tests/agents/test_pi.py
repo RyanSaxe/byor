@@ -55,8 +55,8 @@ def test_doctor_flags_a_missing_or_drifted_extension_and_install_repairs_it(
 
 
 def test_pi_reads_the_skill_from_the_shared_agents_location(home: Path) -> None:
-    """Pi discovers skills under .agents/skills/, the canonical render byor
+    """Pi discovers skills under ~/.agents/skills/, the global render byor
     already writes, so installing pi needs no Pi-specific skill work."""
-    repo = make_repo(home, "repo", "--agents", "pi")
+    make_repo(home, "repo", "--agents", "pi")
 
-    assert (repo / ".agents" / "skills" / "byor" / "SKILL.md").is_file()
+    assert (home / ".agents" / "skills" / "byor" / "SKILL.md").is_file()

@@ -23,8 +23,6 @@ TRACKED_FILES = (
     ".byor/rules/personal/local/.ignore",
     ".byor/rules/personal/global/.gitkeep",
     ".byor/rules/personal/global/.ignore",
-    ".agents/skills/byor/SKILL.md",
-    ".claude/skills/byor/SKILL.md",
 )
 
 
@@ -52,6 +50,9 @@ def test_init_creates_repository_and_global_layout(repo: Path) -> None:
     for relpath in TRACKED_FILES:
         assert (repo / relpath).is_file(), relpath
     assert (repo / ".byor" / "local.yml").is_file()
+    # The skill is global now (home is sandboxed to repo.parent), not in the repo.
+    assert (repo.parent / ".agents" / "skills" / "byor" / "SKILL.md").is_file()
+    assert not (repo / ".claude" / "skills").exists()
 
     sgconfig = (repo / "sgconfig.yml").read_text()
     for rule_dir in (
