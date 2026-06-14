@@ -6,7 +6,7 @@ from pathlib import Path
 
 from byor.errors import ConfigError
 from byor.io.fsio import MANAGED_NOTICE, write_marked_text
-from byor.io.gitio import git_stdout
+from byor.io.gitio import git_output
 
 SHIM_HOOK_NAMES = ("post-merge", "post-checkout")
 
@@ -31,7 +31,7 @@ def install_git_shims(repo_root: Path) -> list[str]:
         raise ConfigError(
             f"{repo_root} has no .git directory; cannot install git hook shims"
         )
-    hooks_path = _git_output(repo_root, "config", "--get", "core.hooksPath")
+    hooks_path = git_output(repo_root, "config", "--get", "core.hooksPath")
     if hooks_path is not None:
         return [
             f"core.hooksPath is set ({hooks_path}); add this line to your "
@@ -61,13 +61,7 @@ def _install_shim(hook: Path) -> list[str]:
 
 def _hooks_dir(repo_root: Path) -> Path:
     # --git-path resolves worktrees to the shared common hooks directory.
-    output = _git_output(repo_root, "rev-parse", "--git-path", "hooks")
+    output = git_output(repo_root, "rev-parse", "--git-path", "hooks")
     if output is None:
         raise ConfigError(f"could not locate the git hooks directory for {repo_root}")
     return (repo_root / output).resolve()
-
-
-def _git_output(repo_root: Path, *args: str) -> str | None:
-    """Stripped stdout of a git query, or None when git is missing or it fails."""
-    output = (git_stdout(repo_root, *args) or "").strip()
-    return output or None

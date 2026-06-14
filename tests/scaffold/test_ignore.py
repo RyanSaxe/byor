@@ -1,10 +1,12 @@
 from pathlib import Path
 
 import pytest
+from support import git
 
 from byor.errors import ConfigError
 from byor.scaffold.ignore import (
     IGNORED_PATTERNS,
+    ignore_file,
     rule_visibility_ok,
     write_ignore_block,
     write_rule_visibility_file,
@@ -43,13 +45,29 @@ def test_edits_inside_the_block_are_healed(tmp_path: Path) -> None:
 
 
 def test_local_mode_writes_git_info_exclude(tmp_path: Path) -> None:
-    (tmp_path / ".git").mkdir()
+    git(tmp_path, "init", "--quiet")
 
     assert write_ignore_block(tmp_path, "local") is True
 
     content = (tmp_path / ".git" / "info" / "exclude").read_text()
     assert all(pattern in content for pattern in IGNORED_PATTERNS)
     assert not (tmp_path / ".gitignore").exists()
+
+
+def test_local_mode_resolves_info_exclude_in_a_worktree(tmp_path: Path) -> None:
+    main_repo = tmp_path / "main"
+    main_repo.mkdir()
+    git(main_repo, "init", "--quiet")
+    git(main_repo, "commit", "--allow-empty", "-q", "-m", "init")
+    worktree = tmp_path / "worktree"
+    git(main_repo, "worktree", "add", "-q", str(worktree))
+
+    assert write_ignore_block(worktree, "local") is True
+
+    # `.git` in the worktree is a file; info/exclude lives in the common git dir.
+    exclude = ignore_file(worktree, "local")
+    assert exclude.read_text()
+    assert all(pattern in exclude.read_text() for pattern in IGNORED_PATTERNS)
 
 
 def test_local_mode_requires_a_git_repository(tmp_path: Path) -> None:

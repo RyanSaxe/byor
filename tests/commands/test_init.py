@@ -133,7 +133,7 @@ def test_replace_sgconfig_backs_up_then_overwrites(repo: Path) -> None:
 
 
 def test_local_ignore_mode_uses_git_info_exclude(repo: Path) -> None:
-    (repo / ".git").mkdir()
+    git(repo, "init", "--quiet")
 
     args = [
         "init",

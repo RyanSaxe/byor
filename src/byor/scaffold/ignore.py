@@ -19,6 +19,7 @@ from byor.io.fsio import (
     write_marked_text,
     write_text_atomic,
 )
+from byor.io.gitio import git_output
 
 IgnoreMode = Literal["project", "local"]
 
@@ -72,7 +73,11 @@ def rule_visibility_ok(rules_dir: Path) -> bool:
 def ignore_file(repo_root: Path, mode: IgnoreMode) -> Path:
     if mode == "project":
         return repo_root / ".gitignore"
-    return repo_root / ".git" / "info" / "exclude"
+    # --git-path resolves worktrees, whose `.git` is a file, not a directory.
+    output = git_output(repo_root, "rev-parse", "--git-path", "info/exclude")
+    if output is None:
+        raise ConfigError(f"could not locate the git info/exclude file for {repo_root}")
+    return (repo_root / output).resolve()
 
 
 def write_ignore_block(repo_root: Path, mode: IgnoreMode) -> bool:
