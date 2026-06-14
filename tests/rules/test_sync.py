@@ -5,10 +5,30 @@ import pytest
 from support import make_repo, mirror, write_global_rule, write_rule
 
 from byor.cli import main
+from byor.config import load_repo_config, save_repo_config
 
 
 def sync_args(repo: Path, *extra: str) -> list[str]:
     return ["sync", "--repo", str(repo), *extra]
+
+
+def test_sync_refuses_a_mirror_path_outside_the_repo(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    write_global_rule(home, "no-cast.yml", "no-cast")
+    protected = home / "outside" / "protected.yml"
+    protected.parent.mkdir(parents=True)
+    protected.write_text("keep me\n")
+    config = load_repo_config(repo)
+    config.paths.personal_global_rules = "../outside"
+    save_repo_config(repo, config)
+    capsys.readouterr()
+
+    assert main(sync_args(repo)) == 1
+
+    assert protected.read_text() == "keep me\n"
+    assert "Traceback" not in capsys.readouterr().err
 
 
 def test_sync_copies_global_rules_preserving_relative_paths(
