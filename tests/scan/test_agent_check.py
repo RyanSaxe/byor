@@ -111,11 +111,37 @@ def test_one_diagnostic_renders_the_spec_block(
         "Rule: no-python-cast\n"
         "Severity: warning\n"
         "Message: Avoid typing.cast in Python code.\n"
-        'Code: x = cast(int, "1")\n'
+        "Code:\n"
+        '  2 | x = cast(int, "1")\n'
         "\n"
         "Instruction:\n"
         f"{CAST_PROMPT}\n"
     )
+
+
+def test_multiline_code_renders_exact_indentation_behind_numbered_gutter(
+    check_repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = check_repo / "src.py"
+    source.write_text(
+        "\n" * 7 + "def call_foo() -> None:\n"
+        "    foo(\n"
+        '        "first",\n'
+        '        "second",\n'
+        "    )\n"
+    )
+    project = check_repo / ".byor" / "rules" / "project"
+    (project / "no-foo.yml").write_text(FOO_RULE)
+
+    assert check(check_repo, "--files", str(source)) == 2
+
+    assert (
+        "Code:\n"
+        "   9 |     foo(\n"
+        '  10 |         "first",\n'
+        '  11 |         "second",\n'
+        "  12 |     )\n"
+    ) in capsys.readouterr().out
 
 
 def test_instruction_falls_back_to_message(

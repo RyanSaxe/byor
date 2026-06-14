@@ -46,7 +46,8 @@ src/example.py:3:9
 Rule: no-python-cast
 Severity: warning
 Message: Avoid typing.cast in Python code.
-Code: value = cast(int, "3")
+Code:
+  3 | value = cast(int, "3")
 
 Instruction:
 Do not use typing.cast here. Fix the type by narrowing, changing the signature, introducing a protocol, or restructuring the value flow. If the cast is genuinely necessary, leave a concise comment explaining the invariant that the type checker cannot see.

@@ -299,9 +299,20 @@ def render_diagnostics(diagnostics: list[Diagnostic]) -> list[str]:
             f"Rule: {diagnostic.rule_id}",
             f"Severity: {diagnostic.severity}",
             f"Message: {diagnostic.message}",
-            f"Code: {diagnostic.code}",
+            *_render_code(diagnostic.code, diagnostic.line),
             "",
             "Instruction:",
             diagnostic.instruction,
         ]
     return lines
+
+
+def _render_code(code: str, start_line: int) -> list[str]:
+    """Render exact source indentation behind a clearly separate line gutter."""
+    source_lines = code.splitlines()
+    width = len(str(start_line + len(source_lines) - 1))
+    numbered = [
+        f"  {line_number:>{width}} | {line}"
+        for line_number, line in enumerate(source_lines, start=start_line)
+    ]
+    return ["Code:", *numbered]
