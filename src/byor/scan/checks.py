@@ -125,9 +125,9 @@ def _run_one(
         result = subprocess.run(
             argv, cwd=repo_root, capture_output=True, text=True, check=False
         )
-    except FileNotFoundError:
+    except OSError as error:
         outcome.warnings.append(
-            f"byor: check '{check.name}' command not found: {argv[0]}"
+            f"byor: check '{check.name}' could not run ({argv[0]}): {error}"
         )
         return
     if result.returncode != 0:
