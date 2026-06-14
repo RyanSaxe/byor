@@ -9,6 +9,7 @@ from byor.cli import main
 from byor.config import (
     GlobalConfig,
     InitDefaults,
+    load_repo_config,
     load_repo_registry,
     save_global_config,
 )
@@ -63,6 +64,12 @@ def test_init_creates_repository_and_global_layout(repo: Path) -> None:
     assert (config_dir(repo) / "config.yml").is_file()
     assert (config_dir(repo) / "rules").is_dir()
     assert load_repo_registry(config_dir(repo) / "repos.yml") == [repo.resolve()]
+
+
+def test_init_defaults_project_name_to_repo_dir(repo: Path) -> None:
+    assert main(["init", "--repo", str(repo), "--non-interactive"]) == 0
+
+    assert load_repo_config(repo).project_name == repo.name
 
 
 def test_init_is_idempotent(repo: Path) -> None:

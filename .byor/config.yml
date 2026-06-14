@@ -1,6 +1,6 @@
 version: 1
 project:
-  name: null
+  name: byor
 paths:
   sgconfig: sgconfig.yml
   project_rules: .byor/rules/project
