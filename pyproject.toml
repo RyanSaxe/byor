@@ -23,6 +23,7 @@ build-backend = "uv_build"
 dev = [
     "pre-commit>=4.6.0",
     "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
     "ruff>=0.15.17",
     "ty>=0.0.49",
 ]
