@@ -185,7 +185,8 @@ def _load_config(path: Path, relpath: str) -> dict[str, JsonValue]:
 
 
 def _save_config(path: Path, config: dict[str, JsonValue]) -> None:
-    write_text_atomic(path, json.dumps(config, indent=2) + "\n")
+    content = json.dumps(config, indent=2) + "\n"
+    write_text_atomic(path, content)
 
 
 def _entries(

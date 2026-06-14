@@ -55,10 +55,10 @@ def edit_ranges(text: str, contents: str | Sequence[str]) -> list[Range] | None:
     edits = [contents] if isinstance(contents, str) else list(contents)
     if not edits:
         return None
-    normalized_text = _normalize_newlines(text)
+    normalized_text = text.replace("\r\n", "\n")
     ranges: list[Range] = []
     for edit in edits:
-        occurrences = _occurrence_ranges(normalized_text, _normalize_newlines(edit))
+        occurrences = _occurrence_ranges(normalized_text, edit.replace("\r\n", "\n"))
         if not occurrences:
             return None
         ranges.extend(occurrences)
@@ -93,7 +93,3 @@ def _occurrence_ranges(text: str, needle: str) -> list[Range]:
         ranges.append((first, last))
         offset = text.find(needle, offset + 1)
     return ranges
-
-
-def _normalize_newlines(text: str) -> str:
-    return text.replace("\r\n", "\n")

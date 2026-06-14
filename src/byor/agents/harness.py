@@ -72,7 +72,8 @@ def _parse_claude_code(payload: dict[str, JsonValue]) -> EditPayload:
     if file_path is None:
         return EditPayload()
     contents = _claude_edit_contents(tool_input)
-    return _single_file(Path(file_path), contents)
+    path = Path(file_path)
+    return EditPayload(files=[path], edits={path: contents})
 
 
 def _claude_edit_contents(tool_input: dict[str, JsonValue]) -> list[str]:
@@ -87,7 +88,8 @@ def _parse_cursor(payload: dict[str, JsonValue]) -> EditPayload:
     if file_path is None:
         return EditPayload()
     contents = _new_strings_from_edits(payload.get("edits"))
-    return _single_file(Path(file_path), contents)
+    path = Path(file_path)
+    return EditPayload(files=[path], edits={path: contents})
 
 
 def _parse_copilot(payload: dict[str, JsonValue]) -> EditPayload:
@@ -95,11 +97,12 @@ def _parse_copilot(payload: dict[str, JsonValue]) -> EditPayload:
     tool_args = payload.get("toolArgs")
     if not isinstance(tool_args, dict):
         return EditPayload()
-    file_path = _first_string(tool_args, ("filePath", "file_path", "path"))
+    file_path = next(iter(_strings(tool_args, ("filePath", "file_path", "path"))), None)
     if file_path is None:
         return EditPayload()
     contents = _strings(tool_args, ("newString", "new_string", "content"))
-    return _single_file(Path(file_path), contents)
+    path = Path(file_path)
+    return EditPayload(files=[path], edits={path: contents})
 
 
 def _parse_codex(payload: dict[str, JsonValue]) -> EditPayload:
@@ -174,17 +177,17 @@ def _emit_codex(rendered: str) -> tuple[str, int]:
             "additionalContext": rendered,
         }
     }
-    return _compact(envelope), 0
+    return json.dumps(envelope, separators=(",", ":")), 0
 
 
 def _emit_copilot(rendered: str) -> tuple[str, int]:
     envelope: dict[str, JsonValue] = {"additionalContext": _truncate_to_cap(rendered)}
-    return _compact(envelope), 0
+    return json.dumps(envelope, separators=(",", ":")), 0
 
 
 def _emit_cursor(rendered: str) -> tuple[str, int]:
     envelope: dict[str, JsonValue] = {"additional_context": rendered}
-    return _compact(envelope), 0
+    return json.dumps(envelope, separators=(",", ":")), 0
 
 
 def _truncate_to_cap(rendered: str) -> str:
@@ -195,18 +198,13 @@ def _truncate_to_cap(rendered: str) -> str:
     fixed character budget.
     """
     text = rendered
-    while text and len(_compact({"additionalContext": text})) > COPILOT_CONTEXT_CAP:
-        overshoot = len(_compact({"additionalContext": text})) - COPILOT_CONTEXT_CAP
+    while text:
+        encoded = json.dumps({"additionalContext": text}, separators=(",", ":"))
+        overshoot = len(encoded) - COPILOT_CONTEXT_CAP
+        if overshoot <= 0:
+            break
         text = text[: -max(overshoot, 1)]
     return text
-
-
-def _compact(envelope: dict[str, JsonValue]) -> str:
-    return json.dumps(envelope, separators=(",", ":"))
-
-
-def _single_file(path: Path, contents: list[str]) -> EditPayload:
-    return EditPayload(files=[path], edits={path: contents})
 
 
 def _load_object(raw: str) -> dict[str, JsonValue] | None:
@@ -224,10 +222,6 @@ def _string(value: JsonValue) -> str | None:
 def _strings(mapping: dict[str, JsonValue], keys: tuple[str, ...]) -> list[str]:
     """Every non-empty string value across `keys`, in key order."""
     return [value for key in keys if (value := _string(mapping.get(key))) is not None]
-
-
-def _first_string(mapping: dict[str, JsonValue], keys: tuple[str, ...]) -> str | None:
-    return next(iter(_strings(mapping, keys)), None)
 
 
 def _new_strings_from_edits(edits: JsonValue) -> list[str]:

@@ -16,10 +16,6 @@ from byor.config import (
 )
 
 
-def list_rules(repo: Path, *extra: str) -> int:
-    return main(["list", "--repo", str(repo), *extra])
-
-
 def populate(home: Path, repo: Path) -> None:
     write_rule(repo / ".byor" / "rules" / "project" / "no-foo.yml", "no-foo")
     write_rule(
@@ -36,7 +32,7 @@ def test_effective_listing_shows_scope_id_and_path(
     populate(home, repo)
     capsys.readouterr()
 
-    assert list_rules(repo) == 0
+    assert main(["list", "--repo", str(repo)]) == 0
 
     assert capsys.readouterr().out == (
         "project  no-foo        .byor/rules/project/no-foo.yml\n"
@@ -57,7 +53,7 @@ def test_scope_all_appends_skipped_global_rules_with_reasons(
     )
     capsys.readouterr()
 
-    assert list_rules(repo, "--scope", "all") == 0
+    assert main(["list", "--repo", str(repo), "--scope", "all"]) == 0
 
     out = capsys.readouterr().out
     assert "project  no-cast  .byor/rules/project/no-cast.yml\n" in out
@@ -72,7 +68,7 @@ def test_scope_filters_to_one_origin(
     populate(home, repo)
     capsys.readouterr()
 
-    assert list_rules(repo, "--scope", "project") == 0
+    assert main(["list", "--repo", str(repo), "--scope", "project"]) == 0
 
     out = capsys.readouterr().out
     assert "no-foo" in out
@@ -89,7 +85,7 @@ def test_json_lists_rules_and_skips(
     write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
     capsys.readouterr()
 
-    assert list_rules(repo, "--scope", "all", "--json") == 0
+    assert main(["list", "--repo", str(repo), "--scope", "all", "--json"]) == 0
 
     payload = json.loads(capsys.readouterr().out)
     assert {
@@ -122,7 +118,7 @@ def test_list_surfaces_effective_checks_with_origin_and_exclusions(
     save_local_config(repo, LocalConfig(excluded_checks=["mypy"]))
     capsys.readouterr()
 
-    assert list_rules(repo) == 0
+    assert main(["list", "--repo", str(repo)]) == 0
 
     out = capsys.readouterr().out
     assert "check/repo  ruff  repo-ruff" in out
@@ -135,7 +131,7 @@ def test_list_fails_cleanly_outside_an_initialized_repo(
     repo = home / "untouched"
     repo.mkdir()
 
-    assert list_rules(repo) == 1
+    assert main(["list", "--repo", str(repo)]) == 1
 
     captured = capsys.readouterr()
     assert "byor init" in captured.err

@@ -84,7 +84,9 @@ def repo_context(args: argparse.Namespace) -> RepoContext:
 
 
 def run_add(args: argparse.Namespace) -> int:
-    template = _build_template(args.id, args.language)
+    template = RULE_TEMPLATE.format(
+        rule_id=args.id or "REPLACE_ME", language=args.language or "Python"
+    )
     if args.allow_exceptions:
         template = _append_exception_sentence(template)
     if args.from_file is None and not args.edit:
@@ -105,7 +107,12 @@ def run_add(args: argparse.Namespace) -> int:
             rule = _load_source_rule(args.from_file)
             if args.allow_exceptions:
                 rule = replace(rule, content=_append_exception_sentence(rule.content))
-        destination = _scope_dir(context, scope) / f"{rule.id}.yml"
+        destination = (
+            scope_rules_dir(
+                scope, context.repo_root, context.paths, context.canonical.root
+            )
+            / f"{rule.id}.yml"
+        )
         if destination.exists():
             raise UnsafeOverwrite(
                 f"{display_path(destination, context.repo_root)} already exists; "
@@ -166,7 +173,9 @@ def run_promote(args: argparse.Namespace) -> int:
     context = repo_context(args)
     source_scope: RuleScope = args.from_scope
     _, rule = _find_rule(context, args.rule_id, source_scope)
-    source_dir = _scope_dir(context, source_scope)
+    source_dir = scope_rules_dir(
+        source_scope, context.repo_root, context.paths, context.canonical.root
+    )
     project_dir = context.repo_root / context.paths.project_rules
     destination = project_dir / rule.path.relative_to(source_dir)
     if destination.exists() and not args.replace:
@@ -216,12 +225,6 @@ def run_include(args: argparse.Namespace) -> int:
         if rule_id == args.rule_id:
             print(f"'{rule_id}' is still skipped: {reason}")
     return 0
-
-
-def _build_template(rule_id: str | None, language: str | None) -> str:
-    return RULE_TEMPLATE.format(
-        rule_id=rule_id or "REPLACE_ME", language=language or "Python"
-    )
 
 
 def _append_exception_sentence(content: str) -> str:
@@ -336,18 +339,15 @@ def _check_conflicts(
 def _scope_rules(context: RepoContext, scope: RuleScope) -> list[Rule]:
     if scope == "global":
         return context.canonical.rules
-    return load_rules(_scope_dir(context, scope))
+    directory = scope_rules_dir(
+        scope, context.repo_root, context.paths, context.canonical.root
+    )
+    return load_rules(directory)
 
 
 def _warn_on_id_pattern(rule: Rule) -> None:
     for warning in rule_id_warnings([rule]):
         print(f"byor: warning: {warning}", file=sys.stderr)
-
-
-def _scope_dir(context: RepoContext, scope: RuleScope) -> Path:
-    return scope_rules_dir(
-        scope, context.repo_root, context.paths, context.canonical.root
-    )
 
 
 def _finish(context: RepoContext, fan_out: bool) -> None:

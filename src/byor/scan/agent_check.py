@@ -144,18 +144,13 @@ def _render_feedback(diagnostics: list[Diagnostic], outcome: CheckOutcome) -> st
     return "\n".join(sections)
 
 
-def _repo_initialized(repo_root: Path) -> bool:
-    """Whether the repo has its own byor config (so ast-grep discovers its rules)."""
-    return repo_config_path(repo_root).is_file()
-
-
 def _has_any_rules(repo_root: Path) -> bool:
     """Whether a scan could surface anything: repo rules or a global setup.
 
     The cheap pre-check that keeps a global hook a near-instant no-op in a repo
     that is neither byor-init'd nor covered by `~/sgconfig.yml`.
     """
-    return _repo_initialized(repo_root) or home_sgconfig_path().is_file()
+    return repo_config_path(repo_root).is_file() or home_sgconfig_path().is_file()
 
 
 def _diagnostics(
@@ -169,7 +164,7 @@ def _diagnostics(
         return []
     if not _has_any_rules(repo_root):
         return []
-    config = None if _repo_initialized(repo_root) else home_sgconfig_path()
+    config = None if repo_config_path(repo_root).is_file() else home_sgconfig_path()
     config_dir = global_config_dir()
     executable = resolve_ast_grep(load_global_config(config_dir).ast_grep_command)
     result = scan_files(executable, repo_root, files, config=config)

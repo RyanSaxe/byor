@@ -31,7 +31,7 @@ def install_git_shims(repo_root: Path) -> list[str]:
         raise ConfigError(
             f"{repo_root} has no .git directory; cannot install git hook shims"
         )
-    hooks_path = _configured_hooks_path(repo_root)
+    hooks_path = _git_output(repo_root, "config", "--get", "core.hooksPath")
     if hooks_path is not None:
         return [
             f"core.hooksPath is set ({hooks_path}); add this line to your "
@@ -57,10 +57,6 @@ def _install_shim(hook: Path) -> list[str]:
         return []
     hook.chmod(hook.stat().st_mode | 0o111)
     return [f"Installed .git/hooks/{hook.name}"]
-
-
-def _configured_hooks_path(repo_root: Path) -> str | None:
-    return _git_output(repo_root, "config", "--get", "core.hooksPath")
 
 
 def _hooks_dir(repo_root: Path) -> Path:

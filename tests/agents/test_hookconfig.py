@@ -32,17 +32,13 @@ def config_path(home: Path, harness: Harness) -> Path:
     return global_hook_dir(harness, home) / HOOK_SPECS[harness].global_relpath
 
 
-def config_text(home: Path, harness: Harness) -> str:
-    return config_path(home, harness).read_text()
-
-
 @pytest.mark.parametrize("harness", HARNESS_CHOICES)
 def test_install_writes_an_unguarded_command(
     harness: Harness, isolated_home: Path
 ) -> None:
     install_hook(harness)
 
-    [command] = commands_in(json.loads(config_text(isolated_home, harness)))
+    [command] = commands_in(json.loads(config_path(isolated_home, harness).read_text()))
     assert f"{BYOR_COMMAND_SIGNATURE} {harness}" in command
     # Global hooks are personal: no teammate guard, no `|| true`.
     assert "command -v byor" not in command
@@ -61,10 +57,10 @@ def test_non_claude_commands_are_bare(harness: Harness) -> None:
 @pytest.mark.parametrize("harness", HARNESS_CHOICES)
 def test_install_is_idempotent(harness: Harness, isolated_home: Path) -> None:
     install_hook(harness)
-    snapshot = config_text(isolated_home, harness)
+    snapshot = config_path(isolated_home, harness).read_text()
 
     assert install_hook(harness) == []
-    assert config_text(isolated_home, harness) == snapshot
+    assert config_path(isolated_home, harness).read_text() == snapshot
 
 
 @pytest.mark.parametrize("harness", HARNESS_CHOICES)
@@ -82,7 +78,7 @@ def test_uninstall_removes_only_the_byor_entry(
 
     assert uninstall_hook(harness)
 
-    remaining = commands_in(json.loads(config_text(isolated_home, harness)))
+    remaining = commands_in(json.loads(config_path(isolated_home, harness).read_text()))
     assert all(BYOR_COMMAND_SIGNATURE not in command for command in remaining)
     assert not hook_installed(harness)
 

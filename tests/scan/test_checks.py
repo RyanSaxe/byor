@@ -42,7 +42,8 @@ def test_local_exclusion_disables_a_check_by_name() -> None:
 
 
 def test_extensionless_check_runs_when_no_extensions_listed(tmp_path: Path) -> None:
-    check = _passing_check("anyfile", extensions=[])
+    run = shlex.join([sys.executable, "-c", "pass"])
+    check = EffectiveCheck(CheckDef("anyfile", [], run), origin="repo")
     target = tmp_path / "notes.txt"
     target.write_text("hello\n")
 
@@ -60,7 +61,10 @@ def test_failing_check_appends_a_named_section_with_raw_output(tmp_path: Path) -
         "print('stderr complaint', file=sys.stderr)\n"
         "sys.exit(1)\n"
     )
-    check = _check("strict", ["py"], shlex.join([sys.executable, str(script)]))
+    check = EffectiveCheck(
+        CheckDef("strict", ["py"], shlex.join([sys.executable, str(script)])),
+        origin="repo",
+    )
     target = tmp_path / "src.py"
     target.write_text("x = 1\n")
 
@@ -74,8 +78,13 @@ def test_failing_check_appends_a_named_section_with_raw_output(tmp_path: Path) -
 
 
 def test_check_skips_files_whose_extension_does_not_match(tmp_path: Path) -> None:
-    check = _check(
-        "py-only", ["py"], shlex.join([sys.executable, "-c", "import sys; sys.exit(1)"])
+    check = EffectiveCheck(
+        CheckDef(
+            "py-only",
+            ["py"],
+            shlex.join([sys.executable, "-c", "import sys; sys.exit(1)"]),
+        ),
+        origin="repo",
     )
     only_js = tmp_path / "app.js"
     only_js.write_text("//\n")
@@ -86,7 +95,10 @@ def test_check_skips_files_whose_extension_does_not_match(tmp_path: Path) -> Non
 
 
 def test_missing_command_warns_once_and_does_not_fail(tmp_path: Path) -> None:
-    check = _check("ghost", ["py"], "this-command-does-not-exist --flag")
+    check = EffectiveCheck(
+        CheckDef("ghost", ["py"], "this-command-does-not-exist --flag"),
+        origin="repo",
+    )
     target = tmp_path / "src.py"
     target.write_text("x = 1\n")
 
@@ -95,11 +107,3 @@ def test_missing_command_warns_once_and_does_not_fail(tmp_path: Path) -> None:
     assert outcome.failures == []
     assert len(outcome.warnings) == 1
     assert "ghost" in outcome.warnings[0]
-
-
-def _check(name: str, extensions: list[str], run: str) -> EffectiveCheck:
-    return EffectiveCheck(CheckDef(name, extensions, run), origin="repo")
-
-
-def _passing_check(name: str, extensions: list[str]) -> EffectiveCheck:
-    return _check(name, extensions, shlex.join([sys.executable, "-c", "pass"]))

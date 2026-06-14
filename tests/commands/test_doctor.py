@@ -17,17 +17,13 @@ from byor.config import (
 from byor.scan.astgrep import NOT_FOUND_MESSAGE
 
 
-def doctor(repo: Path, *extra: str) -> int:
-    return main(["doctor", "--repo", str(repo), *extra])
-
-
 def test_doctor_reports_ok_for_a_healthy_repo(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home)
     capsys.readouterr()
 
-    assert doctor(repo) == 0
+    assert main(["doctor", "--repo", str(repo)]) == 0
 
     out = capsys.readouterr().out
     assert "ok    ast_grep_found" in out
@@ -40,7 +36,7 @@ def test_doctor_json_matches_the_spec_shape(
     repo = make_repo(home)
     capsys.readouterr()
 
-    assert doctor(repo, "--json") == 0
+    assert main(["doctor", "--repo", str(repo), "--json"]) == 0
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["ok"] is True
@@ -73,7 +69,7 @@ def test_doctor_surfaces_configured_checks_with_origin(
     save_repo_config(repo, config)
     capsys.readouterr()
 
-    assert doctor(repo) == 0
+    assert main(["doctor", "--repo", str(repo)]) == 0
 
     out = capsys.readouterr().out
     assert "extra_checks" in out
@@ -90,7 +86,7 @@ def test_doctor_extra_checks_reports_when_all_are_excluded(
     save_local_config(repo, LocalConfig(excluded_checks=["ruff"]))
     capsys.readouterr()
 
-    assert doctor(repo) == 0
+    assert main(["doctor", "--repo", str(repo)]) == 0
 
     assert "all configured checks are excluded" in capsys.readouterr().out
 
@@ -105,7 +101,7 @@ def test_doctor_reports_missing_ast_grep_with_the_install_message(
     monkeypatch.delenv("BYOR_AST_GREP", raising=False)
     capsys.readouterr()
 
-    assert doctor(repo) == 1
+    assert main(["doctor", "--repo", str(repo)]) == 1
 
     assert NOT_FOUND_MESSAGE in capsys.readouterr().out
 
@@ -118,7 +114,7 @@ def test_doctor_global_section_is_healthy_after_install(
     elsewhere.mkdir()
     capsys.readouterr()
 
-    assert doctor(elsewhere) == 0
+    assert main(["doctor", "--repo", str(elsewhere)]) == 0
 
     out = capsys.readouterr().out
     assert "~/sgconfig.yml applies your global rules" in out
@@ -133,7 +129,7 @@ def test_doctor_reports_a_non_byor_repo_gracefully(
     capsys.readouterr()
 
     # Global health is fine; the repo section degrades to an informational line.
-    assert doctor(repo) == 0
+    assert main(["doctor", "--repo", str(repo)]) == 0
 
     out = capsys.readouterr().out
     assert "ok    repo" in out
@@ -148,7 +144,7 @@ def test_doctor_flags_missing_sgconfig(
     (repo / "sgconfig.yml").unlink()
     capsys.readouterr()
 
-    assert doctor(repo) == 1
+    assert main(["doctor", "--repo", str(repo)]) == 1
 
     assert "sgconfig.yml is missing; run `byor init`" in capsys.readouterr().out
 
@@ -163,7 +159,7 @@ def test_doctor_renders_a_failing_check_for_invalid_rules(
     broken.write_text("id: broken\n")
     capsys.readouterr()
 
-    assert doctor(repo) == 1
+    assert main(["doctor", "--repo", str(repo)]) == 1
 
     captured = capsys.readouterr()
     assert "FAIL  rules_valid" in captured.out
@@ -198,7 +194,7 @@ def test_doctor_flags_a_missing_rule_visibility_file(
     (repo / ".byor" / "rules" / "personal" / "local" / ".ignore").unlink()
     capsys.readouterr()
 
-    assert doctor(repo, "--quick") == 1
+    assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
 
     out = capsys.readouterr().out
     assert "FAIL  rules_visible" in out
@@ -227,7 +223,7 @@ def test_doctor_flags_registered_repos_whose_path_is_gone(
     shutil.rmtree(gone)
     capsys.readouterr()
 
-    assert doctor(repo) == 1
+    assert main(["doctor", "--repo", str(repo)]) == 1
 
     assert f"{gone} no longer exists" in capsys.readouterr().out
 
@@ -239,6 +235,6 @@ def test_doctor_flags_a_missing_opencode_plugin(
     (home / ".config" / "opencode" / "plugin" / "byor.ts").unlink()
     capsys.readouterr()
 
-    assert doctor(repo, "--quick") == 1
+    assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
 
     assert "~/.config/opencode/plugin/byor.ts is missing" in capsys.readouterr().out

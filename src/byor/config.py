@@ -196,6 +196,7 @@ def load_global_config(config_dir: Path) -> GlobalConfig:
     paths = _section(data, "paths", path)
     ast_grep = _section(data, "ast_grep", path)
     ai = _section(data, "ai", path)
+    init = _section(data, "init", path)
     defaults = GlobalConfig()
     return GlobalConfig(
         rules_path=_string(paths, "rules", defaults.rules_path, path),
@@ -203,7 +204,10 @@ def load_global_config(config_dir: Path) -> GlobalConfig:
         ast_grep_command=_string(ast_grep, "command", defaults.ast_grep_command, path),
         agents=_string_list(ai, "agents", path),
         checks=_check_defs(data, path),
-        init=_init_defaults(_section(data, "init", path), path),
+        init=InitDefaults(
+            ignore_mode=_optional_string(init, "ignore_mode", path),
+            git_hooks=_optional_bool(init, "git_hooks", path),
+        ),
     )
 
 
@@ -323,13 +327,6 @@ def _write_checks(data: CommentedMap, checks: list[CheckDef]) -> None:
         {"name": check.name, "extensions": list(check.extensions), "run": check.run}
         for check in checks
     ]
-
-
-def _init_defaults(section: CommentedMap, path: Path) -> InitDefaults:
-    return InitDefaults(
-        ignore_mode=_optional_string(section, "ignore_mode", path),
-        git_hooks=_optional_bool(section, "git_hooks", path),
-    )
 
 
 def _write_init_defaults(data: CommentedMap, init: InitDefaults) -> None:

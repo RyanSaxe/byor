@@ -6,10 +6,6 @@ from support import make_repo, mirror, write_global_rule, write_rule
 from byor.cli import main
 
 
-def local_yml(repo: Path) -> str:
-    return (repo / ".byor" / "local.yml").read_text()
-
-
 def test_exclude_removes_copy_and_include_restores_it(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -21,7 +17,7 @@ def test_exclude_removes_copy_and_include_restores_it(
     assert main(["exclude", "--repo", str(repo), "no-cast"]) == 0
 
     assert not (mirror(repo) / "no-cast.yml").exists()
-    assert "- no-cast" in local_yml(repo)
+    assert "- no-cast" in (repo / ".byor" / "local.yml").read_text()
     out = capsys.readouterr().out
     assert "Excluded 'no-cast' in .byor/local.yml" in out
     assert f"Synced 1 removed global rule into {repo}" in out
@@ -29,7 +25,7 @@ def test_exclude_removes_copy_and_include_restores_it(
     assert main(["include", "--repo", str(repo), "no-cast"]) == 0
 
     assert (mirror(repo) / "no-cast.yml").read_text() == canonical.read_text()
-    assert "- no-cast" not in local_yml(repo)
+    assert "- no-cast" not in (repo / ".byor" / "local.yml").read_text()
     out = capsys.readouterr().out
     assert "Re-enabled 'no-cast'" in out
     assert f"Synced 1 updated global rule into {repo}" in out
@@ -59,7 +55,7 @@ def test_exclude_is_idempotent(home: Path, capsys: pytest.CaptureFixture[str]) -
     assert main(["exclude", "--repo", str(repo), "no-cast"]) == 0
 
     assert "'no-cast' is already excluded" in capsys.readouterr().out
-    assert local_yml(repo).count("no-cast") == 1
+    assert (repo / ".byor" / "local.yml").read_text().count("no-cast") == 1
 
 
 def test_exclude_requires_an_initialized_repo(

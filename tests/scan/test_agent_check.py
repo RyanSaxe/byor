@@ -68,8 +68,8 @@ def check_repo(home: Path, capsys: pytest.CaptureFixture[str]) -> Path:
     return repo
 
 
-def check(repo: Path, *extra: str) -> int:
-    return main(["agent-check", "--repo", str(repo), *extra])
+def agent_check_args(repo: Path, *extra: str) -> list[str]:
+    return ["agent-check", "--repo", str(repo), *extra]
 
 
 def add_repo_check(repo: Path, name: str, extensions: list[str], run: str) -> None:
@@ -91,7 +91,7 @@ def test_clean_files_exit_zero_with_no_output(
     source = check_repo / "src.py"
     source.write_text("x = 1\n")
 
-    assert check(check_repo, "--files", str(source)) == 0
+    assert main(agent_check_args(check_repo, "--files", str(source))) == 0
 
     assert capsys.readouterr().out == ""
 
@@ -102,7 +102,7 @@ def test_one_diagnostic_renders_the_spec_block(
     source = check_repo / "src.py"
     source.write_text('from typing import cast\nx = cast(int, "1")\n')
 
-    assert check(check_repo, "--files", str(source)) == 2
+    assert main(agent_check_args(check_repo, "--files", str(source))) == 2
 
     assert capsys.readouterr().out == (
         "BYOR found 1 issue in AI-written code.\n"
@@ -133,7 +133,7 @@ def test_multiline_code_renders_exact_indentation_behind_numbered_gutter(
     project = check_repo / ".byor" / "rules" / "project"
     (project / "no-foo.yml").write_text(FOO_RULE)
 
-    assert check(check_repo, "--files", str(source)) == 2
+    assert main(agent_check_args(check_repo, "--files", str(source))) == 2
 
     assert (
         "Code:\n"
@@ -150,7 +150,7 @@ def test_instruction_falls_back_to_message(
     source = check_repo / "src.py"
     source.write_text('print("hi")\n')
 
-    assert check(check_repo, "--files", str(source)) == 2
+    assert main(agent_check_args(check_repo, "--files", str(source))) == 2
 
     out = capsys.readouterr().out
     assert "Severity: error" in out
@@ -166,7 +166,7 @@ def test_diagnostics_group_by_file_then_sort_by_line_and_rule_id(
     second = check_repo / "b.py"
     second.write_text("x = cast(int, 1)\n")
 
-    assert check(check_repo, "--files", str(second), str(first)) == 2
+    assert main(agent_check_args(check_repo, "--files", str(second), str(first))) == 2
 
     out = capsys.readouterr().out
     locations = re.findall(r"^\S+\.py:\d+:\d+$", out, flags=re.MULTILINE)
@@ -181,7 +181,7 @@ def test_renders_every_diagnostic_without_truncation(
     source = check_repo / "src.py"
     source.write_text("".join(f"v{i} = cast(int, {i})\n" for i in range(21)))
 
-    assert check(check_repo, "--files", str(source)) == 2
+    assert main(agent_check_args(check_repo, "--files", str(source))) == 2
 
     out = capsys.readouterr().out
     assert out.startswith("BYOR found 21 issues in AI-written code.\n")
@@ -194,7 +194,8 @@ def test_json_format_emits_one_issue_per_diagnostic(
 ) -> None:
     (check_repo / "src.py").write_text('x = cast(int, "1")\n')
 
-    assert check(check_repo, "--format", "json") == 2  # no --files scans the repo
+    # No --files scans the repo.
+    assert main(agent_check_args(check_repo, "--format", "json")) == 2
 
     payload = json.loads(capsys.readouterr().out)
     assert payload == {
@@ -214,7 +215,8 @@ def test_json_format_emits_one_issue_per_diagnostic(
 
 
 def stdin(monkeypatch: pytest.MonkeyPatch, payload: object) -> None:
-    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(payload)))
+    text = json.dumps(payload)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(text))
 
 
 def test_stdin_hook_scans_the_edited_file_from_the_claude_payload(
@@ -226,7 +228,7 @@ def test_stdin_hook_scans_the_edited_file_from_the_claude_payload(
     source.write_text('x = cast(int, "1")\n')
     stdin(monkeypatch, {"tool_input": {"file_path": str(source)}})
 
-    assert check(check_repo, "--stdin-hook", "claude-code") == 2
+    assert main(agent_check_args(check_repo, "--stdin-hook", "claude-code")) == 2
 
     assert "Rule: no-python-cast" in capsys.readouterr().out
 
@@ -239,7 +241,7 @@ def test_stdin_hook_without_a_file_path_scans_nothing(
     (check_repo / "src.py").write_text('x = cast(int, "1")\n')
     stdin(monkeypatch, {"tool_input": {}})
 
-    assert check(check_repo, "--stdin-hook", "claude-code") == 0
+    assert main(agent_check_args(check_repo, "--stdin-hook", "claude-code")) == 0
 
     assert capsys.readouterr().out == ""
 
@@ -257,7 +259,7 @@ def test_edit_scope_keeps_only_violations_inside_the_edited_lines(
         {"tool_input": {"file_path": str(source), "new_string": "b = cast(int, 2)"}},
     )
 
-    assert check(check_repo, "--stdin-hook", "claude-code") == 2
+    assert main(agent_check_args(check_repo, "--stdin-hook", "claude-code")) == 2
 
     out = capsys.readouterr().out
     assert out.count("Rule: no-python-cast") == 1
@@ -280,7 +282,7 @@ def test_codex_hook_edit_scopes_an_apply_patch_and_emits_its_json(
     )
     stdin(monkeypatch, {"tool_name": "shell", "tool_input": {"command": patch}})
 
-    assert check(check_repo, "--stdin-hook", "codex") == 0
+    assert main(agent_check_args(check_repo, "--stdin-hook", "codex")) == 0
 
     payload = json.loads(capsys.readouterr().out)
     context = payload["hookSpecificOutput"]["additionalContext"]
@@ -303,7 +305,7 @@ def test_codex_relative_patch_path_resolves_against_the_repo_root(
     )
     stdin(monkeypatch, {"tool_input": {"command": patch}})
 
-    assert check(check_repo, "--stdin-hook", "codex") == 0
+    assert main(agent_check_args(check_repo, "--stdin-hook", "codex")) == 0
 
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"][
         "additionalContext"
@@ -320,7 +322,7 @@ def test_hook_mode_is_silent_in_an_uninitialized_repo(
     source.write_text('x = cast(int, "1")\n')
     stdin(monkeypatch, {"tool_input": {"file_path": str(source)}})
 
-    assert check(bare, "--stdin-hook", "claude-code") == 0
+    assert main(agent_check_args(bare, "--stdin-hook", "claude-code")) == 0
 
     assert capsys.readouterr().out == ""
 
@@ -371,7 +373,7 @@ def test_hook_mode_applies_global_rules_in_a_repo_with_no_byor(
     stdin(monkeypatch, {"tool_input": {"file_path": str(source)}})
     capsys.readouterr()
 
-    assert check(plain, "--stdin-hook", "claude-code") == 2
+    assert main(agent_check_args(plain, "--stdin-hook", "claude-code")) == 2
 
     assert "Rule: no-python-cast" in capsys.readouterr().out
 
@@ -385,7 +387,7 @@ def test_failing_check_appends_a_named_section_and_exits_two(
     source = check_repo / "src.py"
     source.write_text("x = 1\n")  # clean for ast-grep, so only the check fails
 
-    assert check(check_repo, "--files", str(source)) == 2
+    assert main(agent_check_args(check_repo, "--files", str(source))) == 2
 
     out = capsys.readouterr().out
     assert "### lint" in out
@@ -405,7 +407,7 @@ def test_failing_check_rides_the_harness_emitter_channel(
     patch = f"*** Begin Patch\n*** Update File: {source}\n@@\n+x = 1\n*** End Patch"
     stdin(monkeypatch, {"tool_input": {"command": patch}})
 
-    assert check(check_repo, "--stdin-hook", "codex") == 0
+    assert main(agent_check_args(check_repo, "--stdin-hook", "codex")) == 0
 
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"][
         "additionalContext"
@@ -423,7 +425,7 @@ def test_check_does_not_run_for_files_outside_its_extensions(
     source = check_repo / "src.py"
     source.write_text("x = 1\n")
 
-    assert check(check_repo, "--files", str(source)) == 0
+    assert main(agent_check_args(check_repo, "--files", str(source))) == 0
 
     assert capsys.readouterr().out == ""
 
@@ -435,7 +437,7 @@ def test_missing_check_command_warns_and_keeps_diagnostics(
     source = check_repo / "src.py"
     source.write_text('x = cast(int, "1")\n')
 
-    assert check(check_repo, "--files", str(source)) == 2
+    assert main(agent_check_args(check_repo, "--files", str(source))) == 2
 
     captured = capsys.readouterr()
     assert "Rule: no-python-cast" in captured.out
@@ -453,10 +455,16 @@ def test_diff_scope_silences_committed_violations_file_scope_reports(
 ) -> None:
     source = commit_violation(check_repo)
 
-    assert check(check_repo, "--files", str(source), "--scope", "diff") == 0
+    assert (
+        main(agent_check_args(check_repo, "--files", str(source), "--scope", "diff"))
+        == 0
+    )
     assert capsys.readouterr().out == ""
 
-    assert check(check_repo, "--files", str(source), "--scope", "file") == 2
+    assert (
+        main(agent_check_args(check_repo, "--files", str(source), "--scope", "file"))
+        == 2
+    )
     assert "Rule: no-python-cast" in capsys.readouterr().out
 
 
@@ -469,7 +477,7 @@ def test_diff_scope_keeps_uncommitted_lines_and_untracked_files(
     untracked.write_text("c = cast(int, 3)\n")
 
     files = ("--files", str(source), str(untracked))
-    assert check(check_repo, *files, "--scope", "diff") == 2
+    assert main(agent_check_args(check_repo, *files, "--scope", "diff")) == 2
 
     out = capsys.readouterr().out
     locations = re.findall(r"^\S+\.py:\d+:\d+$", out, flags=re.MULTILINE)
@@ -491,7 +499,7 @@ def test_edit_scope_falls_back_to_diff_when_the_edit_cannot_be_located(
         {"tool_input": {"file_path": str(source), "new_string": "absent text"}},
     )
 
-    assert check(check_repo, "--stdin-hook", "claude-code") == 2
+    assert main(agent_check_args(check_repo, "--stdin-hook", "claude-code")) == 2
 
     out = capsys.readouterr().out
     assert out.count("Rule: no-python-cast") == 1  # only the uncommitted line 2
@@ -512,7 +520,7 @@ def test_edit_scope_falls_all_the_way_to_file_scope_without_git(
         {"tool_input": {"file_path": str(source), "new_string": "absent text"}},
     )
 
-    assert check(check_repo, "--stdin-hook", "claude-code") == 2
+    assert main(agent_check_args(check_repo, "--stdin-hook", "claude-code")) == 2
 
     assert capsys.readouterr().out.count("Rule: no-python-cast") == 2
 
@@ -533,7 +541,7 @@ def test_edit_scope_keeps_a_multiline_match_touched_on_an_inner_line(
         {"tool_input": {"file_path": str(source), "new_string": "    1,"}},
     )
 
-    assert check(check_repo, "--stdin-hook", "claude-code") == 2
+    assert main(agent_check_args(check_repo, "--stdin-hook", "claude-code")) == 2
 
     assert "Rule: no-foo" in capsys.readouterr().out
 
@@ -546,7 +554,10 @@ def test_diff_scope_in_a_non_git_repo_degrades_to_file_scope(
     source = check_repo / "src.py"
     source.write_text('x = cast(int, "1")\n')
 
-    assert check(check_repo, "--files", str(source), "--scope", "diff") == 2
+    assert (
+        main(agent_check_args(check_repo, "--files", str(source), "--scope", "diff"))
+        == 2
+    )
 
     assert "Rule: no-python-cast" in capsys.readouterr().out
 
@@ -557,7 +568,10 @@ def test_edit_scope_without_a_hook_payload_is_a_clean_error(
     source = check_repo / "src.py"
     source.write_text("a = cast(int, 1)\n")
 
-    assert check(check_repo, "--files", str(source), "--scope", "edit") == 1
+    assert (
+        main(agent_check_args(check_repo, "--files", str(source), "--scope", "edit"))
+        == 1
+    )
 
     captured = capsys.readouterr()
     assert "--scope edit needs a hook payload" in captured.err
@@ -569,7 +583,10 @@ def test_missing_files_are_dropped_silently_under_diff_scope(
 ) -> None:
     missing = check_repo / "gone.py"
 
-    assert check(check_repo, "--files", str(missing), "--scope", "diff") == 0
+    assert (
+        main(agent_check_args(check_repo, "--files", str(missing), "--scope", "diff"))
+        == 0
+    )
 
     captured = capsys.readouterr()
     assert captured.out == ""
@@ -582,7 +599,9 @@ def test_scan_failure_is_a_clean_tool_error(
     (check_repo / "sgconfig.yml").write_text("ruleDirs: 5\n")
     (check_repo / "src.py").write_text("x = 1\n")
 
-    assert check(check_repo, "--files", str(check_repo / "src.py")) == 1
+    assert (
+        main(agent_check_args(check_repo, "--files", str(check_repo / "src.py"))) == 1
+    )
 
     captured = capsys.readouterr()
     assert "scan` failed" in captured.err
@@ -601,6 +620,6 @@ def test_hook_mode_fails_open_on_an_internal_error(
     source.write_text('x = cast(int, "1")\n')
     stdin(monkeypatch, {"tool_input": {"file_path": str(source)}})
 
-    assert check(check_repo, "--stdin-hook", "claude-code") == 0
+    assert main(agent_check_args(check_repo, "--stdin-hook", "claude-code")) == 0
 
     assert capsys.readouterr().out == ""

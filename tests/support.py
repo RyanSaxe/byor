@@ -14,6 +14,7 @@ RULE_TEMPLATE = (
     "rule:\n"
     "  pattern: cast($TYPE, $VALUE)\n"
 )
+NOOP_EDITOR = shlex.join([sys.executable, "-c", "pass"])
 
 
 def commands_in(node: object) -> list[str]:
@@ -85,7 +86,8 @@ def write_rule(path: Path, rule_id: str, message: str = "Avoid this.") -> Path:
 
 
 def write_global_rule(home: Path, relpath: str, rule_id: str) -> Path:
-    return write_rule(home / "xdg" / "byor" / "rules" / relpath, rule_id)
+    path = home / "xdg" / "byor" / "rules" / relpath
+    return write_rule(path, rule_id)
 
 
 def mirror(repo: Path) -> Path:
@@ -115,11 +117,7 @@ def substituting_editor(old: str, new: str) -> str:
     return shlex.join([sys.executable, "-c", substitute])
 
 
-def noop_editor() -> str:
-    """An $EDITOR that exits 0 without touching the file."""
-    return shlex.join([sys.executable, "-c", "pass"])
-
-
 def failing_editor(status: int) -> str:
     """An $EDITOR that exits nonzero without touching the file."""
-    return shlex.join([sys.executable, "-c", f"raise SystemExit({status})"])
+    script = f"raise SystemExit({status})"
+    return shlex.join([sys.executable, "-c", script])

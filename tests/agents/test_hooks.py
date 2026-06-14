@@ -28,10 +28,6 @@ def claude_command(home: Path) -> str:
     return command
 
 
-def hook(action: str, agent: str) -> int:
-    return main(["hook", action, "--agent", agent])
-
-
 def test_install_writes_an_unguarded_global_hook(home: Path) -> None:
     install_agents(home, "claude-code")
 
@@ -89,7 +85,7 @@ def test_invalid_claude_settings_fail_cleanly(
 
 
 def test_hook_install_is_global_and_records_the_agent(home: Path) -> None:
-    assert hook("install", "codex") == 0
+    assert main(["hook", "install", "--agent", "codex"]) == 0
 
     assert (home / ".codex" / "hooks.json").is_file()
     assert global_agents() == ["codex"]
@@ -98,13 +94,13 @@ def test_hook_install_is_global_and_records_the_agent(home: Path) -> None:
 def test_codex_install_prints_the_trust_step(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert hook("install", "codex") == 0
+    assert main(["hook", "install", "--agent", "codex"]) == 0
 
     assert "/hooks" in capsys.readouterr().out
 
 
 def test_cursor_is_a_full_agent_choice(home: Path) -> None:
-    assert hook("install", "cursor") == 0
+    assert main(["hook", "install", "--agent", "cursor"]) == 0
 
     hooks = json.loads((home / ".cursor" / "hooks.json").read_text())
     assert BYOR_COMMAND_SIGNATURE in json.dumps(hooks)
@@ -125,14 +121,14 @@ def test_doctor_flags_a_recorded_harness_whose_hook_was_removed(
 
 
 def test_hook_uninstall_removes_the_hook_and_record(home: Path) -> None:
-    hook("install", "codex")
+    main(["hook", "install", "--agent", "codex"])
 
-    assert hook("uninstall", "codex") == 0
+    assert main(["hook", "uninstall", "--agent", "codex"]) == 0
 
     assert not (home / ".codex" / "hooks.json").exists()
     assert global_agents() == []
     # Idempotent: a second uninstall has nothing to do and still succeeds.
-    assert hook("uninstall", "codex") == 0
+    assert main(["hook", "uninstall", "--agent", "codex"]) == 0
 
 
 def test_hook_uninstall_claude_code_removes_only_the_byor_settings_group(
@@ -142,9 +138,9 @@ def test_hook_uninstall_claude_code_removes_only_the_byor_settings_group(
     settings = claude_settings(home)
     settings.parent.mkdir(parents=True, exist_ok=True)
     settings.write_text(json.dumps({"hooks": {"PostToolUse": [user_group]}}))
-    hook("install", "claude-code")
+    main(["hook", "install", "--agent", "claude-code"])
 
-    assert hook("uninstall", "claude-code") == 0
+    assert main(["hook", "uninstall", "--agent", "claude-code"]) == 0
 
     data = json.loads(settings.read_text())
     assert data["hooks"]["PostToolUse"] == [user_group]

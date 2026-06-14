@@ -7,8 +7,8 @@ from support import make_repo, mirror, write_global_rule, write_rule
 from byor.cli import main
 
 
-def sync(repo: Path, *extra: str) -> int:
-    return main(["sync", "--repo", str(repo), *extra])
+def sync_args(repo: Path, *extra: str) -> list[str]:
+    return ["sync", "--repo", str(repo), *extra]
 
 
 def test_sync_copies_global_rules_preserving_relative_paths(
@@ -18,7 +18,7 @@ def test_sync_copies_global_rules_preserving_relative_paths(
     canonical = write_global_rule(home, "python/no-cast.yml", "no-cast")
     capsys.readouterr()
 
-    assert sync(repo) == 0
+    assert main(sync_args(repo)) == 0
 
     copy = mirror(repo) / "python" / "no-cast.yml"
     assert copy.read_text() == canonical.read_text()
@@ -28,10 +28,10 @@ def test_sync_copies_global_rules_preserving_relative_paths(
 def test_sync_updates_changed_copies(home: Path) -> None:
     repo = make_repo(home)
     canonical = write_global_rule(home, "no-cast.yml", "no-cast")
-    sync(repo)
+    main(sync_args(repo))
 
     write_rule(canonical, "no-cast", message="Updated message.")
-    assert sync(repo) == 0
+    assert main(sync_args(repo)) == 0
 
     assert (mirror(repo) / "no-cast.yml").read_text() == canonical.read_text()
 
@@ -39,10 +39,10 @@ def test_sync_updates_changed_copies(home: Path) -> None:
 def test_sync_removes_deleted_rules_and_prunes_empty_dirs(home: Path) -> None:
     repo = make_repo(home)
     canonical = write_global_rule(home, "python/no-cast.yml", "no-cast")
-    sync(repo)
+    main(sync_args(repo))
 
     canonical.unlink()
-    assert sync(repo) == 0
+    assert main(sync_args(repo)) == 0
 
     assert not (mirror(repo) / "python").exists()
     assert (mirror(repo) / ".gitkeep").is_file()
@@ -52,12 +52,12 @@ def test_sync_mirrors_wholesale_but_leaves_non_yaml_alone(home: Path) -> None:
     """The mirror is a build artifact: hand edits and strays go, .gitkeep stays."""
     repo = make_repo(home)
     canonical = write_global_rule(home, "no-cast.yml", "no-cast")
-    sync(repo)
+    main(sync_args(repo))
 
     (mirror(repo) / "no-cast.yml").write_text("# hand edit\n")
     write_rule(mirror(repo) / "stray.yml", "stray")
     (mirror(repo) / "notes.md").write_text("not a rule\n")
-    assert sync(repo) == 0
+    assert main(sync_args(repo)) == 0
 
     assert (mirror(repo) / "no-cast.yml").read_text() == canonical.read_text()
     assert not (mirror(repo) / "stray.yml").exists()
@@ -69,13 +69,13 @@ def test_excluded_rule_is_skipped_and_its_copy_removed(
 ) -> None:
     repo = make_repo(home)
     write_global_rule(home, "no-cast.yml", "no-cast")
-    sync(repo)
+    main(sync_args(repo))
 
     (repo / ".byor" / "local.yml").write_text(
         "version: 1\nglobal:\n  excluded_rule_ids:\n    - no-cast\n"
     )
     capsys.readouterr()
-    assert sync(repo) == 0
+    assert main(sync_args(repo)) == 0
 
     assert not (mirror(repo) / "no-cast.yml").exists()
     out = capsys.readouterr().out
@@ -92,7 +92,7 @@ def test_project_rule_with_same_id_suppresses_global_copy(
     write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
     capsys.readouterr()
 
-    assert sync(repo) == 0
+    assert main(sync_args(repo)) == 0
 
     assert not (mirror(repo) / "no-cast.yml").exists()
     assert "  no-cast: overridden by project rule" in capsys.readouterr().out
@@ -108,7 +108,7 @@ def test_local_rule_with_same_id_suppresses_global_copy(
     )
     capsys.readouterr()
 
-    assert sync(repo) == 0
+    assert main(sync_args(repo)) == 0
 
     assert not (mirror(repo) / "no-cast.yml").exists()
     assert "  no-cast: overridden by local rule" in capsys.readouterr().out
@@ -121,7 +121,7 @@ def test_duplicate_canonical_global_ids_fail_cleanly(
     write_global_rule(home, "a.yml", "no-cast")
     write_global_rule(home, "b.yml", "no-cast")
 
-    assert sync(repo) == 1
+    assert main(sync_args(repo)) == 1
 
     captured = capsys.readouterr()
     assert "Duplicate rule IDs" in captured.err
@@ -135,13 +135,13 @@ def test_sync_check_reports_staleness_without_writing(
     write_global_rule(home, "no-cast.yml", "no-cast")
     capsys.readouterr()
 
-    assert sync(repo, "--check") == 3
+    assert main(sync_args(repo, "--check")) == 3
 
     assert not (mirror(repo) / "no-cast.yml").exists()
     assert f"Sync is stale in {repo}" in capsys.readouterr().out
 
-    sync(repo)
-    assert sync(repo, "--check") == 0
+    main(sync_args(repo))
+    assert main(sync_args(repo, "--check")) == 0
     assert f"Sync is fresh in {repo}" in capsys.readouterr().out
 
 

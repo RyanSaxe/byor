@@ -39,12 +39,8 @@ def config_dir(repo: Path) -> Path:
     return repo.parent / "xdg" / "byor"
 
 
-def init(repo: Path, *extra: str) -> int:
-    return main(["init", "--repo", str(repo), "--non-interactive", *extra])
-
-
 def test_init_creates_repository_and_global_layout(repo: Path) -> None:
-    assert init(repo) == 0
+    assert main(["init", "--repo", str(repo), "--non-interactive"]) == 0
 
     for relpath in TRACKED_FILES:
         assert (repo / relpath).is_file(), relpath
@@ -70,10 +66,10 @@ def test_init_creates_repository_and_global_layout(repo: Path) -> None:
 
 
 def test_init_is_idempotent(repo: Path) -> None:
-    init(repo)
+    main(["init", "--repo", str(repo), "--non-interactive"])
     snapshot = {path: path.read_text() for path in repo.rglob("*") if path.is_file()}
 
-    assert init(repo) == 0
+    assert main(["init", "--repo", str(repo), "--non-interactive"]) == 0
 
     for path, content in snapshot.items():
         assert path.read_text() == content, path
@@ -85,7 +81,7 @@ def test_init_preserves_existing_sgconfig_content(repo: Path) -> None:
         "# team config\nruleDirs:\n  - custom-rules\nutilDirs:\n  - utils\n"
     )
 
-    assert init(repo) == 0
+    assert main(["init", "--repo", str(repo), "--non-interactive"]) == 0
 
     content = (repo / "sgconfig.yml").read_text()
     assert "# team config" in content
@@ -99,7 +95,7 @@ def test_init_rejects_non_list_rule_dirs_without_traceback(
 ) -> None:
     (repo / "sgconfig.yml").write_text("ruleDirs: not-a-list\n")
 
-    assert init(repo) == 1
+    assert main(["init", "--repo", str(repo), "--non-interactive"]) == 1
 
     captured = capsys.readouterr()
     assert "expected ruleDirs to be a list" in captured.err
@@ -110,7 +106,18 @@ def test_init_rejects_non_list_rule_dirs_without_traceback(
 def test_replace_sgconfig_backs_up_then_overwrites(repo: Path) -> None:
     (repo / "sgconfig.yml").write_text("ruleDirs: not-a-list\n")
 
-    assert init(repo, "--replace-sgconfig") == 0
+    assert (
+        main(
+            [
+                "init",
+                "--repo",
+                str(repo),
+                "--non-interactive",
+                "--replace-sgconfig",
+            ]
+        )
+        == 0
+    )
 
     backups = list(repo.glob("sgconfig.yml.byor-backup-*"))
     assert len(backups) == 1
@@ -121,8 +128,16 @@ def test_replace_sgconfig_backs_up_then_overwrites(repo: Path) -> None:
 def test_local_ignore_mode_uses_git_info_exclude(repo: Path) -> None:
     (repo / ".git").mkdir()
 
-    assert init(repo, "--ignore-mode", "local") == 0
-    assert init(repo, "--ignore-mode", "local") == 0
+    args = [
+        "init",
+        "--repo",
+        str(repo),
+        "--non-interactive",
+        "--ignore-mode",
+        "local",
+    ]
+    assert main(args) == 0
+    assert main(args) == 0
 
     exclude = (repo / ".git" / "info" / "exclude").read_text()
     assert exclude.count(".byor/local.yml") == 1
@@ -130,7 +145,9 @@ def test_local_ignore_mode_uses_git_info_exclude(repo: Path) -> None:
 
 
 def test_no_register_creates_empty_registry(repo: Path) -> None:
-    assert init(repo, "--no-register") == 0
+    assert (
+        main(["init", "--repo", str(repo), "--non-interactive", "--no-register"]) == 0
+    )
 
     assert load_repo_registry(config_dir(repo) / "repos.yml") == []
 
@@ -138,7 +155,7 @@ def test_no_register_creates_empty_registry(repo: Path) -> None:
 def test_git_hooks_without_a_git_dir_fail_cleanly(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert init(repo, "--git-hooks") == 1
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--git-hooks"]) == 1
 
     captured = capsys.readouterr()
     assert "has no .git directory" in captured.err
@@ -154,7 +171,7 @@ def test_init_ends_with_quick_doctor_surfacing_problems(
     monkeypatch.setenv("PATH", str(empty_bin))
     monkeypatch.delenv("BYOR_AST_GREP", raising=False)
 
-    assert init(repo) == 0
+    assert main(["init", "--repo", str(repo), "--non-interactive"]) == 0
 
     out = capsys.readouterr().out
     assert "doctor: ast_grep_found: A working ast-grep could not be found." in out
@@ -187,7 +204,7 @@ def test_non_interactive_honors_global_init_defaults(repo: Path) -> None:
     git(repo, "init", "--quiet")
     seed_init_defaults(repo, InitDefaults(ignore_mode="local", git_hooks=True))
 
-    assert init(repo) == 0
+    assert main(["init", "--repo", str(repo), "--non-interactive"]) == 0
 
     assert (repo / ".git" / "info" / "exclude").is_file()
     assert (repo / ".git" / "hooks" / "post-merge").is_file()
@@ -196,7 +213,19 @@ def test_non_interactive_honors_global_init_defaults(repo: Path) -> None:
 def test_explicit_flag_overrides_global_init_default(repo: Path) -> None:
     seed_init_defaults(repo, InitDefaults(ignore_mode="local"))
 
-    assert init(repo, "--ignore-mode", "project") == 0
+    assert (
+        main(
+            [
+                "init",
+                "--repo",
+                str(repo),
+                "--non-interactive",
+                "--ignore-mode",
+                "project",
+            ]
+        )
+        == 0
+    )
 
     assert (repo / ".gitignore").is_file()
     assert not (repo / ".git" / "info" / "exclude").exists()
