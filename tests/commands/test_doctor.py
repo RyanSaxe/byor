@@ -3,7 +3,7 @@ import shutil
 from pathlib import Path
 
 import pytest
-from support import make_repo, repo_with_agents, write_rule
+from support import install_agents, make_repo, repo_with_agents, write_rule
 
 from byor.cli import main
 from byor.commands.doctor import collect_checks
@@ -50,6 +50,10 @@ def test_doctor_json_matches_the_spec_shape(
     assert first["message"].startswith("ast-grep ")
     assert {check["id"] for check in payload["checks"]} == {
         "ast_grep_found",
+        "home_sgconfig",
+        "agent_files",
+        "registered_repos",
+        "global_rules",
         "repo_config",
         "sgconfig",
         "rule_dirs",
@@ -57,8 +61,6 @@ def test_doctor_json_matches_the_spec_shape(
         "rules_valid",
         "rule_ids_unique",
         "sync_fresh",
-        "registered_repos",
-        "agent_files",
     }
 
 
@@ -108,16 +110,34 @@ def test_doctor_reports_missing_ast_grep_with_the_install_message(
     assert NOT_FOUND_MESSAGE in capsys.readouterr().out
 
 
-def test_doctor_flags_an_uninitialized_repo(
+def test_doctor_global_section_is_healthy_after_install(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    install_agents(home, "claude-code")
+    elsewhere = home / "elsewhere"
+    elsewhere.mkdir()
+    capsys.readouterr()
+
+    assert doctor(elsewhere) == 0
+
+    out = capsys.readouterr().out
+    assert "~/sgconfig.yml applies your global rules" in out
+    assert "agent integrations installed for: claude-code, skill" in out
+
+
+def test_doctor_reports_a_non_byor_repo_gracefully(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = home / "untouched"
     repo.mkdir()
+    capsys.readouterr()
 
-    assert doctor(repo) == 1
+    # Global health is fine; the repo section degrades to an informational line.
+    assert doctor(repo) == 0
 
     out = capsys.readouterr().out
-    assert "FAIL  repo_config" in out
+    assert "ok    repo" in out
+    assert "not a byor repo" in out
     assert "byor init" in out
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -13,10 +14,12 @@ from byor.config import (
     GlobalConfig,
     RepoConfig,
     RepoPaths,
+    global_rules_dir,
     load_global_config,
     load_local_config,
     load_repo_config,
     load_repo_registry,
+    repo_config_path,
     repo_registry_path,
     rule_dir_relpaths,
 )
@@ -27,7 +30,7 @@ from byor.errors import (
     RepoNotInitialized,
     RuleValidationError,
 )
-from byor.io.paths import global_config_dir, resolve_repo_root
+from byor.io.paths import global_config_dir, home_sgconfig_path, resolve_repo_root
 from byor.io.yamlio import load_yaml_mapping
 from byor.rules.rules import load_rules
 from byor.rules.sync import compute_sync_plan, load_canonical_rules, mirror_contents
@@ -59,19 +62,48 @@ def run_doctor(args: argparse.Namespace) -> int:
 
 
 def collect_checks(repo_root: Path, config_dir: Path, quick: bool) -> list[Check]:
-    """Run the health checks. `quick` skips recursive rule validation
-    (rule parsing, ID uniqueness, sync staleness) but keeps the cheap checks.
+    """Run the health checks: a global (machine-level) section always, plus a
+    repo section when run inside a byor repo.
+
+    `quick` skips recursive rule validation (rule parsing, ID uniqueness, sync
+    staleness) but keeps the cheap checks.
     """
     global_config = load_global_config(config_dir)
+    checks = _global_checks(config_dir, global_config, quick)
+    checks.extend(_repo_checks(repo_root, config_dir, global_config, quick))
+    return checks
+
+
+def _global_checks(
+    config_dir: Path, global_config: GlobalConfig, quick: bool
+) -> list[Check]:
+    checks = [
+        _ast_grep_check(global_config),
+        _home_sgconfig_check(config_dir, global_config),
+        _agent_files_check(global_config),
+        _registry_check(config_dir, global_config),
+    ]
+    if not quick:
+        checks.append(_global_rules_check(config_dir, global_config))
+    return checks
+
+
+def _repo_checks(
+    repo_root: Path, config_dir: Path, global_config: GlobalConfig, quick: bool
+) -> list[Check]:
+    if not repo_config_path(repo_root).is_file():
+        return [
+            Check("repo", True, "not a byor repo; run `byor init` to add project rules")
+        ]
     repo_config, repo_check = _repo_config_check(repo_root)
-    checks = [_ast_grep_check(global_config), repo_check]
-    checks.append(_sgconfig_check(repo_root, repo_config.paths))
-    checks.append(_rule_dirs_check(repo_root, repo_config.paths))
-    checks.append(_rule_visibility_check(repo_root, repo_config.paths))
+    checks = [
+        repo_check,
+        _sgconfig_check(repo_root, repo_config.paths),
+        _rule_dirs_check(repo_root, repo_config.paths),
+        _rule_visibility_check(repo_root, repo_config.paths),
+    ]
     if not quick and repo_check.ok:
         checks.extend(_rule_checks(repo_root, repo_config.paths, config_dir))
-    checks.append(_registry_check(config_dir, global_config))
-    checks.append(_agent_files_check(global_config))
     extra = _extra_checks_check(repo_root, repo_config, global_config)
     if extra is not None:
         checks.append(extra)
@@ -103,6 +135,51 @@ def _ast_grep_check(global_config: GlobalConfig) -> Check:
     except AstGrepNotFound as error:
         return Check("ast_grep_found", False, str(error))
     return Check("ast_grep_found", True, f"ast-grep {version}")
+
+
+def _home_sgconfig_check(config_dir: Path, global_config: GlobalConfig) -> Check:
+    """`~/sgconfig.yml` is what applies global rules in repos with no `.byor/`."""
+    path = home_sgconfig_path()
+    if not path.is_file():
+        return Check(
+            "home_sgconfig",
+            True,
+            "global ast-grep config not set up; run `byor install`",
+        )
+    try:
+        data = load_yaml_mapping(path)
+    except ConfigError as error:
+        return Check("home_sgconfig", False, str(error))
+    rules_dir = global_rules_dir(config_dir, global_config)
+    expected = Path(os.path.relpath(rules_dir, Path.home())).as_posix()
+    rule_dirs = data.get("ruleDirs")
+    if not isinstance(rule_dirs, list) or expected not in rule_dirs:
+        return Check(
+            "home_sgconfig",
+            False,
+            f"~/sgconfig.yml does not list {expected}; run `byor install`",
+        )
+    return Check("home_sgconfig", True, "~/sgconfig.yml applies your global rules")
+
+
+def _global_rules_check(config_dir: Path, global_config: GlobalConfig) -> Check:
+    """The canonical global rules must parse with unique IDs."""
+    rules_dir = global_rules_dir(config_dir, global_config)
+    try:
+        rules = load_rules(rules_dir)
+    except (RuleValidationError, ConfigError) as error:
+        return Check("global_rules", False, str(error))
+    duplicates = sorted(
+        rule_id
+        for rule_id, count in Counter(rule.id for rule in rules).items()
+        if count > 1
+    )
+    if duplicates:
+        return Check(
+            "global_rules", False, f"duplicate global rule IDs: {', '.join(duplicates)}"
+        )
+    noun = "rule" if len(rules) == 1 else "rules"
+    return Check("global_rules", True, f"{len(rules)} global {noun} parse")
 
 
 def _repo_config_check(repo_root: Path) -> tuple[RepoConfig, Check]:
