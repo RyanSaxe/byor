@@ -273,3 +273,18 @@ def test_add_warns_on_nonconforming_rule_id(
 
     assert "does not match the recommended" in capsys.readouterr().err
     assert (repo / ".byor" / "rules" / "project" / "Bad_ID.yml").is_file()
+
+
+def test_add_rejects_a_path_traversal_rule_id(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    source = write_rule(home / "source.yml", "../../escaped")
+    capsys.readouterr()
+
+    assert main(add_args(repo, "--scope", "project", "--from", str(source))) == 1
+
+    assert not (repo / ".byor" / "escaped.yml").exists()
+    captured = capsys.readouterr()
+    assert "escaped" in captured.err
+    assert "Traceback" not in captured.err
