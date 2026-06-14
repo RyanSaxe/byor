@@ -57,7 +57,9 @@ def _run_files(
     scoped = _scoped_files(files, scope)
     diagnostics = _diagnostics(args, repo_root, scoped, scope, payload=None)
     checks = load_effective_checks(repo_root, global_config_dir())
-    outcome = run_checks(checks, repo_root, scoped)
+    outcome = run_checks(
+        checks, repo_root, scoped, whole_repo=scope == "file" and not scoped
+    )
     for warning in outcome.warnings:
         print(warning, file=sys.stderr)
     if args.format == "json":

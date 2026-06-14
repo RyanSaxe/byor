@@ -94,11 +94,22 @@ def load_effective_checks(repo_root: Path, config_dir: Path) -> list[EffectiveCh
 
 
 def run_checks(
-    checks: list[EffectiveCheck], repo_root: Path, files: list[Path]
+    checks: list[EffectiveCheck],
+    repo_root: Path,
+    files: list[Path],
+    whole_repo: bool = False,
 ) -> CheckOutcome:
-    """Run each check whose extensions match an in-scope file."""
+    """Run each check whose extensions match an in-scope file.
+
+    `whole_repo` is the no-`--files` `agent-check` invocation: every check runs
+    once with no file arguments, so the command scans the repository itself
+    (e.g. a bare `ruff check`), mirroring ast-grep's whole-repo scan.
+    """
     outcome = CheckOutcome()
     for check in checks:
+        if whole_repo:
+            _run_one(check, repo_root, [], outcome)
+            continue
         matching = _matching_files(check.definition, files)
         if not matching:
             continue

@@ -491,6 +491,19 @@ def test_repo_checks_do_not_leak_into_other_repos(
     assert "repo-a check" not in capsys.readouterr().out
 
 
+def test_whole_repo_mode_runs_checks_without_files(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    add_repo_check(repo, "lint", ["py"], failing_check_command(repo, "whole repo"))
+    capsys.readouterr()
+
+    # No --files means scan the whole repository, checks included.
+    assert main(["agent-check", "--repo", str(repo)]) == 2
+
+    assert "whole repo" in capsys.readouterr().out
+
+
 def test_missing_check_command_warns_and_keeps_diagnostics(
     check_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
