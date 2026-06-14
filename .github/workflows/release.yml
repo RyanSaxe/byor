@@ -1,48 +1,69 @@
 name: Release
 
-# Publishes to PyPI when a GitHub Release is published. To cut a release:
-# bump the version (`uv version --bump <part>`), commit, then publish a Release
-# with tag `vX.Y.Z` matching pyproject.toml.
+# One-click release: trigger from the Actions tab and pick the version part to
+# bump. This job runs the gates, bumps the version, publishes to PyPI, pushes the
+# "chore: release vX.Y.Z" commit to main, and creates a GitHub Release with
+# generated notes. Nothing to tag or publish by hand.
 #
-# One-time setup before the first release:
-#   1. Register a pending Trusted Publisher at
+# One-time setup (already done for byor):
+#   1. Register a Trusted Publisher at
 #      https://pypi.org/manage/account/publishing/ — project `byor`, owner
 #      `RyanSaxe`, repo `byor`, workflow `release.yml`, environment `pypi`.
 #   2. Create a GitHub Environment named `pypi` (Settings -> Environments).
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version part to bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+        required: true
+
+concurrency: release
 
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
-      # Trusted Publishing exchanges this OIDC token with PyPI — no API token.
-      id-token: write
+      contents: write  # push the version-bump commit and create the release
+      id-token: write  # Trusted Publishing exchanges this OIDC token with PyPI
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history for generated release notes
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
       - run: uv sync --locked  # ast-grep ships as the ast-grep-cli dependency
-
-      - name: Verify the release tag matches the package version
-        run: |
-          version="$(uv version --short --color never)"
-          tag="${GITHUB_REF_NAME#v}"
-          if [ "$version" != "$tag" ]; then
-            echo "Release tag '$tag' does not match pyproject version '$version'." >&2
-            echo "Bump with 'uv version --bump <part>', commit, then tag v$version." >&2
-            exit 1
-          fi
 
       - run: uv run ruff format --check .
       - run: uv run ruff check .
       - run: uv run ty check
       - run: uv run pytest
 
+      - name: Bump version
+        run: |
+          uv version --bump ${{ inputs.bump }}
+          echo "VERSION=$(uv version --short --color never)" >> "$GITHUB_ENV"
+
       - run: uv build
+
+      # Publish before pushing: a failed upload leaves main untouched and the run
+      # re-runnable, so the PyPI version is only ever consumed on success.
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Push the version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: release v$VERSION"
+          git push
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "v$VERSION" --generate-notes --title "v$VERSION"
