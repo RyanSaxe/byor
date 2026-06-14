@@ -22,14 +22,14 @@ RECOMMENDED_ID_PATTERN = re.compile(r"[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*")
 
 # The one place the suppression-comment syntax is spelled out;
 # every instruction string interpolates it.
-SUPPRESSION_COMMENT = "# ast-grep-ignore: <rule-id> -- <short reason>"
+SUPPRESSION_COMMENT = "# ast-grep-ignore: <rule-id>"
 
 # The standard exception sentence an agent_prompt ends with when a rule
 # tolerates exceptions. `byor add --allow-exceptions` appends it;
 # the capture skill includes it when the user allows exceptions.
 ALLOW_EXCEPTIONS_SENTENCE = (
-    f"If this is genuinely necessary, suppress with `{SUPPRESSION_COMMENT}` "
-    "on its own line above, and keep the reason short."
+    f"If this is genuinely necessary, add `{SUPPRESSION_COMMENT}` at the end of "
+    "the offending line, with a short comment on the line above explaining why."
 )
 
 
