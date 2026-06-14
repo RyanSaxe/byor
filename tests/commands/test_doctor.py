@@ -216,9 +216,9 @@ def test_doctor_flags_a_missing_opencode_plugin(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home, "repo", "--agents", "opencode")
-    (repo / ".opencode" / "plugin" / "byor.ts").unlink()
+    (home / ".config" / "opencode" / "plugin" / "byor.ts").unlink()
     capsys.readouterr()
 
     assert doctor(repo, "--quick") == 1
 
-    assert ".opencode/plugin/byor.ts is missing" in capsys.readouterr().out
+    assert "~/.config/opencode/plugin/byor.ts is missing" in capsys.readouterr().out

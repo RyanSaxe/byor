@@ -80,7 +80,7 @@ def initialize_repo(
     if write_ignore_block(repo_root, options.ignore_mode):
         target = display_path(ignore_file(repo_root, options.ignore_mode), repo_root)
         messages.append(f"Wrote ignore block to {target}")
-    messages.extend(install_agents(repo_root, options.agents))
+    messages.extend(install_agents(options.agents))
     if options.git_hooks:
         messages.extend(install_git_shims(repo_root))
     if options.register and register_repo(

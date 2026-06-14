@@ -14,7 +14,7 @@ def test_install_writes_the_plugin(home: Path) -> None:
     repo = make_repo(home, "repo", "--agents", "opencode")
 
     # The plugin cannot run against a real OpenCode here; assert its shape.
-    plugin = (repo / OPENCODE_PLUGIN_RELPATH).read_text()
+    plugin = (home / OPENCODE_PLUGIN_RELPATH).read_text()
     assert plugin.startswith(OPENCODE_MARKER)
     assert '"tool.execute.after"' in plugin
     assert '["edit", "write", "apply_patch"]' in plugin
@@ -29,7 +29,7 @@ def test_uninstall_removes_only_marker_bearing_files(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home, "repo", "--agents", "opencode")
-    plugin = repo / OPENCODE_PLUGIN_RELPATH
+    plugin = home / OPENCODE_PLUGIN_RELPATH
     plugin.write_text("export const MyPlugin = {}\n")  # marker gone: user-owned
 
     assert main(["hook", "uninstall", "--repo", str(repo), "--agent", "opencode"]) == 0
@@ -43,7 +43,7 @@ def test_doctor_flags_a_missing_or_drifted_plugin_and_install_repairs_it(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home, "repo", "--agents", "opencode")
-    plugin = repo / OPENCODE_PLUGIN_RELPATH
+    plugin = home / OPENCODE_PLUGIN_RELPATH
 
     for breakage in (plugin.unlink, lambda: plugin.write_text(OPENCODE_MARKER + "\n")):
         breakage()

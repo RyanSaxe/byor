@@ -1,17 +1,19 @@
 """The OpenCode adapter: a real post-edit plugin.
 
-OpenCode discovers TypeScript plugins under .opencode/plugin/. Ours hooks
-tool.execute.after for the file-mutating tools, runs agent-check on the
-touched file, and appends any diagnostics to the tool output the model sees.
-A `//` comment marker stands in for the HTML-comment marker, which is not
-valid TypeScript.
+OpenCode loads global plugins from ~/.config/opencode/plugin/, so byor installs
+the plugin once there and it fires in every project. It hooks
+tool.execute.after for the file-mutating tools, runs agent-check on the touched
+file, and appends any diagnostics to the tool output the model sees. A `//`
+comment marker stands in for the HTML-comment marker, which is not valid
+TypeScript.
 """
 
 from __future__ import annotations
 
 from byor.io.fsio import MANAGED_NOTICE
 
-OPENCODE_PLUGIN_RELPATH = ".opencode/plugin/byor.ts"
+# Relative to the user's home directory (the global plugin location).
+OPENCODE_PLUGIN_RELPATH = ".config/opencode/plugin/byor.ts"
 
 OPENCODE_MARKER = f"// {MANAGED_NOTICE}"
 

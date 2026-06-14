@@ -75,12 +75,12 @@ def run_hook(args: argparse.Namespace) -> int:
     repo_root = resolve_repo_root(explicit=args.repo)
     config = load_repo_config(repo_root)
     if args.hook_action == "install":
-        messages = install_agent(repo_root, args.agent)
+        messages = install_agent(args.agent)
         recorded = args.agent not in config.agents
         if recorded:
             config.agents.append(args.agent)
     else:
-        messages = uninstall_agent(repo_root, args.agent)
+        messages = uninstall_agent(args.agent)
         recorded = args.agent in config.agents
         if recorded:
             config.agents.remove(args.agent)
@@ -91,23 +91,21 @@ def run_hook(args: argparse.Namespace) -> int:
     return 0
 
 
-def install_agents(repo_root: Path, agents: Sequence[str]) -> list[str]:
-    """Init step 5: install each requested agent's hook, plugin, or skill."""
+def install_agents(agents: Sequence[str]) -> list[str]:
+    """Install each requested agent's hook, plugin, or skill — all global."""
     messages: list[str] = []
     for agent in agents:
-        messages.extend(install_agent(repo_root, agent))
+        messages.extend(install_agent(agent))
     return messages
 
 
-def install_agent(repo_root: Path, agent: str) -> list[str]:
-    """Install one agent adapter; returns summary lines for changes made."""
+def install_agent(agent: str) -> list[str]:
+    """Install one agent adapter globally; returns summary lines for changes."""
     if agent == "skill":
         return _install_skill()
     plugin = PLUGIN_AGENTS.get(agent)
     if plugin is not None:
-        return _write_managed_file(
-            repo_root, plugin.relpath, plugin.content, marker=plugin.marker
-        )
+        return _install_plugin(plugin)
     harness = _as_harness(agent)
     if harness is None:
         return []
@@ -118,7 +116,7 @@ def install_agent(repo_root: Path, agent: str) -> list[str]:
     return messages
 
 
-def uninstall_agent(repo_root: Path, agent: str) -> list[str]:
+def uninstall_agent(agent: str) -> list[str]:
     """Remove one agent adapter; only marker-bearing files are deleted."""
     if agent == "skill":
         messages: list[str] = []
@@ -127,25 +125,26 @@ def uninstall_agent(repo_root: Path, agent: str) -> list[str]:
         return messages
     plugin = PLUGIN_AGENTS.get(agent)
     if plugin is not None:
-        return _remove_managed_file(repo_root, plugin.relpath, marker=plugin.marker)
+        path = _plugin_path(plugin)
+        return _remove_managed_path(path, _home_display(path), plugin.marker)
     harness = _as_harness(agent)
     if harness is None:
         return []
     return uninstall_hook(harness)
 
 
-def agent_file_problems(repo_root: Path, agents: Sequence[str]) -> list[str]:
+def agent_file_problems(agents: Sequence[str]) -> list[str]:
     """Integration problems for doctor's agent_files check.
 
     Plugin files (OpenCode, Pi) are byor-managed; the other harnesses'
-    integration is their hook config, verified by checking a byor hook is present
-    in one of its scopes. The skill renders are not checked here — self-heal keeps
-    them current on every byor command, so there is no drift for doctor to report.
+    integration is their global hook config, verified by checking a byor hook is
+    present. The skill renders are not checked here — self-heal keeps them current
+    on every byor command, so there is no drift for doctor to report.
     """
     problems: list[str] = []
     for agent in agents:
         if (plugin := PLUGIN_AGENTS.get(agent)) is not None:
-            problems.extend(_plugin_problems(repo_root, plugin))
+            problems.extend(_plugin_problems(plugin))
         elif (harness := _as_harness(agent)) is not None and not _hook_present(harness):
             problems.append(f"the {agent} hook is not installed")
     return problems
@@ -173,17 +172,28 @@ def _install_skill() -> list[str]:
     return messages
 
 
-def _plugin_problems(repo_root: Path, plugin: PluginAgent) -> list[str]:
+def _install_plugin(plugin: PluginAgent) -> list[str]:
+    """Write a byor-managed plugin to its global location under the user's home."""
+    path = _plugin_path(plugin)
+    return _write_managed_path(path, plugin.content, _home_display(path), plugin.marker)
+
+
+def _plugin_path(plugin: PluginAgent) -> Path:
+    """The plugin's absolute path; its relpath is relative to the home directory."""
+    return Path.home() / plugin.relpath
+
+
+def _plugin_problems(plugin: PluginAgent) -> list[str]:
     """Same ownership rules as the skill renders: a drifted marker-bearing
     plugin needs a reinstall; an unmarked file is user-owned and accepted.
     """
-    status = marked_text_status(
-        repo_root / plugin.relpath, plugin.content, plugin.marker
-    )
+    path = _plugin_path(plugin)
+    display = _home_display(path)
+    status = marked_text_status(path, plugin.content, plugin.marker)
     if status == "missing":
-        return [f"{plugin.relpath} is missing"]
+        return [f"{display} is missing"]
     if status == "drifted":
-        return [f"{plugin.relpath} is out of date"]
+        return [f"{display} is out of date"]
     return []
 
 

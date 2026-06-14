@@ -228,7 +228,7 @@ def _agent_files_check(repo_root: Path, repo_config: RepoConfig) -> Check:
     """Each agent in ai.agents needs its managed files (skill renders, plugin)."""
     if not repo_config.agents:
         return Check("agent_files", True, "no AI agents configured")
-    problems = agent_file_problems(repo_root, repo_config.agents)
+    problems = agent_file_problems(repo_config.agents)
     if problems:
         return Check(
             "agent_files",

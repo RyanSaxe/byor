@@ -1,11 +1,12 @@
 """The Pi adapter: a real post-edit extension.
 
-Pi discovers TypeScript extensions under .pi/extensions/. Ours hooks the
-`tool_result` event for the file-editing tools, runs agent-check on the touched
-file, and appends any diagnostics to the result the model sees. Pi already reads
-skills from `.agents/skills/`, so the rule-capture skill needs no Pi-specific
-work. A `//` comment marker stands in for the HTML-comment marker, which is not
-valid TypeScript.
+Pi loads global extensions from ~/.pi/agent/extensions/, so byor installs the
+extension once there and it fires in every project. It hooks the `tool_result`
+event for the file-editing tools, runs agent-check on the touched file, and
+appends any diagnostics to the result the model sees. Pi already reads skills
+from ~/.agents/skills/, so the rule-capture skill needs no Pi-specific work. A
+`//` comment marker stands in for the HTML-comment marker, which is not valid
+TypeScript.
 
 The exact Pi extension API is verified against the real CLI during dogfooding,
 not in tests; the extension is written defensively (multiple path keys, exit
@@ -16,7 +17,8 @@ from __future__ import annotations
 
 from byor.io.fsio import MANAGED_NOTICE
 
-PI_EXTENSION_RELPATH = ".pi/extensions/byor.ts"
+# Relative to the user's home directory (the global extension location).
+PI_EXTENSION_RELPATH = ".pi/agent/extensions/byor.ts"
 
 PI_MARKER = f"// {MANAGED_NOTICE}"
 
