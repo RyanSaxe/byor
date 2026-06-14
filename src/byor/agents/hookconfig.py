@@ -3,10 +3,13 @@
 Every harness stores its hooks as a JSON list of entries — at a harness-specific
 key path inside a harness-specific file — where each entry carries a shell
 command. byor owns the entries whose command runs `byor agent-check`, and
-converges them to the current command without touching entries a user added,
-exactly as the original claude-code settings logic did. `HookSpec` captures the
-four edges that differ per harness (file location, key path, entry shape, and
-command string); `install_hook`/`uninstall_hook` drive the shared logic.
+converges them to the current command without touching entries a user added.
+
+Registration is global: byor writes the hook once into the harness's home
+config (`~/.claude/settings.json`, `~/.codex/hooks.json`, ...) so it fires in
+every repo. `HookSpec` captures the edges that differ per harness (file
+location, key path, entry shape, and command string); `install_hook`/
+`uninstall_hook` drive the shared logic.
 """
 
 from __future__ import annotations
@@ -15,18 +18,13 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 from byor.agents.harness import Harness, JsonValue
 from byor.errors import ConfigError
 from byor.io.fsio import write_text_atomic
 
-HookScope = Literal["project", "global", "local"]
-
-HOOK_SCOPES: tuple[HookScope, ...] = ("project", "global")
-
-# agent-check exits 2 with diagnostics, which claude-code reads as feedback;
-# every other harness wants exit 0, so its guard ends with `|| true`.
+# agent-check fails open and exits 0 for every harness except claude-code (which
+# reads exit 2 + stderr), so no shell `|| true` guard is needed on the command.
 BYOR_COMMAND_SIGNATURE = "byor agent-check --stdin-hook"
 
 
@@ -35,18 +33,14 @@ class HookSpec:
     """The per-harness edges of the shared converge pipeline."""
 
     harness: Harness
-    project_relpath: str
-    """Repo-relative config path for project scope."""
     global_relpath: str
-    """Path relative to the harness's global dir."""
+    """Path relative to the harness's global config dir."""
     key_path: tuple[str, ...]
     """JSON pointer to the entry list inside the config object."""
     matcher: str | None
     """An entry's matcher value, or None for harnesses without matchers."""
     nests_command: bool
     """True when the command lives in a nested hooks[] list (claude/codex)."""
-    local_relpath: str | None = None
-    """Repo-relative path for local scope, or None for harnesses without one."""
     stderr_feedback: bool = False
     """True when the harness reads feedback from stderr + exit 2, not stdout JSON."""
 
@@ -54,17 +48,14 @@ class HookSpec:
 HOOK_SPECS: dict[Harness, HookSpec] = {
     "claude-code": HookSpec(
         harness="claude-code",
-        project_relpath=".claude/settings.json",
         global_relpath="settings.json",
         key_path=("hooks", "PostToolUse"),
         matcher="Write|Edit|MultiEdit|NotebookEdit",
         nests_command=True,
-        local_relpath=".claude/settings.local.json",
         stderr_feedback=True,
     ),
     "codex": HookSpec(
         harness="codex",
-        project_relpath=".codex/hooks.json",
         global_relpath="hooks.json",
         key_path=("hooks", "PostToolUse"),
         matcher="Edit|Write",
@@ -72,7 +63,6 @@ HOOK_SPECS: dict[Harness, HookSpec] = {
     ),
     "copilot": HookSpec(
         harness="copilot",
-        project_relpath=".github/hooks/byor.json",
         global_relpath="hooks/byor.json",
         key_path=("postToolUse",),
         matcher=None,
@@ -80,7 +70,6 @@ HOOK_SPECS: dict[Harness, HookSpec] = {
     ),
     "cursor": HookSpec(
         harness="cursor",
-        project_relpath=".cursor/hooks.json",
         global_relpath="hooks.json",
         key_path=("hooks", "postToolUse"),
         matcher=None,
@@ -89,14 +78,14 @@ HOOK_SPECS: dict[Harness, HookSpec] = {
 }
 
 
-def install_hook(repo_root: Path, harness: Harness, scope: HookScope) -> list[str]:
-    """Converge the harness's byor hook entry into its config."""
+def install_hook(harness: Harness) -> list[str]:
+    """Converge the harness's byor hook entry into its global config."""
     spec = HOOK_SPECS[harness]
-    path = _config_path(repo_root, spec, scope)
-    relpath = _display_relpath(spec, scope)
+    path = _config_path(spec)
+    relpath = _display_relpath(spec)
     config = _load_config(path, relpath)
     entries = _entries(config, spec, relpath)
-    current = _byor_entry(spec, scope)
+    current = _byor_entry(spec)
     if current in entries:
         return []
     kept = [entry for entry in entries if not _is_byor_entry(entry)]
@@ -107,11 +96,11 @@ def install_hook(repo_root: Path, harness: Harness, scope: HookScope) -> list[st
     return [f"Installed a {harness} post-edit hook in {relpath}"]
 
 
-def uninstall_hook(repo_root: Path, harness: Harness, scope: HookScope) -> list[str]:
-    """Drop byor-owned entries from the config; user entries stay."""
+def uninstall_hook(harness: Harness) -> list[str]:
+    """Drop byor-owned entries from the global config; user entries stay."""
     spec = HOOK_SPECS[harness]
-    path = _config_path(repo_root, spec, scope)
-    relpath = _display_relpath(spec, scope)
+    path = _config_path(spec)
+    relpath = _display_relpath(spec)
     if not path.is_file():
         return []
     config = _load_config(path, relpath)
@@ -127,42 +116,26 @@ def uninstall_hook(repo_root: Path, harness: Harness, scope: HookScope) -> list[
     return [f"Removed the {harness} post-edit hook from {relpath}"]
 
 
-def hook_installed(repo_root: Path, harness: Harness, scope: HookScope) -> bool:
-    """Whether a byor-owned entry is present in the harness config."""
+def hook_installed(harness: Harness) -> bool:
+    """Whether a byor-owned entry is present in the harness's global config."""
     spec = HOOK_SPECS[harness]
-    path = _config_path(repo_root, spec, scope)
+    path = _config_path(spec)
     if not path.is_file():
         return False
-    relpath = _display_relpath(spec, scope)
+    relpath = _display_relpath(spec)
     entries = _entries(_load_config(path, relpath), spec, relpath)
     return any(_contains_byor_command(entry) for entry in entries)
 
 
-def hook_command(harness: Harness, scope: HookScope) -> str:
-    """The shell command an entry runs, guarded for shared project scope."""
+def hook_command(harness: Harness) -> str:
+    """The shell command an entry runs.
+
+    Global hooks are personal, so there is no teammate guard; claude-code reads
+    exit 2 + stderr (hence the `>&2` redirect), the others read JSON on stdout.
+    """
     spec = HOOK_SPECS[harness]
     base = f"{BYOR_COMMAND_SIGNATURE} {harness}"
-    if spec.stderr_feedback:
-        # The harness reads exit 2 + stderr; the others read JSON on stdout.
-        base = f"{base} >&2"
-    # Only the committed, team-shared project config carries the teammate guard;
-    # global and local configs are personal.
-    if scope != "project":
-        return base
-    guard = "command -v byor >/dev/null 2>&1 &&"
-    return f"{guard} {base} || true"
-
-
-def supports_local_scope(harness: Harness) -> bool:
-    """Whether the harness has a local-scope config (claude-code's only)."""
-    return HOOK_SPECS[harness].local_relpath is not None
-
-
-def installed_scopes(harness: Harness) -> tuple[HookScope, ...]:
-    """Scopes a harness's hook may live in; uninstall sweeps all of them."""
-    if supports_local_scope(harness):
-        return ("project", "global", "local")
-    return ("project", "global")
+    return f"{base} >&2" if spec.stderr_feedback else base
 
 
 def global_hook_dir(harness: Harness, home: Path) -> Path:
@@ -178,30 +151,16 @@ _GLOBAL_DIRS: dict[Harness, str] = {
 }
 
 
-def _config_path(repo_root: Path, spec: HookSpec, scope: HookScope) -> Path:
-    if scope == "local":
-        return repo_root / _local_relpath(spec)
-    if scope == "global":
-        return global_hook_dir(spec.harness, Path.home()) / spec.global_relpath
-    return repo_root / spec.project_relpath
+def _config_path(spec: HookSpec) -> Path:
+    return global_hook_dir(spec.harness, Path.home()) / spec.global_relpath
 
 
-def _display_relpath(spec: HookSpec, scope: HookScope) -> str:
-    if scope == "local":
-        return _local_relpath(spec)
-    if scope == "global":
-        return f"~/{_GLOBAL_DIRS[spec.harness]}/{spec.global_relpath}"
-    return spec.project_relpath
+def _display_relpath(spec: HookSpec) -> str:
+    return f"~/{_GLOBAL_DIRS[spec.harness]}/{spec.global_relpath}"
 
 
-def _local_relpath(spec: HookSpec) -> str:
-    if spec.local_relpath is None:
-        raise ConfigError(f"{spec.harness} has no local-scope hook config")
-    return spec.local_relpath
-
-
-def _byor_entry(spec: HookSpec, scope: HookScope) -> dict[str, JsonValue]:
-    command = hook_command(spec.harness, scope)
+def _byor_entry(spec: HookSpec) -> dict[str, JsonValue]:
+    command = hook_command(spec.harness)
     if spec.nests_command:
         entry: dict[str, JsonValue] = {
             "hooks": [{"type": "command", "command": command}]

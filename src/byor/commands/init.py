@@ -7,8 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from byor.agents.hookconfig import HOOK_SCOPES, HookScope
-from byor.agents.install import AGENT_CHOICES, HOOK_HARNESSES, install_agents
+from byor.agents.install import AGENT_CHOICES, install_agents
 from byor.commands.doctor import quick_doctor_problems
 from byor.config import (
     GlobalConfig,
@@ -49,7 +48,6 @@ class InitOptions:
     agents: list[str]
     ignore_mode: IgnoreMode
     git_hooks: bool
-    hook_scope: HookScope
     register: bool
     replace_sgconfig: bool
 
@@ -82,7 +80,7 @@ def initialize_repo(
     if write_ignore_block(repo_root, options.ignore_mode):
         target = display_path(ignore_file(repo_root, options.ignore_mode), repo_root)
         messages.append(f"Wrote ignore block to {target}")
-    messages.extend(install_agents(repo_root, options.agents, options.hook_scope))
+    messages.extend(install_agents(repo_root, options.agents))
     if options.git_hooks:
         messages.extend(install_git_shims(repo_root))
     if options.register and register_repo(
@@ -160,7 +158,6 @@ def _options_from_args(args: argparse.Namespace, defaults: InitDefaults) -> Init
         git_hooks: bool = args.git_hooks
     else:
         git_hooks = _resolve_git_hooks(defaults.git_hooks, interactive)
-    hook_scope = _resolve_hook_scope(args, agents, interactive, defaults.hook_scope)
     # The harness-neutral rule-capture skill installs by default.
     if "skill" not in agents:
         agents.append("skill")
@@ -168,7 +165,6 @@ def _options_from_args(args: argparse.Namespace, defaults: InitDefaults) -> Init
         agents=agents,
         ignore_mode=ignore_mode,
         git_hooks=git_hooks,
-        hook_scope=hook_scope,
         register=not args.no_register,
         replace_sgconfig=args.replace_sgconfig,
     )
@@ -182,30 +178,6 @@ def _resolve_ignore_mode(default: str | None, interactive: bool) -> IgnoreMode:
 def _resolve_git_hooks(default: bool | None, interactive: bool) -> bool:
     fallback = default if default is not None else False
     return _prompt_git_hooks(fallback) if interactive else fallback
-
-
-def _resolve_hook_scope(
-    args: argparse.Namespace,
-    agents: list[str],
-    interactive: bool,
-    default: str | None,
-) -> HookScope:
-    """Ask hook scope once for all selected hook-capable agents."""
-    if args.hook_scope is not None:
-        return args.hook_scope
-    fallback: HookScope = "global" if default == "global" else "project"
-    if interactive and any(agent in HOOK_HARNESSES for agent in agents):
-        return _prompt_hook_scope(fallback)
-    return fallback
-
-
-def _prompt_hook_scope(default: HookScope) -> HookScope:
-    choice = _prompt_choice(
-        "Where should byor register agent hooks?",
-        ("project (committed, shared with the team)", "global (~/, personal)"),
-        default=HOOK_SCOPES.index(default),
-    )
-    return HOOK_SCOPES[choice]
 
 
 def _parse_agents(raw: str) -> list[str]:

@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import get_args
 
 from byor.agents.harness import HARNESS_CHOICES
-from byor.agents.hookconfig import HOOK_SCOPES, HookScope
 from byor.agents.install import AGENT_CHOICES
 from byor.errors import ByorError
 from byor.scaffold.ignore import IgnoreMode
@@ -76,17 +75,6 @@ def build_parser() -> argparse.ArgumentParser:
                     required=True,
                     help="Which AI integration to manage",
                 )
-                if action_name == "install":
-                    action.set_defaults(hook_scope="project")
-                    action.add_argument(
-                        "--hook-scope",
-                        choices=get_args(HookScope),
-                        default="project",
-                        help=(
-                            "Where to register a real hook: project (committed),"
-                            " global (~/, personal), or local (claude-code only)"
-                        ),
-                    )
     return parser
 
 
@@ -113,11 +101,6 @@ def _add_init_arguments(command: argparse.ArgumentParser) -> None:
         action=argparse.BooleanOptionalAction,
         default=None,
         help="Install post-merge/post-checkout shims that run `byor sync`",
-    )
-    command.add_argument(
-        "--hook-scope",
-        choices=HOOK_SCOPES,
-        help="Where to register agent hooks: project (committed) or global (~/)",
     )
     command.add_argument(
         "--non-interactive",

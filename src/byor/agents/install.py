@@ -14,14 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from byor.agents.harness import HARNESS_CHOICES, Harness
-from byor.agents.hookconfig import (
-    HookScope,
-    hook_installed,
-    install_hook,
-    installed_scopes,
-    supports_local_scope,
-    uninstall_hook,
-)
+from byor.agents.hookconfig import hook_installed, install_hook, uninstall_hook
 from byor.agents.opencode import (
     OPENCODE_MARKER,
     OPENCODE_PLUGIN,
@@ -29,7 +22,6 @@ from byor.agents.opencode import (
 )
 from byor.agents.pi import PI_EXTENSION, PI_EXTENSION_RELPATH, PI_MARKER
 from byor.config import load_repo_config, save_repo_config
-from byor.errors import ConfigError
 from byor.io.fsio import MANAGED_MARKER, marked_text_status, write_marked_text
 from byor.io.paths import resolve_repo_root
 from byor.rules.skill import SKILL_MARKDOWN, SKILL_RELPATHS
@@ -75,7 +67,7 @@ HARNESS_MANUAL_STEPS: dict[Harness, str] = {
 
 
 def run_hook(args: argparse.Namespace) -> int:
-    """`byor hook install|uninstall --agent NAME [--hook-scope SCOPE]`.
+    """`byor hook install|uninstall --agent NAME`.
 
     Installed agents are recorded in ai.agents so doctor and uninstall know
     about them.
@@ -83,12 +75,7 @@ def run_hook(args: argparse.Namespace) -> int:
     repo_root = resolve_repo_root(explicit=args.repo)
     config = load_repo_config(repo_root)
     if args.hook_action == "install":
-        harness = _as_harness(args.agent)
-        if args.hook_scope == "local" and (
-            harness is None or not supports_local_scope(harness)
-        ):
-            raise ConfigError("--hook-scope local is only supported for claude-code")
-        messages = install_agent(repo_root, args.agent, args.hook_scope)
+        messages = install_agent(repo_root, args.agent)
         recorded = args.agent not in config.agents
         if recorded:
             config.agents.append(args.agent)
@@ -104,19 +91,15 @@ def run_hook(args: argparse.Namespace) -> int:
     return 0
 
 
-def install_agents(
-    repo_root: Path, agents: Sequence[str], hook_scope: HookScope = "project"
-) -> list[str]:
+def install_agents(repo_root: Path, agents: Sequence[str]) -> list[str]:
     """Init step 5: install each requested agent's hook, plugin, or skill."""
     messages: list[str] = []
     for agent in agents:
-        messages.extend(install_agent(repo_root, agent, hook_scope))
+        messages.extend(install_agent(repo_root, agent))
     return messages
 
 
-def install_agent(
-    repo_root: Path, agent: str, hook_scope: HookScope = "project"
-) -> list[str]:
+def install_agent(repo_root: Path, agent: str) -> list[str]:
     """Install one agent adapter; returns summary lines for changes made."""
     if agent == "skill":
         return _install_skill(repo_root)
@@ -128,7 +111,7 @@ def install_agent(
     harness = _as_harness(agent)
     if harness is None:
         return []
-    messages = install_hook(repo_root, harness, hook_scope)
+    messages = install_hook(harness)
     manual_step = HARNESS_MANUAL_STEPS.get(harness)
     if manual_step is not None and messages:
         messages.append(manual_step)
@@ -148,10 +131,7 @@ def uninstall_agent(repo_root: Path, agent: str) -> list[str]:
     harness = _as_harness(agent)
     if harness is None:
         return []
-    messages = []
-    for scope in installed_scopes(harness):
-        messages.extend(uninstall_hook(repo_root, harness, scope))
-    return messages
+    return uninstall_hook(harness)
 
 
 def agent_file_problems(repo_root: Path, agents: Sequence[str]) -> list[str]:
@@ -166,18 +146,14 @@ def agent_file_problems(repo_root: Path, agents: Sequence[str]) -> list[str]:
     for agent in agents:
         if (plugin := PLUGIN_AGENTS.get(agent)) is not None:
             problems.extend(_plugin_problems(repo_root, plugin))
-        elif (harness := _as_harness(agent)) is not None and not _hook_present(
-            repo_root, harness
-        ):
+        elif (harness := _as_harness(agent)) is not None and not _hook_present(harness):
             problems.append(f"the {agent} hook is not installed")
     return problems
 
 
-def _hook_present(repo_root: Path, harness: Harness) -> bool:
-    """Whether a byor hook is installed in any of the harness's scopes."""
-    return any(
-        hook_installed(repo_root, harness, scope) for scope in installed_scopes(harness)
-    )
+def _hook_present(harness: Harness) -> bool:
+    """Whether a byor hook is installed in the harness's global config."""
+    return hook_installed(harness)
 
 
 def _as_harness(agent: str) -> Harness | None:

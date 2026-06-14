@@ -106,12 +106,12 @@ def test_self_heal_leaves_a_user_owned_render_untouched(home: Path) -> None:
 
 
 def test_claude_code_install_writes_the_hook_and_skill_render(home: Path) -> None:
-    """claude-code installs a real hook alongside the skill render the layout
-    already plants under .claude/skills/.
+    """claude-code registers a global hook alongside the repo skill render the
+    layout already plants under .claude/skills/.
     """
     repo = make_repo(home)
 
     assert main(["hook", "install", "--repo", str(repo), "--agent", "claude-code"]) == 0
 
-    assert (repo / ".claude" / "settings.json").is_file()
+    assert (home / ".claude" / "settings.json").is_file()
     assert (repo / SKILL_RELPATHS[1]).is_file()

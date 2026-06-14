@@ -65,7 +65,6 @@ class InitDefaults:
     agents: list[str] | None = None
     ignore_mode: str | None = None
     git_hooks: bool | None = None
-    hook_scope: str | None = None
 
 
 @dataclass
@@ -328,7 +327,6 @@ def _init_defaults(section: CommentedMap, path: Path) -> InitDefaults:
         agents=_string_list(section, "agents", path) if agents is not None else None,
         ignore_mode=_optional_string(section, "ignore_mode", path),
         git_hooks=_optional_bool(section, "git_hooks", path),
-        hook_scope=_optional_string(section, "hook_scope", path),
     )
 
 
@@ -340,8 +338,6 @@ def _write_init_defaults(data: CommentedMap, init: InitDefaults) -> None:
         values["ignore_mode"] = init.ignore_mode
     if init.git_hooks is not None:
         values["git_hooks"] = init.git_hooks
-    if init.hook_scope is not None:
-        values["hook_scope"] = init.hook_scope
     if values:
         _update_section(data, "init", values)
 

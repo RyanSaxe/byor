@@ -30,8 +30,9 @@ TRACKED_FILES = (
 
 @pytest.fixture
 def repo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """An empty repo dir, with the global config dir isolated under tmp_path."""
+    """An empty repo dir, with the global config dir and home isolated under tmp_path."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
     repo = tmp_path / "repo"
     repo.mkdir()
     return repo
@@ -180,28 +181,28 @@ def test_interactive_prompts_drive_agents_ignore_mode_and_hooks(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     git(repo, "init", "--quiet")
-    # Answers: agents -> claude-code, ignore -> local, git hooks -> yes,
-    # hook scope -> project (claude-code is hook-capable, so it is asked).
-    monkeypatch.setattr(sys, "stdin", io.StringIO("1\n2\n2\n1\n"))
+    # Answers: agents -> claude-code, ignore -> local, git hooks -> yes.
+    monkeypatch.setattr(sys, "stdin", io.StringIO("1\n2\n2\n"))
 
     assert main(["init", "--repo", str(repo)]) == 0
 
     assert load_repo_config(repo).agents == ["claude-code", "skill"]
     assert (repo / ".git" / "info" / "exclude").is_file()
-    assert (repo / ".claude" / "settings.json").is_file()
+    # The hook is registered globally (home is sandboxed to repo.parent).
+    assert (repo.parent / ".claude" / "settings.json").is_file()
     out = capsys.readouterr().out
     assert "Installed .git/hooks/post-merge" in out
     assert (repo / ".git" / "hooks" / "post-checkout").is_file()
 
 
-def test_init_hook_scope_global_writes_configs_under_home(
+def test_init_registers_hooks_globally_under_home(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake_home = repo.parent / "fake-home"
     fake_home.mkdir()
     monkeypatch.setattr(Path, "home", lambda: fake_home)
 
-    assert init(repo, "--agents", "cursor", "--hook-scope", "global") == 0
+    assert init(repo, "--agents", "cursor") == 0
 
     assert (fake_home / ".cursor" / "hooks.json").is_file()
     assert not (repo / ".cursor" / "hooks.json").exists()
@@ -223,20 +224,6 @@ def test_non_interactive_honors_global_init_defaults(repo: Path) -> None:
     assert load_repo_config(repo).agents == ["claude-code", "skill"]
     assert (repo / ".git" / "info" / "exclude").is_file()
     assert (repo / ".git" / "hooks" / "post-merge").is_file()
-
-
-def test_global_hook_scope_default_routes_hooks_under_home(
-    repo: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_home = repo.parent / "fake-home"
-    fake_home.mkdir()
-    monkeypatch.setattr(Path, "home", lambda: fake_home)
-    seed_init_defaults(repo, InitDefaults(agents=["cursor"], hook_scope="global"))
-
-    assert init(repo) == 0
-
-    assert (fake_home / ".cursor" / "hooks.json").is_file()
-    assert not (repo / ".cursor" / "hooks.json").exists()
 
 
 def test_explicit_flag_overrides_global_init_default(repo: Path) -> None:

@@ -132,7 +132,6 @@ def test_global_config_round_trips_checks_and_init_defaults(tmp_path: Path) -> N
             agents=["codex"],
             ignore_mode="local",
             git_hooks=True,
-            hook_scope="global",
         ),
     )
 

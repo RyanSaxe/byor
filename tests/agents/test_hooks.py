@@ -1,4 +1,4 @@
-"""AI agent adapters and the `byor hook` command."""
+"""AI agent adapters and the `byor hook` command (global registration)."""
 
 import json
 from pathlib import Path
@@ -17,33 +17,38 @@ def init_with_agents(repo: Path, agents: str) -> int:
     return main(["init", "--repo", str(repo), "--non-interactive", "--agents", agents])
 
 
-def claude_command(repo: Path) -> str:
-    """The single PostToolUse command byor installed in claude settings."""
-    text = (repo / SETTINGS_RELPATH).read_text()
+def claude_settings(home: Path) -> Path:
+    """The global claude settings the hook lands in (home is sandboxed in tests)."""
+    return home / SETTINGS_RELPATH
+
+
+def claude_command(home: Path) -> str:
+    """The single PostToolUse command byor installed in the global claude settings."""
     commands = [
         command
-        for command in commands_in(json.loads(text))
+        for command in commands_in(json.loads(claude_settings(home).read_text()))
         if BYOR_COMMAND_SIGNATURE in command
     ]
     [command] = commands
     return command
 
 
-def test_claude_code_install_writes_a_guarded_project_hook(home: Path) -> None:
+def test_claude_code_install_writes_an_unguarded_global_hook(home: Path) -> None:
     repo = make_repo(home, "repo", "--agents", "claude-code")
 
-    command = claude_command(repo)
+    command = claude_command(home)
     assert f"{BYOR_COMMAND_SIGNATURE} claude-code" in command
-    assert "command -v byor" in command
-    # The skill render still creates .claude/skills/ alongside the hook.
+    # Global hooks are personal: no teammate guard.
+    assert "command -v byor" not in command
+    # The skill render still lands in the repo (until it goes global too).
     assert (repo / ".claude" / "skills" / "byor" / "SKILL.md").is_file()
 
 
-def test_claude_code_install_merges_into_existing_settings(home: Path) -> None:
-    repo = home / "repo"
-    (repo / ".claude").mkdir(parents=True)
-    settings = repo / SETTINGS_RELPATH
+def test_claude_code_install_merges_into_existing_global_settings(home: Path) -> None:
+    settings = claude_settings(home)
+    settings.parent.mkdir(parents=True)
     settings.write_text(json.dumps({"model": "opus", "hooks": {"PreToolUse": []}}))
+    repo = home / "repo"
 
     assert init_with_agents(repo, "claude-code") == 0
 
@@ -56,31 +61,32 @@ def test_claude_code_install_merges_into_existing_settings(home: Path) -> None:
     assert init_with_agents(repo, "claude-code") == 0
     assert settings.read_text() == snapshot
 
-    # The settings hook plus the skill render satisfy doctor's agent_files check.
+    # The global hook plus the repo skill render satisfy doctor's agent_files check.
     assert main(["doctor", "--repo", str(repo), "--quick"]) == 0
 
 
 def test_outdated_claude_settings_hook_is_updated(home: Path) -> None:
-    repo = home / "repo"
-    (repo / ".claude").mkdir(parents=True)
-    settings = repo / SETTINGS_RELPATH
+    settings = claude_settings(home)
+    settings.parent.mkdir(parents=True)
     stale = {
         "matcher": "Write",
         "hooks": [{"type": "command", "command": "byor agent-check --stdin-hook x"}],
     }
     settings.write_text(json.dumps({"hooks": {"PostToolUse": [stale]}}))
+    repo = home / "repo"
 
     assert init_with_agents(repo, "claude-code") == 0
 
-    assert f"{BYOR_COMMAND_SIGNATURE} claude-code" in claude_command(repo)
+    assert f"{BYOR_COMMAND_SIGNATURE} claude-code" in claude_command(home)
 
 
 def test_invalid_claude_settings_fail_cleanly(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    settings = claude_settings(home)
+    settings.parent.mkdir(parents=True)
+    settings.write_text("{not json")
     repo = home / "repo"
-    (repo / ".claude").mkdir(parents=True)
-    (repo / SETTINGS_RELPATH).write_text("{not json")
 
     assert init_with_agents(repo, "claude-code") == 1
 
@@ -93,12 +99,14 @@ def hook(action: str, repo: Path, agent: str, *extra: str) -> int:
     return main(["hook", action, "--repo", str(repo), "--agent", agent, *extra])
 
 
-def test_hook_install_writes_the_adapter_and_records_the_agent(home: Path) -> None:
+def test_hook_install_writes_the_global_adapter_and_records_the_agent(
+    home: Path,
+) -> None:
     repo = make_repo(home)
 
     assert hook("install", repo, "codex") == 0
 
-    assert (repo / ".codex" / "hooks.json").is_file()
+    assert (home / ".codex" / "hooks.json").is_file()
     assert load_repo_config(repo).agents == ["skill", "codex"]
 
 
@@ -117,33 +125,9 @@ def test_cursor_is_a_full_agent_choice(home: Path) -> None:
 
     assert hook("install", repo, "cursor") == 0
 
-    hooks = json.loads((repo / ".cursor" / "hooks.json").read_text())
+    hooks = json.loads((home / ".cursor" / "hooks.json").read_text())
     assert BYOR_COMMAND_SIGNATURE in json.dumps(hooks)
     assert load_repo_config(repo).agents == ["skill", "cursor"]
-
-
-def test_hook_install_global_scope_writes_under_home(
-    home: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_home = home / "fake-home"
-    fake_home.mkdir()
-    monkeypatch.setattr(Path, "home", lambda: fake_home)
-    repo = make_repo(home)
-
-    assert hook("install", repo, "cursor", "--hook-scope", "global") == 0
-
-    assert (fake_home / ".cursor" / "hooks.json").is_file()
-    assert not (repo / ".cursor" / "hooks.json").exists()
-
-
-def test_hook_install_local_scope_is_claude_code_only(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    repo = make_repo(home)
-
-    assert hook("install", repo, "codex", "--hook-scope", "local") == 1
-
-    assert "only supported for claude-code" in capsys.readouterr().err
 
 
 def test_hook_install_requires_an_initialized_repo(
@@ -163,7 +147,7 @@ def test_doctor_flags_a_recorded_harness_whose_hook_was_removed(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home, "repo", "--agents", "codex")
-    (repo / ".codex" / "hooks.json").unlink()
+    (home / ".codex" / "hooks.json").unlink()
     capsys.readouterr()
 
     assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
@@ -176,7 +160,7 @@ def test_hook_uninstall_removes_the_installed_adapter_and_hook(home: Path) -> No
 
     assert hook("uninstall", repo, "codex") == 0
 
-    assert not (repo / ".codex" / "hooks.json").exists()
+    assert not (home / ".codex" / "hooks.json").exists()
     assert load_repo_config(repo).agents == ["skill"]
     # Idempotent: a second uninstall has nothing to do and still succeeds.
     assert hook("uninstall", repo, "codex") == 0
@@ -187,8 +171,8 @@ def test_hook_uninstall_claude_code_removes_only_the_byor_settings_group(
 ) -> None:
     repo = make_repo(home)
     user_group = {"matcher": "Bash", "hooks": [{"type": "command", "command": "true"}]}
-    (repo / ".claude").mkdir(exist_ok=True)
-    settings = repo / SETTINGS_RELPATH
+    settings = claude_settings(home)
+    settings.parent.mkdir(parents=True, exist_ok=True)
     settings.write_text(json.dumps({"hooks": {"PostToolUse": [user_group]}}))
     hook("install", repo, "claude-code")
 
