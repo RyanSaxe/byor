@@ -30,7 +30,8 @@ def new_yaml() -> YAML:
 
 def load_yaml_mapping(path: Path) -> CommentedMap:
     """Load a YAML file whose top level must be a mapping, preserving comments."""
-    return parse_yaml_mapping(path.read_text(encoding="utf-8"), source=path)
+    text = path.read_text(encoding="utf-8")
+    return parse_yaml_mapping(text, source=path)
 
 
 def parse_yaml_mapping(text: str, source: Path) -> CommentedMap:
@@ -59,4 +60,5 @@ def dump_yaml(data: CommentedMap) -> str:
 
 def write_yaml_atomic(path: Path, data: CommentedMap) -> None:
     """Serialize a mapping and write it atomically."""
-    write_text_atomic(path, dump_yaml(data))
+    content = dump_yaml(data)
+    write_text_atomic(path, content)

@@ -6,10 +6,6 @@ from support import make_repo, mirror, write_global_rule, write_rule
 from byor.cli import main
 
 
-def remove(repo: Path, rule_id: str, *extra: str) -> int:
-    return main(["remove", "--repo", str(repo), rule_id, *extra])
-
-
 def test_remove_deletes_a_project_rule(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -17,7 +13,7 @@ def test_remove_deletes_a_project_rule(
     target = write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
     capsys.readouterr()
 
-    assert remove(repo, "no-cast") == 0
+    assert main(["remove", "--repo", str(repo), "no-cast"]) == 0
 
     assert not target.exists()
     out = capsys.readouterr().out
@@ -31,7 +27,7 @@ def test_remove_shadowing_project_rule_lets_the_global_copy_return(home: Path) -
     main(["sync", "--repo", str(repo)])
     assert not (mirror(repo) / "no-cast.yml").exists()  # shadowed: copy skipped
 
-    assert remove(repo, "no-cast") == 0
+    assert main(["remove", "--repo", str(repo), "no-cast"]) == 0
 
     assert (mirror(repo) / "no-cast.yml").is_file()
 
@@ -45,7 +41,7 @@ def test_remove_global_rule_deletes_the_canonical_file_and_fans_out(
     main(["sync", "--all"])
     capsys.readouterr()
 
-    assert remove(first, "no-cast", "--scope", "global") == 0
+    assert main(["remove", "--repo", str(first), "no-cast", "--scope", "global"]) == 0
 
     assert not canonical.exists()
     assert not (mirror(first) / "python" / "no-cast.yml").exists()
@@ -60,7 +56,7 @@ def test_remove_unknown_rule_id_fails_cleanly(
 ) -> None:
     repo = make_repo(home)
 
-    assert remove(repo, "missing") == 1
+    assert main(["remove", "--repo", str(repo), "missing"]) == 1
 
     captured = capsys.readouterr()
     assert "No rule with ID 'missing' found in any scope." in captured.err

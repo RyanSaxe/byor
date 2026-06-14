@@ -6,10 +6,6 @@ from support import make_repo, mirror, write_global_rule, write_rule
 from byor.cli import main
 
 
-def promote(repo: Path, rule_id: str, source: str, *extra: str) -> int:
-    return main(["promote", "--repo", str(repo), rule_id, "--from", source, *extra])
-
-
 def test_promote_local_moves_the_rule_preserving_its_relative_path(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -20,7 +16,7 @@ def test_promote_local_moves_the_rule_preserving_its_relative_path(
     content = local.read_text()
     capsys.readouterr()
 
-    assert promote(repo, "exp", "local") == 0
+    assert main(["promote", "--repo", str(repo), "exp", "--from", "local"]) == 0
 
     destination = repo / ".byor" / "rules" / "project" / "python" / "exp.yml"
     assert destination.read_text() == content
@@ -37,7 +33,20 @@ def test_promote_local_with_keep_local_fails_before_writing(
         repo / ".byor" / "rules" / "personal" / "local" / "exp.yml", "exp"
     )
 
-    assert promote(repo, "exp", "local", "--keep-local") == 1
+    assert (
+        main(
+            [
+                "promote",
+                "--repo",
+                str(repo),
+                "exp",
+                "--from",
+                "local",
+                "--keep-local",
+            ]
+        )
+        == 1
+    )
 
     assert local.is_file()
     assert not (repo / ".byor" / "rules" / "project" / "exp.yml").exists()
@@ -53,7 +62,7 @@ def test_promote_global_copies_without_touching_canonical_or_exclusions(
     main(["sync", "--repo", str(repo)])
     capsys.readouterr()
 
-    assert promote(repo, "no-cast", "global") == 0
+    assert main(["promote", "--repo", str(repo), "no-cast", "--from", "global"]) == 0
 
     destination = repo / ".byor" / "rules" / "project" / "no-cast.yml"
     assert destination.read_text() == canonical.read_text()
@@ -79,12 +88,25 @@ def test_promote_requires_replace_to_overwrite_the_destination(
     )
     promoted_content = local.read_text()
 
-    assert promote(repo, "exp", "local") == 1
+    assert main(["promote", "--repo", str(repo), "exp", "--from", "local"]) == 1
     assert "rerun with --replace" in capsys.readouterr().err
     assert "Old." in existing.read_text()
     assert local.is_file()
 
-    assert promote(repo, "exp", "local", "--replace") == 0
+    assert (
+        main(
+            [
+                "promote",
+                "--repo",
+                str(repo),
+                "exp",
+                "--from",
+                "local",
+                "--replace",
+            ]
+        )
+        == 0
+    )
     assert existing.read_text() == promoted_content
     assert not local.exists()
 
@@ -94,7 +116,7 @@ def test_promote_unknown_rule_id_fails_cleanly(
 ) -> None:
     repo = make_repo(home)
 
-    assert promote(repo, "missing", "global") == 1
+    assert main(["promote", "--repo", str(repo), "missing", "--from", "global"]) == 1
 
     captured = capsys.readouterr()
     assert "No rule with ID 'missing' found in global rules." in captured.err

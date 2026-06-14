@@ -106,7 +106,7 @@ def install_agent(agent: str) -> list[str]:
     plugin = PLUGIN_AGENTS.get(agent)
     if plugin is not None:
         return _install_plugin(plugin)
-    harness = _as_harness(agent)
+    harness = HARNESS_BY_NAME.get(agent)
     if harness is None:
         return []
     messages = install_hook(harness)
@@ -127,7 +127,7 @@ def uninstall_agent(agent: str) -> list[str]:
     if plugin is not None:
         path = _plugin_path(plugin)
         return _remove_managed_path(path, _home_display(path), plugin.marker)
-    harness = _as_harness(agent)
+    harness = HARNESS_BY_NAME.get(agent)
     if harness is None:
         return []
     return uninstall_hook(harness)
@@ -145,19 +145,11 @@ def agent_file_problems(agents: Sequence[str]) -> list[str]:
     for agent in agents:
         if (plugin := PLUGIN_AGENTS.get(agent)) is not None:
             problems.extend(_plugin_problems(plugin))
-        elif (harness := _as_harness(agent)) is not None and not _hook_present(harness):
+        elif (harness := HARNESS_BY_NAME.get(agent)) is not None and not hook_installed(
+            harness
+        ):
             problems.append(f"the {agent} hook is not installed")
     return problems
-
-
-def _hook_present(harness: Harness) -> bool:
-    """Whether a byor hook is installed in the harness's global config."""
-    return hook_installed(harness)
-
-
-def _as_harness(agent: str) -> Harness | None:
-    """The Harness for an agent that drives a real hook, else None."""
-    return HARNESS_BY_NAME.get(agent)
 
 
 def _install_skill() -> list[str]:
@@ -195,18 +187,6 @@ def _plugin_problems(plugin: PluginAgent) -> list[str]:
     if status == "drifted":
         return [f"{display} is out of date"]
     return []
-
-
-def _write_managed_file(
-    repo_root: Path, relpath: str, content: str, marker: str = MANAGED_MARKER
-) -> list[str]:
-    return _write_managed_path(repo_root / relpath, content, relpath, marker)
-
-
-def _remove_managed_file(
-    repo_root: Path, relpath: str, marker: str = MANAGED_MARKER
-) -> list[str]:
-    return _remove_managed_path(repo_root / relpath, relpath, marker)
 
 
 def _write_managed_path(

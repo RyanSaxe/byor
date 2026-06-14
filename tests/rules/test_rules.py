@@ -131,53 +131,59 @@ def test_unconventional_rule_id_warns_but_loads(tmp_path: Path) -> None:
     assert "'No_Cast'" in warnings[0]
 
 
-def rule(rule_id: str, filename: str) -> Rule:
-    return Rule(
-        id=rule_id, language="Python", message="msg", path=Path(filename), content=""
-    )
-
-
 # One test per conflict table row.
 
 
 def test_duplicate_id_within_project_rules_is_an_error() -> None:
-    duplicated = [rule("no-cast", "a.yml"), rule("no-cast", "b.yml")]
+    duplicated = [
+        Rule("no-cast", "Python", "msg", Path("a.yml"), ""),
+        Rule("no-cast", "Python", "msg", Path("b.yml"), ""),
+    ]
 
     with pytest.raises(DuplicateRuleId, match=r"(?s)project rules.*a\.yml.*b\.yml"):
         check_id_conflicts(duplicated, [], [])
 
 
 def test_duplicate_id_within_local_rules_is_an_error() -> None:
-    duplicated = [rule("no-cast", "a.yml"), rule("no-cast", "b.yml")]
+    duplicated = [
+        Rule("no-cast", "Python", "msg", Path("a.yml"), ""),
+        Rule("no-cast", "Python", "msg", Path("b.yml"), ""),
+    ]
 
     with pytest.raises(DuplicateRuleId, match="local personal rules"):
         check_id_conflicts([], duplicated, [])
 
 
 def test_duplicate_id_within_canonical_global_rules_is_an_error() -> None:
-    duplicated = [rule("no-cast", "a.yml"), rule("no-cast", "b.yml")]
+    duplicated = [
+        Rule("no-cast", "Python", "msg", Path("a.yml"), ""),
+        Rule("no-cast", "Python", "msg", Path("b.yml"), ""),
+    ]
 
     with pytest.raises(DuplicateRuleId, match="global rules"):
         check_id_conflicts([], [], duplicated)
 
 
 def test_project_id_matching_global_id_is_an_override_not_an_error() -> None:
-    check_id_conflicts(
-        [rule("no-cast", "project.yml")], [], [rule("no-cast", "global.yml")]
-    )
+    project = Rule("no-cast", "Python", "msg", Path("project.yml"), "")
+    global_rule = Rule("no-cast", "Python", "msg", Path("global.yml"), "")
+
+    assert check_id_conflicts([project], [], [global_rule]) is None
 
 
 def test_local_id_matching_global_id_is_an_override_not_an_error() -> None:
-    check_id_conflicts(
-        [], [rule("no-cast", "local.yml")], [rule("no-cast", "global.yml")]
-    )
+    local = Rule("no-cast", "Python", "msg", Path("local.yml"), "")
+    global_rule = Rule("no-cast", "Python", "msg", Path("global.yml"), "")
+
+    assert check_id_conflicts([], [local], [global_rule]) is None
 
 
 def test_project_id_matching_local_id_is_an_error() -> None:
+    project = Rule("no-cast", "Python", "msg", Path("project.yml"), "")
+    local = Rule("no-cast", "Python", "msg", Path("local.yml"), "")
+
     with pytest.raises(DuplicateRuleId, match="requires a different ID"):
-        check_id_conflicts(
-            [rule("no-cast", "project.yml")], [rule("no-cast", "local.yml")], []
-        )
+        check_id_conflicts([project], [local], [])
 
 
 def test_scope_rules_dirs_map_to_repo_paths_and_canonical_global_root() -> None:

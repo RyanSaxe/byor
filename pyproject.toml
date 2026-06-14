@@ -1,16 +1,35 @@
 [project]
 name = "byor"
-version = "0.1.0"
+version = "0.0.1"
 description = "Make custom ast-grep diagnostics easy to set up, share, and expose to AI agents"
 readme = "README.md"
 authors = [
     { name = "Ryan Saxe", email = "ryancsaxe+1@gmail.com" }
 ]
 requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+keywords = ["ast-grep", "linter", "ai", "coding-agent", "diagnostics", "static-analysis"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = [
     "ast-grep-cli>=0.42.3",
     "ruamel-yaml>=0.18",
 ]
+
+[project.urls]
+Homepage = "https://github.com/RyanSaxe/byor"
+Repository = "https://github.com/RyanSaxe/byor"
+Issues = "https://github.com/RyanSaxe/byor/issues"
 
 [project.scripts]
 byor = "byor.cli:main"
@@ -23,6 +42,7 @@ build-backend = "uv_build"
 dev = [
     "pre-commit>=4.6.0",
     "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
     "ruff>=0.15.17",
     "ty>=0.0.49",
 ]

@@ -17,16 +17,12 @@ def git_repo(home: Path) -> Path:
     return repo
 
 
-def init_with_hooks(repo: Path) -> int:
-    return main(["init", "--repo", str(repo), "--non-interactive", "--git-hooks"])
-
-
 def test_init_installs_executable_shims_idempotently(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = git_repo(home)
 
-    assert init_with_hooks(repo) == 0
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--git-hooks"]) == 0
 
     out = capsys.readouterr().out
     for name in ("post-merge", "post-checkout"):
@@ -35,7 +31,7 @@ def test_init_installs_executable_shims_idempotently(
         assert os.access(hook, os.X_OK)
         assert f"Installed .git/hooks/{name}" in out
 
-    assert init_with_hooks(repo) == 0
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--git-hooks"]) == 0
     assert "Installed .git/hooks" not in capsys.readouterr().out
 
 
@@ -46,7 +42,7 @@ def test_unmarked_existing_hook_is_left_untouched(
     existing = repo / ".git" / "hooks" / "post-merge"
     existing.write_text("#!/bin/sh\nmy own hook\n")
 
-    assert init_with_hooks(repo) == 0
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--git-hooks"]) == 0
 
     assert existing.read_text() == "#!/bin/sh\nmy own hook\n"
     out = capsys.readouterr().out
@@ -60,7 +56,7 @@ def test_outdated_marked_shim_is_updated(home: Path) -> None:
     stale = repo / ".git" / "hooks" / "post-checkout"
     stale.write_text(f"#!/bin/sh\n{SHIM_MARKER}\nbyor sync\n")
 
-    assert init_with_hooks(repo) == 0
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--git-hooks"]) == 0
 
     assert stale.read_text() == SHIM_CONTENT
 
@@ -71,7 +67,7 @@ def test_core_hooks_path_repo_gets_the_line_instead_of_files(
     repo = git_repo(home)
     git(repo, "config", "core.hooksPath", ".husky")
 
-    assert init_with_hooks(repo) == 0
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--git-hooks"]) == 0
 
     out = capsys.readouterr().out
     assert "core.hooksPath is set (.husky)" in out
@@ -87,7 +83,9 @@ def test_shims_install_into_worktrees_common_hooks_dir(home: Path) -> None:
     worktree = home / "worktree"
     git(main_repo, "worktree", "add", "-q", str(worktree))
 
-    assert init_with_hooks(worktree) == 0
+    assert (
+        main(["init", "--repo", str(worktree), "--non-interactive", "--git-hooks"]) == 0
+    )
 
     hook = main_repo / ".git" / "hooks" / "post-merge"
     assert hook.read_text() == SHIM_CONTENT

@@ -18,10 +18,6 @@ MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024
 
 
-def rendered_skill(home: Path) -> str:
-    return global_skill_paths(home)[0].read_text()
-
-
 def test_install_renders_the_skill_into_both_global_locations(home: Path) -> None:
     install_agents(home)
 
@@ -38,7 +34,7 @@ def test_install_renders_the_skill_into_both_global_locations(home: Path) -> Non
 def test_frontmatter_meets_the_cross_agent_standard(home: Path) -> None:
     install_agents(home)
 
-    frontmatter_text = rendered_skill(home).split("---\n", 2)[1]
+    frontmatter_text = global_skill_paths(home)[0].read_text().split("---\n", 2)[1]
     frontmatter = parse_yaml_mapping(frontmatter_text, source=Path("SKILL.md"))
 
     name = frontmatter["name"]
@@ -51,7 +47,7 @@ def test_frontmatter_meets_the_cross_agent_standard(home: Path) -> None:
 
 def test_skill_teaches_the_full_capture_loop(home: Path) -> None:
     install_agents(home)
-    content = rendered_skill(home)
+    content = global_skill_paths(home)[0].read_text()
 
     # Create, verify, decline, worked example, and the pattern primer.
     assert "byor add --scope" in content

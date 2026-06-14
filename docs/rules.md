@@ -48,19 +48,19 @@ that tolerates exceptions says so in its `agent_prompt`, ending with the
 suppression idiom native to `ast-grep scan` and `ast-grep lsp`:
 
 ```python
-# ast-grep-ignore: <rule-id> -- <short reason>
+# <short reason>
+some_offending_line()  # ast-grep-ignore: <rule-id>
 ```
 
-The comment goes on its own line directly above the violation. Always include
-the rule id (a bare `ast-grep-ignore` silences every rule on the next line)
-and keep the reason short.
+The `ast-grep-ignore` directive goes at the end of the offending line, naming
+the rule id (a bare `ast-grep-ignore` silences every rule on that line). Put the
+reason on the comment line above — the same idiom as `# noqa` or `# type: ignore`.
 
 `byor add --allow-exceptions` ends the new rule's `agent_prompt` with the
 standard sentence:
 
-> If this is genuinely necessary, suppress with
-> `# ast-grep-ignore: <rule-id> -- <short reason>` on its own line above,
-> and keep the reason short.
+> If this is genuinely necessary, add `# ast-grep-ignore: <rule-id>` at the end
+> of the offending line, with a short comment on the line above explaining why.
 
 ## Rule IDs
 

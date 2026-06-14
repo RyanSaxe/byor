@@ -54,6 +54,7 @@ def write_rule_visibility_file(rules_dir: Path) -> MarkedWriteResult:
     A user-owned (unmarked) .ignore is never touched; doctor flags it when it
     no longer keeps the rules visible.
     """
+    rules_dir.mkdir(parents=True, exist_ok=True)
     return write_marked_text(
         rules_dir / ".ignore", VISIBILITY_FILE_CONTENT, VISIBILITY_MARKER
     )

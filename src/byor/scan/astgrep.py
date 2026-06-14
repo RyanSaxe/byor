@@ -99,7 +99,6 @@ def scan_files(
     executable: Path,
     repo_root: Path,
     files: Sequence[Path],
-    max_results: int | None = None,
     config: Path | None = None,
 ) -> ScanResult:
     """Run `ast-grep scan --json` from repo_root and parse the matches.
@@ -121,8 +120,6 @@ def scan_files(
     ]
     if config is not None:
         argv.extend(["--config", str(config)])
-    if max_results is not None:
-        argv.extend(["--max-results", str(max_results)])
     argv.extend(str(file) for file in files)
     result = subprocess.run(argv, capture_output=True, text=True, cwd=repo_root)
     matches = _parse_scan_output(result.stdout)

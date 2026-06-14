@@ -129,7 +129,7 @@ def _load_or_default_repo_config(repo_root: Path) -> RepoConfig:
     try:
         return load_repo_config(repo_root)
     except RepoNotInitialized:
-        return RepoConfig()
+        return RepoConfig(project_name=repo_root.name)
 
 
 def _options_from_args(args: argparse.Namespace, defaults: InitDefaults) -> InitOptions:

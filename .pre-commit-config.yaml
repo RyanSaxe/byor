@@ -17,6 +17,11 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
+      - id: ast-grep
+        name: ast-grep scan
+        entry: uv run ast-grep scan --error
+        language: system
+        pass_filenames: false
       - id: pytest
         name: pytest
         entry: uv run pytest

@@ -61,7 +61,7 @@ def ensure_home_sgconfig(rules_dir: Path, home: Path | None = None) -> str | Non
     """
     home = home or Path.home()
     rules_dir.mkdir(parents=True, exist_ok=True)
-    relpath = _home_relative(rules_dir, home)
+    relpath = Path(os.path.relpath(rules_dir, home)).as_posix()
     return ensure_rule_dirs(home_sgconfig_path(home), [relpath])
 
 
@@ -74,7 +74,7 @@ def remove_home_rule_dir(rules_dir: Path, home: Path | None = None) -> bool:
     path = home_sgconfig_path(home)
     if not path.is_file():
         return False
-    relpath = _home_relative(rules_dir, home)
+    relpath = Path(os.path.relpath(rules_dir, home)).as_posix()
     data = load_yaml_mapping(path)
     rule_dirs = data.get("ruleDirs")
     if not isinstance(rule_dirs, list) or relpath not in rule_dirs:
@@ -85,11 +85,6 @@ def remove_home_rule_dir(rules_dir: Path, home: Path | None = None) -> bool:
     else:
         write_yaml_atomic(path, data)
     return True
-
-
-def _home_relative(rules_dir: Path, home: Path) -> str:
-    """The rules dir as a POSIX path relative to home (ast-grep resolves it there)."""
-    return Path(os.path.relpath(rules_dir, home)).as_posix()
 
 
 def _minimal_sgconfig(rule_dirs: list[str]) -> CommentedMap:

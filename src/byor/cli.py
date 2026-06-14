@@ -30,6 +30,9 @@ COMMANDS = {
     "hook": "Install or uninstall AI agent integrations",
 }
 
+REPO_COMMANDS = frozenset(COMMANDS) - {"install", "hook"}
+REPO_HELP = "Repository root (default: search upward from cwd)"
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -44,6 +47,8 @@ def build_parser() -> argparse.ArgumentParser:
         command = subparsers.add_parser(name, help=help_text, description=help_text)
         # Commands that have not yet grown a --repo flag still get args.repo.
         command.set_defaults(repo=None)
+        if name in REPO_COMMANDS:
+            command.add_argument("--repo", type=Path, help=REPO_HELP)
         if name == "install":
             _add_install_arguments(command)
         if name == "init":
@@ -61,7 +66,9 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "promote":
             _add_promote_arguments(command)
         if name in ("exclude", "include"):
-            _add_rule_id_arguments(command)
+            command.add_argument(
+                "rule_id", metavar="RULE_ID", help="ID of a global rule"
+            )
         if name == "agent-check":
             _add_agent_check_arguments(command)
         if name == "hook":
@@ -80,13 +87,6 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _add_repo_argument(command: argparse.ArgumentParser) -> None:
-    """Every repo-operating command accepts --repo with these semantics."""
-    command.add_argument(
-        "--repo", type=Path, help="Repository root (default: search upward from cwd)"
-    )
-
-
 def _add_install_arguments(command: argparse.ArgumentParser) -> None:
     command.add_argument(
         "--agents",
@@ -100,7 +100,6 @@ def _add_install_arguments(command: argparse.ArgumentParser) -> None:
 
 
 def _add_init_arguments(command: argparse.ArgumentParser) -> None:
-    _add_repo_argument(command)
     command.add_argument(
         "--ignore-mode",
         choices=get_args(IgnoreMode),
@@ -130,7 +129,6 @@ def _add_init_arguments(command: argparse.ArgumentParser) -> None:
 
 
 def _add_sync_arguments(command: argparse.ArgumentParser) -> None:
-    _add_repo_argument(command)
     command.add_argument(
         "--all", action="store_true", help="Sync every registered repository"
     )
@@ -142,7 +140,6 @@ def _add_sync_arguments(command: argparse.ArgumentParser) -> None:
 
 
 def _add_list_arguments(command: argparse.ArgumentParser) -> None:
-    _add_repo_argument(command)
     command.add_argument(
         "--scope",
         # Spelled out so --help stays import-light; keep in sync with listing.ListScope.
@@ -156,7 +153,6 @@ def _add_list_arguments(command: argparse.ArgumentParser) -> None:
 
 
 def _add_add_arguments(command: argparse.ArgumentParser) -> None:
-    _add_repo_argument(command)
     command.add_argument(
         "--scope",
         choices=("project", "local", "global"),
@@ -189,7 +185,6 @@ def _add_add_arguments(command: argparse.ArgumentParser) -> None:
 
 def _add_rule_lookup_arguments(command: argparse.ArgumentParser, action: str) -> None:
     """edit and remove share their signature: RULE_ID plus scope resolution."""
-    _add_repo_argument(command)
     command.add_argument(
         "rule_id", metavar="RULE_ID", help=f"ID of the rule to {action}"
     )
@@ -202,7 +197,6 @@ def _add_rule_lookup_arguments(command: argparse.ArgumentParser, action: str) ->
 
 
 def _add_promote_arguments(command: argparse.ArgumentParser) -> None:
-    _add_repo_argument(command)
     command.add_argument("rule_id", metavar="RULE_ID", help="ID of the rule to promote")
     command.add_argument(
         "--from",
@@ -229,13 +223,7 @@ def _add_promote_arguments(command: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_rule_id_arguments(command: argparse.ArgumentParser) -> None:
-    _add_repo_argument(command)
-    command.add_argument("rule_id", metavar="RULE_ID", help="ID of a global rule")
-
-
 def _add_agent_check_arguments(command: argparse.ArgumentParser) -> None:
-    _add_repo_argument(command)
     source = command.add_mutually_exclusive_group()
     source.add_argument(
         "--files",
@@ -268,16 +256,9 @@ def _add_agent_check_arguments(command: argparse.ArgumentParser) -> None:
         default="text",
         help="Output format (default: text)",
     )
-    command.add_argument(
-        "--max-results",
-        type=int,
-        metavar="N",
-        help="Forwarded to ast-grep scan; also raises the 20-diagnostic render cap",
-    )
 
 
 def _add_doctor_arguments(command: argparse.ArgumentParser) -> None:
-    _add_repo_argument(command)
     command.add_argument(
         "--quick", action="store_true", help="Skip recursive rule validation"
     )

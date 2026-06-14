@@ -1,0 +1,48 @@
+id: no-routing-functions
+language: Python
+severity: warning
+message: Do not create routing functions whose only behavior is another call.
+rule:
+  all:
+    - any:
+        - pattern: return $CALLEE($$$ARGS)
+        - pattern: return await $CALLEE($$$ARGS)
+        - pattern:
+            context: $CALLEE($$$ARGS)
+            selector: expression_statement
+        - pattern:
+            context: await $CALLEE($$$ARGS)
+            selector: expression_statement
+    - any:
+        - all:
+            - nthChild: 1
+            - nthChild:
+                position: 1
+                reverse: true
+        - all:
+            - nthChild: 2
+            - nthChild:
+                position: 1
+                reverse: true
+            - follows:
+                kind: expression_statement
+                has:
+                  kind: string
+    - inside:
+        kind: block
+        inside:
+          kind: function_definition
+          field: body
+metadata:
+  byor:
+    rationale: >
+      A function that only forwards to another call adds indirection without
+      adding behavior, making control flow harder to follow and APIs harder to
+      change.
+    agent_prompt: >
+      Remove this routing function and call the underlying implementation
+      directly. If this function represents a necessary boundary, move real
+      boundary behavior into it rather than preserving a pass-through wrapper.
+    tags:
+      - python
+      - design
