@@ -46,3 +46,14 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - run: uv run pytest --cov=byor --cov-report=term-missing --cov-fail-under=90
+
+  # byor eats its own dogfood: its committed project rules gate its CI.
+  rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ast-grep scan --error

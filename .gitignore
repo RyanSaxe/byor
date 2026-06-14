@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# >>> Managed by BYOR. Manual edits may be overwritten. >>>
+.byor/local.yml
+.byor/rules/personal/local/**/*.yml
+.byor/rules/personal/local/**/*.yaml
+.byor/rules/personal/global/**/*.yml
+.byor/rules/personal/global/**/*.yaml
+# <<< Managed by BYOR <<<

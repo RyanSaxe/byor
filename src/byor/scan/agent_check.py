@@ -78,7 +78,8 @@ def _run_hook(args: argparse.Namespace, repo_root: Path, harness: Harness) -> in
     hook (which carries no shell `|| true` guard) cannot block the agent loop
     on a byor bug or config problem.
     """
-    try:
+    # fail-open: a byor bug must never block the agent loop
+    try:  # ast-grep-ignore: no-broad-except
         return _hook_diagnostics(args, repo_root, harness)
     except Exception:
         return 0

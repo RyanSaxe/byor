@@ -1,0 +1,20 @@
+id: no-broad-except
+language: python
+severity: warning
+message: Avoid catching bare Exception; catch a specific error or let it bubble.
+rule:
+  pattern: |
+    try:
+        $$$BODY
+    except Exception:
+        $$$HANDLER
+metadata:
+  byor:
+    rationale: >
+      Broad excepts swallow real bugs. Fail fast unless there is a deliberate
+      fail-open boundary, and make that boundary explicit.
+    agent_prompt: >-
+      Do not catch bare Exception. Catch the specific exception you can handle, or let it bubble up. If this is genuinely necessary, add `# ast-grep-ignore: <rule-id>` at the end of the offending line, with a short comment on the line above explaining why.
+    tags:
+      - python
+      - errors
