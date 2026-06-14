@@ -118,22 +118,20 @@ model as pre-commit hooks. Only add checks whose commands you trust.
 
 ## Installing and removing integrations
 
-Registration is global — one per machine, not per repo. `byor install` sets up
-the chosen agents (plus the harness-neutral `skill`) at once; `byor hook`
-adds or removes a single one later. Neither needs a repository.
+`byor install` sets up the agents you choose (plus the harness-neutral `skill`)
+in one step; `byor hook` adds or removes a single one afterward. There is no
+per-repo step — each integration writes to its agent's own config under your
+home directory, so it applies in every repo you work in.
 
 ```bash
-byor install --agents claude-code,codex   # the skill + these hooks, globally
+byor install --agents claude-code,codex
 byor hook install --agent AGENT
 byor hook uninstall --agent AGENT
 ```
 
 `AGENT` is one of `claude-code`, `codex`, `copilot`, `cursor`, `opencode`,
-`pi`, or `skill`. Each integration writes to that harness's **global** location
-(`~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.config/opencode/plugin/`,
-…), so it fires in every repo. Installed agents are recorded under `ai.agents`
-in the global config (`~/.config/byor/config.yml`), which `doctor` and
-`hook uninstall` use.
+`pi`, or `skill`. byor records the agents you install under `ai.agents` in
+`~/.config/byor/config.yml`, which `doctor` and `hook uninstall` read.
 
 Generated files carry the marker
 `<!-- Managed by BYOR. Manual edits may be overwritten. -->` (a `//` comment
@@ -153,7 +151,7 @@ init:
 
 ## Per-agent status
 
-All integrations install to global, per-harness locations.
+Each integration lands in its agent's own configuration under your home directory.
 
 | Agent | Integration |
 | --- | --- |
@@ -224,9 +222,8 @@ marker-bearing renders.
 ### opencode
 
 OpenCode supports real post-edit hooks through TypeScript plugins. Install
-writes the global `~/.config/opencode/plugin/byor.ts`, which hooks
-`tool.execute.after`: when
-the tool is `edit`, `write`, or `apply_patch`, it runs
+writes `~/.config/opencode/plugin/byor.ts`, which hooks `tool.execute.after`:
+when the tool is `edit`, `write`, or `apply_patch`, it runs
 `byor agent-check --scope diff --files <file>` on the touched file and, on
 exit 2, appends the diagnostics to the tool output the model sees. Any other
 exit code appends nothing, so a byor configuration error never breaks the
@@ -239,8 +236,8 @@ example via a shell command) is not auto-checked.
 ### pi
 
 Pi supports real post-edit hooks through TypeScript extensions. Install writes
-the global `~/.pi/agent/extensions/byor.ts`. The extension hooks the
-`tool_result` event for the `edit` and `write` tools, runs
+`~/.pi/agent/extensions/byor.ts`. The extension hooks the `tool_result` event
+for the `edit` and `write` tools, runs
 `byor agent-check --scope diff --files <file>` on the touched file, and appends
 any diagnostics to the tool result the model sees. Pi already reads skills from
 `~/.agents/skills/`, so it discovers the rule-capture skill with no Pi-specific
@@ -248,7 +245,7 @@ work.
 
 ### codex
 
-Install writes a `PostToolUse` hook (matcher `Edit|Write`) into the global
+Install writes a `PostToolUse` hook (matcher `Edit|Write`) into
 `~/.codex/hooks.json`. Codex does not run a new hook until you trust it: run
 `/hooks` in the Codex session and approve the byor entry once —
 `byor hook install --agent codex` prints this reminder.
