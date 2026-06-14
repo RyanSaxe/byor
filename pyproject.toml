@@ -7,10 +7,29 @@ authors = [
     { name = "Ryan Saxe", email = "ryancsaxe+1@gmail.com" }
 ]
 requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+keywords = ["ast-grep", "linter", "ai", "coding-agent", "diagnostics", "static-analysis"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = [
     "ast-grep-cli>=0.42.3",
     "ruamel-yaml>=0.18",
 ]
+
+[project.urls]
+Homepage = "https://github.com/RyanSaxe/byor"
+Repository = "https://github.com/RyanSaxe/byor"
+Issues = "https://github.com/RyanSaxe/byor/issues"
 
 [project.scripts]
 byor = "byor.cli:main"
