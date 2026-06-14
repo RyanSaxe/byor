@@ -11,7 +11,13 @@ import pytest
 from support import commit_file, git, make_repo, write_global_rule
 
 from byor.cli import main
-from byor.config import CheckDef, load_repo_config, save_repo_config
+from byor.config import (
+    CheckDef,
+    load_global_config,
+    load_repo_config,
+    save_global_config,
+    save_repo_config,
+)
 from byor.scaffold.sgconfig import ensure_home_sgconfig
 
 CAST_PROMPT = (
@@ -76,6 +82,13 @@ def add_repo_check(repo: Path, name: str, extensions: list[str], run: str) -> No
     config = load_repo_config(repo)
     config.checks.append(CheckDef(name, extensions, run))
     save_repo_config(repo, config)
+
+
+def add_global_check(home: Path, name: str, extensions: list[str], run: str) -> None:
+    config_dir = home / "xdg" / "byor"
+    config = load_global_config(config_dir)
+    config.checks.append(CheckDef(name, extensions, run))
+    save_global_config(config_dir, config)
 
 
 def failing_check_command(repo: Path, message: str) -> str:
@@ -428,6 +441,54 @@ def test_check_does_not_run_for_files_outside_its_extensions(
     assert main(agent_check_args(check_repo, "--files", str(source))) == 0
 
     assert capsys.readouterr().out == ""
+
+
+def test_files_mode_runs_global_checks_in_a_repo_with_no_byor(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    plain = home / "plain"
+    plain.mkdir()
+    add_global_check(home, "lint", ["py"], failing_check_command(plain, "global check"))
+    source = plain / "src.py"
+    source.write_text("x = 1\n")
+    capsys.readouterr()
+
+    assert main(["agent-check", "--repo", str(plain), "--files", str(source)]) == 2
+
+    assert "global check" in capsys.readouterr().out
+
+
+def test_hook_mode_runs_global_checks_in_a_repo_with_no_byor(
+    home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    plain = home / "plain"
+    plain.mkdir()
+    add_global_check(home, "lint", ["py"], failing_check_command(plain, "global check"))
+    source = plain / "src.py"
+    source.write_text("x = 1\n")
+    stdin(monkeypatch, {"tool_input": {"file_path": str(source)}})
+    capsys.readouterr()
+
+    assert main(agent_check_args(plain, "--stdin-hook", "claude-code")) == 2
+
+    assert "global check" in capsys.readouterr().out
+
+
+def test_repo_checks_do_not_leak_into_other_repos(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_a = make_repo(home, "a")
+    add_repo_check(
+        repo_a, "lint", ["py"], failing_check_command(repo_a, "repo-a check")
+    )
+    repo_b = make_repo(home, "b")
+    source = repo_b / "src.py"
+    source.write_text("x = 1\n")
+    capsys.readouterr()
+
+    assert main(["agent-check", "--repo", str(repo_b), "--files", str(source)]) == 0
+
+    assert "repo-a check" not in capsys.readouterr().out
 
 
 def test_missing_check_command_warns_and_keeps_diagnostics(

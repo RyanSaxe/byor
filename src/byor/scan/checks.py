@@ -76,14 +76,18 @@ def load_effective_checks(repo_root: Path, config_dir: Path) -> list[EffectiveCh
     """Load the repo, global, and local configs and merge into effective checks.
 
     The single I/O wrapper around the pure `effective_checks`; every surface
-    (`agent-check`, `list`, `doctor`) routes through it so a missing repo config
-    or a malformed `.byor/local.yml` behaves identically everywhere. Returns
-    `[]` when the repo is not initialized.
+    (`agent-check`, `list`, `doctor`) routes through it. User-owned global checks
+    are personal standards that apply in every repo, so they load even when the
+    repo is not byor-initialized; repo checks load only when `.byor/config.yml`
+    exists. `.byor/local.yml` exclusions are honored either way.
     """
-    if not repo_config_path(repo_root).is_file():
-        return []
+    repo_config = (
+        load_repo_config(repo_root)
+        if repo_config_path(repo_root).is_file()
+        else RepoConfig()
+    )
     return effective_checks(
-        load_repo_config(repo_root),
+        repo_config,
         load_global_config(config_dir),
         load_local_config(repo_root),
     )
