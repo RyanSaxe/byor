@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="byor: Build Your Own Rules" width="400">
+  <img src="assets/banner.png" alt="byor: Build Your Own Rules" width="600">
 </p>
 
 Write a custom lint rule once and it becomes a live diagnostic in your terminal,
