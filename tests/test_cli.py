@@ -1,3 +1,5 @@
+from importlib.metadata import version
+
 import pytest
 
 from byor.cli import main
@@ -16,7 +18,7 @@ def test_version_prints_package_version(capsys: pytest.CaptureFixture[str]) -> N
         main(["--version"])
 
     assert excinfo.value.code == 0
-    assert "byor 0.1" in capsys.readouterr().out
+    assert capsys.readouterr().out.strip() == f"byor {version('byor')}"
 
 
 def test_unknown_command_exits_nonzero() -> None:
