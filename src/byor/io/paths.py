@@ -14,6 +14,16 @@ def global_config_dir() -> Path:
     return Path.home() / ".config" / "byor"
 
 
+def home_sgconfig_path(home: Path | None = None) -> Path:
+    """ast-grep's home-level global config, `~/sgconfig.yml`.
+
+    ast-grep discovers this only in the home directory (it does not honor
+    XDG), so byor's global rules apply in any repo with no `sgconfig.yml` of
+    its own. `home` is overridable for tests.
+    """
+    return (home or Path.home()) / "sgconfig.yml"
+
+
 def display_path(path: Path, repo_root: Path) -> str:
     """Repo-relative POSIX for paths inside the repo, as given otherwise."""
     try:

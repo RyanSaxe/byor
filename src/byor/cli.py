@@ -10,12 +10,12 @@ from pathlib import Path
 from typing import get_args
 
 from byor.agents.harness import HARNESS_CHOICES
-from byor.agents.hookconfig import HOOK_SCOPES, HookScope
 from byor.agents.install import AGENT_CHOICES
 from byor.errors import ByorError
 from byor.scaffold.ignore import IgnoreMode
 
 COMMANDS = {
+    "install": "Register byor's AI integrations globally (one-time)",
     "init": "Initialize BYOR in a repository",
     "sync": "Mirror enabled global rules into the repository",
     "doctor": "Validate installation health",
@@ -44,6 +44,8 @@ def build_parser() -> argparse.ArgumentParser:
         command = subparsers.add_parser(name, help=help_text, description=help_text)
         # Commands that have not yet grown a --repo flag still get args.repo.
         command.set_defaults(repo=None)
+        if name == "install":
+            _add_install_arguments(command)
         if name == "init":
             _add_init_arguments(command)
         if name == "sync":
@@ -69,24 +71,12 @@ def build_parser() -> argparse.ArgumentParser:
                 ("uninstall", "Remove BYOR-managed agent files"),
             ):
                 action = actions.add_parser(action_name, help=action_help)
-                _add_repo_argument(action)
                 action.add_argument(
                     "--agent",
                     choices=AGENT_CHOICES,
                     required=True,
                     help="Which AI integration to manage",
                 )
-                if action_name == "install":
-                    action.set_defaults(hook_scope="project")
-                    action.add_argument(
-                        "--hook-scope",
-                        choices=get_args(HookScope),
-                        default="project",
-                        help=(
-                            "Where to register a real hook: project (committed),"
-                            " global (~/, personal), or local (claude-code only)"
-                        ),
-                    )
     return parser
 
 
@@ -97,12 +87,20 @@ def _add_repo_argument(command: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_init_arguments(command: argparse.ArgumentParser) -> None:
-    _add_repo_argument(command)
+def _add_install_arguments(command: argparse.ArgumentParser) -> None:
     command.add_argument(
         "--agents",
         help=f"Comma-separated AI integrations: {', '.join(AGENT_CHOICES)}",
     )
+    command.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Use the recorded agents instead of prompting",
+    )
+
+
+def _add_init_arguments(command: argparse.ArgumentParser) -> None:
+    _add_repo_argument(command)
     command.add_argument(
         "--ignore-mode",
         choices=get_args(IgnoreMode),
@@ -113,11 +111,6 @@ def _add_init_arguments(command: argparse.ArgumentParser) -> None:
         action=argparse.BooleanOptionalAction,
         default=None,
         help="Install post-merge/post-checkout shims that run `byor sync`",
-    )
-    command.add_argument(
-        "--hook-scope",
-        choices=HOOK_SCOPES,
-        help="Where to register agent hooks: project (committed) or global (~/)",
     )
     command.add_argument(
         "--non-interactive",
@@ -293,9 +286,10 @@ def _add_doctor_arguments(command: argparse.ArgumentParser) -> None:
     )
 
 
-# Commands whose body performs a full sync itself: init (step 8) and sync
-# (whose --check variant must never write). Everything else self-heals first.
-SELF_SYNCING_COMMANDS = frozenset({"init", "sync"})
+# Commands whose body performs the heal itself, or must not self-heal: install
+# (the command that sets global state up), init (runs a full sync as a step),
+# and sync (whose --check variant must never write).
+SELF_SYNCING_COMMANDS = frozenset({"install", "init", "sync"})
 
 
 def _is_hook_invocation(args: argparse.Namespace) -> bool:
@@ -320,6 +314,10 @@ def run(args: argparse.Namespace) -> int:
         if heal_message is not None:
             # stderr keeps stdout clean for JSON-emitting commands.
             print(heal_message, file=sys.stderr)
+    if args.command == "install":
+        from byor.commands.install import run_install
+
+        return run_install(args)
     if args.command == "init":
         # Deferred so startup (--help, future hot paths) never pays for ruamel.
         from byor.commands.init import run_init
@@ -373,15 +371,18 @@ def run(args: argparse.Namespace) -> int:
 
 
 def _self_heal_preamble(args: argparse.Namespace) -> str | None:
-    """Every repo-operating command heals a stale repo before running.
+    """Heal machine-level state always, and a stale repo's mirror when in one.
 
-    Returns the one-line heal summary (None when nothing changed) so doctor
-    can report what was healed. Uninitialized repos heal silently.
+    Returns the one-line repo heal summary (None when nothing changed) so doctor
+    can report what was healed; the global heal is silent. Uninitialized repos
+    heal silently.
     """
     from byor.io.paths import global_config_dir, resolve_repo_root
-    from byor.rules.sync import heal_repo
+    from byor.rules.sync import heal_global, heal_repo
 
-    return heal_repo(resolve_repo_root(explicit=args.repo), global_config_dir())
+    config_dir = global_config_dir()
+    heal_global(config_dir)
+    return heal_repo(resolve_repo_root(explicit=args.repo), config_dir)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

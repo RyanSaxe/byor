@@ -1,6 +1,6 @@
 # AI Agents
 
-BYOR turns your ast-grep rules into directive feedback for AI coding
+byor turns your ast-grep rules into directive feedback for AI coding
 agents. Every agent integration wraps the same command:
 
 ```bash
@@ -118,20 +118,20 @@ model as pre-commit hooks. Only add checks whose commands you trust.
 
 ## Installing and removing integrations
 
+`byor install` sets up the agents you choose (plus the harness-neutral `skill`)
+in one step; `byor hook` adds or removes a single one afterward. There is no
+per-repo step — each integration writes to its agent's own config under your
+home directory, so it applies in every repo you work in.
+
 ```bash
-byor hook install --agent AGENT [--hook-scope project|global|local]
+byor install --agents claude-code,codex
+byor hook install --agent AGENT
 byor hook uninstall --agent AGENT
 ```
 
-`AGENT` is one of `claude-code`, `codex`, `copilot`, `cursor`,
-`opencode`, `pi`, or `skill`. `--hook-scope` chooses where a real hook registers:
-`project` (committed config, with a `command -v byor` guard so teammates
-without byor are unaffected), `global` (under `~/`, personal), or `local`
-(claude-code's `.claude/settings.local.json` only). `byor init` installs the
-agents you select (interactively or via `--agents`), plus the harness-neutral
-`skill` by default, asking project vs global once for all hook-capable agents.
-Installed agents are recorded under `ai.agents` in `.byor/config.yml`, which
-`doctor` and `hook uninstall` use.
+`AGENT` is one of `claude-code`, `codex`, `copilot`, `cursor`, `opencode`,
+`pi`, or `skill`. byor records the agents you install under `ai.agents` in
+`~/.config/byor/config.yml`, which `doctor` and `hook uninstall` read.
 
 Generated files carry the marker
 `<!-- Managed by BYOR. Manual edits may be overwritten. -->` (a `//` comment
@@ -145,26 +145,26 @@ the global default.
 
 ```yaml
 init:
-  agents: [claude-code, codex]
   ignore_mode: local
   git_hooks: true
-  hook_scope: global
 ```
 
 ## Per-agent status
 
+Each integration lands in its agent's own configuration under your home directory.
+
 | Agent | Integration |
 | --- | --- |
-| `claude-code` | Real `PostToolUse` hook (`.claude/settings.json`, `settings.local.json`, or `~/.claude/settings.json`) |
-| `codex` | Real `PostToolUse` hook (`.codex/hooks.json` or `~/.codex/hooks.json`, matcher `Edit\|Write`); trust the hook via `/hooks` |
-| `copilot` | Real `postToolUse` hook (`.github/hooks/byor.json` or `~/.copilot/hooks/byor.json`) |
-| `cursor` | Real `postToolUse` hook (`.cursor/hooks.json` or `~/.cursor/hooks.json`) |
-| `opencode` | Real `tool.execute.after` plugin `.opencode/plugin/byor.ts` |
-| `pi` | Real `tool_result` extension `.pi/extensions/byor.ts` |
-| `skill` | Rule-capture skill rendered identically into `.agents/skills/byor/SKILL.md` and `.claude/skills/byor/SKILL.md`; installed by `init` by default |
+| `claude-code` | Real `PostToolUse` hook (`~/.claude/settings.json`) |
+| `codex` | Real `PostToolUse` hook (`~/.codex/hooks.json`, matcher `Edit\|Write`); trust the hook via `/hooks` |
+| `copilot` | Real `postToolUse` hook (`~/.copilot/hooks/byor.json`) |
+| `cursor` | Real `postToolUse` hook (`~/.cursor/hooks.json`) |
+| `opencode` | Real `tool.execute.after` plugin (`~/.config/opencode/plugin/byor.ts`) |
+| `pi` | Real `tool_result` extension (`~/.pi/agent/extensions/byor.ts`) |
+| `skill` | Rule-capture skill rendered into `~/.agents/skills/byor/SKILL.md` and `~/.claude/skills/byor/SKILL.md`; installed by `byor install` by default |
 
 Codex, Copilot, Cursor, OpenCode, and Pi auto-discover the `byor` rule-capture
-skill from `.agents/skills/byor/SKILL.md`, so they get the capture loop natively.
+skill from `~/.agents/skills/byor/SKILL.md`, so they get the capture loop natively.
 
 ### skill
 
@@ -197,23 +197,23 @@ own instruction file (CLAUDE.md, AGENTS.md, …).
 
 ### The skill is byor-owned
 
-The skill lives at two paths because no single one is read by every harness:
+The skill is global — one render per machine — and lives at two paths because
+no single one is read by every harness:
 
 | Harness | Reads the skill from |
 | --- | --- |
-| Claude Code | `.claude/skills/byor/SKILL.md` |
-| Codex | `.agents/skills/byor/SKILL.md` |
-| Copilot | `.agents/skills/byor/SKILL.md`; also reads `.claude/skills/` |
-| OpenCode | `.agents/skills/byor/SKILL.md`; also reads `.claude/skills/` |
+| Claude Code | `~/.claude/skills/byor/SKILL.md` |
+| Codex, Cursor, Pi | `~/.agents/skills/byor/SKILL.md` |
+| Copilot, OpenCode | `~/.agents/skills/byor/SKILL.md`; also read `~/.claude/skills/` |
 
 byor owns both renders, like the OpenCode plugin or the generated rule copies.
 It writes them from the packaged skill (`byor/data/skill.md`) and keeps them
 current with the **same self-heal that runs on every byor command**: a render
 that drifts from the installed byor's skill is silently rewritten, so the skill
 can never go stale against a changed CLI, and there is no refresh command to
-remember. doctor does not check the skill — there is nothing for it to report.
+remember.
 
-To take a render over, **remove its BYOR marker**: byor then leaves that file
+To take a render over, **remove its byor marker**: byor then leaves that file
 alone (the standard ownership escape hatch), and you maintain it. The frontmatter
 is intentionally just `name` + `description`, the only fields every harness reads,
 so the one file works everywhere. `hook uninstall --agent skill` removes the
@@ -222,8 +222,8 @@ marker-bearing renders.
 ### opencode
 
 OpenCode supports real post-edit hooks through TypeScript plugins. Install
-writes `.opencode/plugin/byor.ts`, which hooks `tool.execute.after`: when
-the tool is `edit`, `write`, or `apply_patch`, it runs
+writes `~/.config/opencode/plugin/byor.ts`, which hooks `tool.execute.after`:
+when the tool is `edit`, `write`, or `apply_patch`, it runs
 `byor agent-check --scope diff --files <file>` on the touched file and, on
 exit 2, appends the diagnostics to the tool output the model sees. Any other
 exit code appends nothing, so a byor configuration error never breaks the
@@ -236,27 +236,24 @@ example via a shell command) is not auto-checked.
 ### pi
 
 Pi supports real post-edit hooks through TypeScript extensions. Install writes
-`.pi/extensions/byor.ts` (project) — Pi also auto-discovers extensions under
-`~/.pi/agent/extensions/` (global). The extension hooks the `tool_result`
-event for the `edit` and `write` tools, runs
+`~/.pi/agent/extensions/byor.ts`. The extension hooks the `tool_result` event
+for the `edit` and `write` tools, runs
 `byor agent-check --scope diff --files <file>` on the touched file, and appends
 any diagnostics to the tool result the model sees. Pi already reads skills from
-`.agents/skills/`, so it discovers the rule-capture skill with no Pi-specific
+`~/.agents/skills/`, so it discovers the rule-capture skill with no Pi-specific
 work.
 
 ### codex
 
 Install writes a `PostToolUse` hook (matcher `Edit|Write`) into
-`.codex/hooks.json` (project) or `~/.codex/hooks.json` (global). Codex does not
-run a new hook until you trust it: run `/hooks` in the Codex session and approve
-the byor entry once — `byor hook install --agent codex` prints this reminder.
+`~/.codex/hooks.json`. Codex does not run a new hook until you trust it: run
+`/hooks` in the Codex session and approve the byor entry once —
+`byor hook install --agent codex` prints this reminder.
 
 ### claude-code
 
-Install merges a `PostToolUse` hook into the settings file for the chosen
-scope — `.claude/settings.json` (project), `.claude/settings.local.json`
-(local), or `~/.claude/settings.json` (global) — creating it if absent and
-preserving existing keys and hook groups:
+Install merges a `PostToolUse` hook into `~/.claude/settings.json`, creating it
+if absent and preserving existing keys and hook groups:
 
 ```json
 {
@@ -276,12 +273,11 @@ preserving existing keys and hook groups:
 }
 ```
 
-A project-scope command is wrapped in a `command -v byor` guard so a
-teammate without byor is unaffected. Claude Code pipes the tool-call JSON to
-the hook on stdin (which `--stdin-hook claude-code` parses) and, on exit 2,
-feeds the hook's stderr back to the model — hence `>&2`: `agent-check` exits 2
-exactly when there are diagnostics, so the instructions reach the model only
-when something needs fixing.
+Claude Code pipes the tool-call JSON to the hook on stdin (which
+`--stdin-hook claude-code` parses) and, on exit 2, feeds the hook's stderr back
+to the model — hence `>&2`. `agent-check` exits 2 exactly when there are
+diagnostics, so the instructions reach the model only when something needs
+fixing.
 
 Install is idempotent. `uninstall` removes only hook groups whose every
 command is byor's; a group you mixed your own hooks into counts as

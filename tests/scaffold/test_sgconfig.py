@@ -3,7 +3,12 @@ from pathlib import Path
 import pytest
 
 from byor.errors import ConfigError
-from byor.scaffold.sgconfig import ensure_rule_dirs
+from byor.io.paths import home_sgconfig_path
+from byor.scaffold.sgconfig import (
+    ensure_home_sgconfig,
+    ensure_rule_dirs,
+    remove_home_rule_dir,
+)
 
 RULE_DIRS = [
     ".byor/rules/project",
@@ -83,3 +88,51 @@ def test_replace_overwrites_after_timestamped_backup(tmp_path: Path) -> None:
     assert len(backups) == 1
     assert backups[0].read_text() == "ruleDirs: not-a-list\n"
     assert all(rule_dir in path.read_text() for rule_dir in RULE_DIRS)
+
+
+def test_home_sgconfig_created_pointing_at_relative_rules_dir(tmp_path: Path) -> None:
+    rules_dir = tmp_path / ".config" / "byor" / "rules"
+
+    message = ensure_home_sgconfig(rules_dir, home=tmp_path)
+
+    assert message == "Created sgconfig.yml"
+    assert rules_dir.is_dir()
+    content = home_sgconfig_path(tmp_path).read_text()
+    assert ".config/byor/rules" in content
+
+
+def test_home_sgconfig_appends_to_a_users_existing_config(tmp_path: Path) -> None:
+    rules_dir = tmp_path / ".config" / "byor" / "rules"
+    path = home_sgconfig_path(tmp_path)
+    path.write_text("# my own global ast-grep setup\nruleDirs:\n  - my-rules\n")
+
+    assert ensure_home_sgconfig(rules_dir, home=tmp_path) == "Updated sgconfig.yml"
+
+    content = path.read_text()
+    assert "# my own global ast-grep setup" in content
+    assert "my-rules" in content
+    assert ".config/byor/rules" in content
+    assert ensure_home_sgconfig(rules_dir, home=tmp_path) is None
+
+
+def test_remove_home_rule_dir_deletes_a_byor_owned_file(tmp_path: Path) -> None:
+    rules_dir = tmp_path / ".config" / "byor" / "rules"
+    ensure_home_sgconfig(rules_dir, home=tmp_path)
+
+    assert remove_home_rule_dir(rules_dir, home=tmp_path) is True
+    assert not home_sgconfig_path(tmp_path).exists()
+    assert remove_home_rule_dir(rules_dir, home=tmp_path) is False
+
+
+def test_remove_home_rule_dir_keeps_user_entries(tmp_path: Path) -> None:
+    rules_dir = tmp_path / ".config" / "byor" / "rules"
+    path = home_sgconfig_path(tmp_path)
+    path.write_text("# mine\nruleDirs:\n  - my-rules\n")
+    ensure_home_sgconfig(rules_dir, home=tmp_path)
+
+    assert remove_home_rule_dir(rules_dir, home=tmp_path) is True
+
+    content = path.read_text()
+    assert "my-rules" in content
+    assert "# mine" in content
+    assert ".config/byor/rules" not in content

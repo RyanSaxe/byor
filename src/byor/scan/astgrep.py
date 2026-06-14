@@ -100,13 +100,16 @@ def scan_files(
     repo_root: Path,
     files: Sequence[Path],
     max_results: int | None = None,
+    config: Path | None = None,
 ) -> ScanResult:
     """Run `ast-grep scan --json` from repo_root and parse the matches.
 
-    With no `files`, ast-grep scans the whole repository. The exit code is
-    ignored when stdout is valid JSON (error-severity matches make ast-grep
-    exit nonzero); unparseable output raises ByorError with ast-grep's
-    own message.
+    With no `files`, ast-grep scans the whole repository. `config` points
+    ast-grep at an explicit `sgconfig.yml` instead of the one it would discover
+    from `repo_root` — used to apply the global rules in a repo with no config
+    of its own. The exit code is ignored when stdout is valid JSON
+    (error-severity matches make ast-grep exit nonzero); unparseable output
+    raises ByorError with ast-grep's own message.
     """
     argv = [
         str(executable),
@@ -116,6 +119,8 @@ def scan_files(
         "--color",
         "never",
     ]
+    if config is not None:
+        argv.extend(["--config", str(config)])
     if max_results is not None:
         argv.extend(["--max-results", str(max_results)])
     argv.extend(str(file) for file in files)

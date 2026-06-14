@@ -23,7 +23,7 @@ from byor.errors import ConfigError, RepoNotInitialized
 
 
 def test_repo_config_round_trips_and_writes_version(tmp_path: Path) -> None:
-    config = RepoConfig(project_name="demo", agents=["claude-code"])
+    config = RepoConfig(project_name="demo")
 
     save_repo_config(tmp_path, config)
 
@@ -44,14 +44,11 @@ def test_repo_config_rejects_unsupported_version(tmp_path: Path) -> None:
         load_repo_config(tmp_path)
 
 
-def test_repo_config_rejects_wrongly_typed_values(tmp_path: Path) -> None:
-    (tmp_path / ".byor").mkdir()
-    (tmp_path / ".byor" / "config.yml").write_text(
-        "version: 1\nai:\n  agents: not-a-list\n"
-    )
+def test_global_config_rejects_wrongly_typed_agents(tmp_path: Path) -> None:
+    (tmp_path / "config.yml").write_text("version: 1\nai:\n  agents: not-a-list\n")
 
     with pytest.raises(ConfigError, match="list of strings"):
-        load_repo_config(tmp_path)
+        load_global_config(tmp_path)
 
 
 def test_repo_config_round_trips_checks(tmp_path: Path) -> None:
@@ -127,12 +124,11 @@ def test_global_config_round_trips(tmp_path: Path) -> None:
 
 def test_global_config_round_trips_checks_and_init_defaults(tmp_path: Path) -> None:
     config = GlobalConfig(
+        agents=["claude-code", "skill"],
         checks=[CheckDef("mypy", ["py"], "mypy")],
         init=InitDefaults(
-            agents=["codex"],
             ignore_mode="local",
             git_hooks=True,
-            hook_scope="global",
         ),
     )
 

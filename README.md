@@ -1,63 +1,64 @@
-# byor
+<p align="center">
+  <img src="assets/banner.png" alt="byor: Build Your Own Rules" width="600">
+</p>
 
-**Build Your Own Rules.** Write a custom lint rule once and it becomes a live
-diagnostic in your terminal, your editor, and your AI agent's feedback loop —
-no language server to build, no rules engine to run.
+Write a custom lint rule once and it becomes a live diagnostic in your terminal,
+your editor, and your AI agent's feedback loop.
 
 byor is a small CLI around [ast-grep](https://ast-grep.github.io), a fast
-structural search-and-lint tool. ast-grep already does the hard parts:
-`ast-grep scan` lints from the terminal, and `ast-grep lsp` is a real language
-server that shows diagnostics inside your editor. byor doesn't wrap either of
-them. It arranges plain rule files and plain configuration so those tools just
-work — and then adds what ast-grep alone doesn't: sharing rules across all your
-repositories, and feeding their diagnostics back into AI coding agents. No
-daemon, no second rule language, no custom editor protocol.
+structural search-and-lint tool. `ast-grep scan` lints from the terminal and
+`ast-grep lsp` shows diagnostics in your editor; byor arranges plain rule files
+and configuration so both work without setup, then adds the two things ast-grep
+leaves out: sharing rules across your repositories, and feeding their
+diagnostics back into AI coding agents.
 
 ```yaml
-# .byor/rules/project/no-print.yml — one rule, enforced everywhere
+# .byor/rules/project/no-print.yml
 id: no-print
 language: python
 severity: warning
 message: Use the logging module, not print, in library code.
 rule:
   pattern: print($$$ARGS)
+metadata:
+  byor:
+    agent_prompt: >
+      Replace this print with a module-level logger,
+      logging.getLogger(__name__), at the appropriate level.
 ```
+
+`message` is what you read in the terminal and editor; `agent_prompt` is the
+directive byor hands your AI agent when it trips the rule.
 
 ## Install
 
 ```bash
-uvx byor init
+uv tool install byor    # or `uvx byor` to try without installing
+byor install            # set up the skill + your agents' hooks (once)
+byor init               # add byor to a repo
 ```
 
-byor needs only Python 3.11+ (run it with [uv](https://docs.astral.sh/uv/):
-`uvx byor`). **ast-grep ships with byor** — the install carries it, so there is
-nothing else to set up. To pin a specific ast-grep build, put `ast-grep` on
-`PATH` or point `$BYOR_AST_GREP` at it and byor prefers that over the bundled
-one.
+byor bundles ast-grep, so Python 3.11+ is the only requirement. `byor install`
+registers your editor and agent integrations machine-wide; `byor init` adds a
+repository's rule directories and `sgconfig.yml`.
+[docs/ai-agents.md](docs/ai-agents.md) covers what each step writes.
 
-`init` writes `sgconfig.yml`, the `.byor/` rule directories, and a git ignore
-block. After that `ast-grep scan` and `ast-grep lsp` work directly, with no
-byor in the loop.
+You can also let your AI coding agent handle it: open it in the repo and ask it
+to set up byor.
 
-## In your terminal and editor
+## Terminal and editor
 
-A rule under `.byor/rules/` is a normal ast-grep rule, so the normal ast-grep
-tools see it:
+A rule under `.byor/rules/` is an ordinary ast-grep rule, so the ordinary tools
+read it:
 
 ```bash
-ast-grep scan            # lint the whole repo from the terminal
-ast-grep scan src/       # …or just a path
+ast-grep scan            # lint the repo
+ast-grep scan src/       # ...or a path
 ```
 
-For **live in-editor diagnostics**, run ast-grep's language server. Point your
-editor's ast-grep / LSP integration at `ast-grep lsp` and your custom rules
-light up as you type — squiggles, hovers, and quick navigation, exactly like a
-built-in linter, for rules you wrote in a few lines of YAML. ast-grep reloads
-rule files as you change them, so editing a rule updates the editor without a
-restart. ([ast-grep editor setup](https://ast-grep.github.io/guide/tools/editors.html).)
-
-This is the payoff of staying on plain ast-grep files: the terminal and the
-editor are first-class for free, and byor never has to be running.
+For live in-editor diagnostics, point your editor's ast-grep integration at
+`ast-grep lsp`: rules light up as you type and reload when you edit them.
+([editor setup](https://ast-grep.github.io/guide/tools/editors.html).)
 
 ## Rule scopes
 
@@ -67,34 +68,35 @@ The same rule format lives at three scopes:
 | --- | --- | --- |
 | `project` | `.byor/rules/project/` | Your team (committed) |
 | `local` | `.byor/rules/personal/local/` | You, this repo only |
-| `global` | `~/.config/byor/rules/` | You, in every repo you register |
+| `global` | `~/.config/byor/rules/` | You, in every repo |
 
-Global rules are your personal standards; byor syncs them into each repo so
-ast-grep can see them. Project and local rules override a global rule with the
-same ID, so a team policy or a local experiment can take precedence. See
-[docs/rules.md](docs/rules.md) for the rule format and the
-`add` / `edit` / `promote` / `exclude` workflow.
+Global rules are your personal standards; byor makes them apply in every repo.
+Project and local rules override a global rule with the same ID, so a team
+policy or a local experiment takes precedence. See [docs/rules.md](docs/rules.md)
+for the rule workflow and [docs/sync-model.md](docs/sync-model.md) for how byor
+copies global rules into each repo.
 
 ## With AI coding agents
 
-Agents don't just have to obey your rules — they can write them, and they get
-told the moment they break one.
+Agents can both obey your rules and write new ones:
 
-- **Feedback loop.** A post-edit hook runs `byor agent-check` after the agent
-  edits a file and feeds any diagnostics straight back into its context, scoped
-  to the lines it just touched, so it fixes violations before moving on.
-- **Rule capture.** byor installs a skill that turns durable feedback —
-  "never do this", "always do that" — into an ast-grep rule: the agent drafts
-  the rule, confirms with a single question, and creates it with `byor add`.
-  The skill also knows when a linter, type checker, or formatter is the better
-  tool and offers to set that up instead.
+- **Feedback.** A post-edit hook runs `byor agent-check` after the agent edits a
+  file and feeds the diagnostics back into its context, scoped to the lines it
+  changed, so it fixes violations before moving on.
+- **Capture.** A bundled skill turns durable feedback ("never do this", "always
+  do that") into an ast-grep rule: the agent drafts it, confirms once, and runs
+  `byor add`. When a linter or type checker fits better, the skill offers that
+  instead.
+
+`byor install` wires up the agents you pick (once, machine-wide); `byor hook`
+adds or drops one later.
 
 ```bash
-byor hook install --agent claude-code            # register a real post-edit hook
-byor hook install --agent codex --hook-scope global
+byor install --agents claude-code,codex
+byor hook install --agent cursor
 ```
 
-byor supports six harnesses, at both project and global registration scope:
+byor supports six harnesses:
 
 | Harness | Skill | Real hook | Diagnostic precision |
 | --- | --- | --- | --- |
@@ -105,58 +107,50 @@ byor supports six harnesses, at both project and global registration scope:
 | OpenCode | yes | `tool.execute.after` plugin | the changed file |
 | Pi | yes | `tool_result` extension | the changed file |
 
-Beyond ast-grep rules, a `checks:` section (in `.byor/config.yml` or your
-global config) runs extra command-line tools — `ruff`, a type checker, anything
-— on the changed files and folds their output into the same agent feedback. See
+A `checks:` section in `.byor/config.yml` (or your global config) runs extra
+command-line tools (a linter, a type checker, anything) on the changed files and
+folds their output into the same feedback. See
 [docs/ai-agents.md](docs/ai-agents.md).
-
-## Why byor copies rules instead of symlinking them
-
-byor mirrors your global rules into each repo's
-`.byor/rules/personal/global/` rather than symlinking a shared directory. The
-reason is the override model above: because each repo holds its own copy, a
-project or local rule can shadow a global one by ID, a rule can be promoted from
-global into the project, and a teammate's committed rule can win cleanly — none
-of which a single shared symlink target allows. Plain copies are also what let
-a fresh clone lint with **zero byor installed**. (A symlinked *directory* would
-load, but ast-grep does not follow symlinked rule *files*, so copies are also
-the only thing that reliably works.)
-
-The copies are a build artifact byor owns. They can go stale, but staleness is
-self-healing rather than something you police: every byor command syncs the
-current repo first, and `byor sync --all` heals every registered repo. See
-[docs/sync-model.md](docs/sync-model.md).
 
 ## Continuous integration
 
-Project rules are committed plain files, so CI gates on them with **no byor
-installed** — a fresh clone already has everything `ast-grep scan` needs.
-Install ast-grep and scan with `--error` so warnings fail the build (a plain
-scan exits 0 on warnings):
+Project rules are committed files that work with `ast-grep`, so CI doesn't need
+`byor`: a fresh clone already has everything `ast-grep scan` reads. Scan with
+`--error` so warnings fail the build (a plain scan exits 0 on warnings):
 
 ```yaml
 - run: npm install -g @ast-grep/cli
 - run: ast-grep scan --error
 ```
 
-See [docs/sync-model.md](docs/sync-model.md) for the full workflow and why a
-fresh clone needs no byor.
-
 ## Commands
 
+**Setup.** You run these once to get going.
+
 ```text
+byor install        Register byor's AI integrations (machine-wide)
 byor init           Initialize byor in a repository
-byor sync           Mirror enabled global rules into the repository
-byor doctor         Validate installation health
-byor add            Create a new rule in a scope
-byor edit           Open an existing rule in $EDITOR
-byor remove         Delete a rule from its scope
+byor hook           Add or remove an agent integration
+byor doctor         Check that everything is wired up
+```
+
+**Rules.** Your agent runs these as it captures and manages rules for you.
+
+```text
+byor add            Create a rule in a scope
+byor list           Show rules and where they come from
+byor edit           Open a rule in $EDITOR
+byor remove         Delete a rule
 byor promote        Move a personal rule into shared project rules
 byor exclude        Disable a global rule in this repository
-byor include        Re-enable a previously excluded global rule
-byor list           Show rules and where they come from
-byor agent-check    Run ast-grep on changed files and render agent feedback
-byor hook           Install or uninstall AI agent integrations
+byor include        Re-enable an excluded global rule
+```
+
+**Automatic.** byor runs these itself: the post-edit hook and self-heal.
+
+```text
+byor agent-check    Render diagnostics for your agent
+byor sync           Mirror global rules into the repo
 ```
 
 Every command takes `--help`, and repo-operating commands take `--repo PATH`

@@ -13,16 +13,26 @@ harness-specific field (e.g. Claude's ``allowed-tools``), which would fork it.
 from __future__ import annotations
 
 from importlib.resources import files
+from pathlib import Path
 
 from byor.io.fsio import MANAGED_MARKER
 from byor.rules.rules import ALLOW_EXCEPTIONS_SENTENCE
 
-# No single path is read by every harness (Claude Code reads .claude/, Codex and
-# Pi read .agents/), so byor writes the same skill to both as owned copies.
-SKILL_RELPATHS = (
-    ".agents/skills/byor/SKILL.md",
-    ".claude/skills/byor/SKILL.md",
-)
+
+def global_skill_paths(home: Path | None = None) -> tuple[Path, Path]:
+    """The two global locations byor writes the rendered skill to.
+
+    `~/.agents/skills/byor/SKILL.md` is read by Cursor, Codex, Copilot, opencode,
+    and pi; `~/.claude/skills/byor/SKILL.md` by Claude Code, which reads only its
+    own directory. The skill describes byor itself, not any repo, so a single
+    render per machine — kept current by self-heal — serves every repo.
+    """
+    base = home or Path.home()
+    return (
+        base / ".agents" / "skills" / "byor" / "SKILL.md",
+        base / ".claude" / "skills" / "byor" / "SKILL.md",
+    )
+
 
 _FRONTMATTER_FENCE = "---\n"
 _ALLOW_EXCEPTIONS_PLACEHOLDER = "{{ALLOW_EXCEPTIONS_SENTENCE}}"

@@ -8,10 +8,11 @@ import sys
 from pathlib import Path
 
 import pytest
-from support import commit_file, git, make_repo
+from support import commit_file, git, make_repo, write_global_rule
 
 from byor.cli import main
 from byor.config import CheckDef, load_repo_config, save_repo_config
+from byor.scaffold.sgconfig import ensure_home_sgconfig
 
 CAST_PROMPT = (
     "Do not use typing.cast here. Fix the type by narrowing, changing the "
@@ -309,6 +310,57 @@ def test_hook_mode_is_silent_in_an_uninitialized_repo(
     assert check(bare, "--stdin-hook", "claude-code") == 0
 
     assert capsys.readouterr().out == ""
+
+
+def setup_global_rule(home: Path, rule_id: str = "no-python-cast") -> None:
+    """Install a global rule and the home sgconfig that exposes it everywhere."""
+    write_global_rule(home, f"{rule_id}.yml", rule_id)
+    ensure_home_sgconfig(home / "xdg" / "byor" / "rules", home=home)
+
+
+def test_files_mode_applies_global_rules_in_a_repo_with_no_byor(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    setup_global_rule(home)
+    plain = home / "plain"
+    plain.mkdir()
+    source = plain / "src.py"
+    source.write_text('x = cast(int, "1")\n')
+    capsys.readouterr()
+
+    assert main(["agent-check", "--repo", str(plain), "--files", str(source)]) == 2
+
+    assert "Rule: no-python-cast" in capsys.readouterr().out
+
+
+def test_files_mode_is_silent_without_repo_or_global_rules(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    plain = home / "plain"
+    plain.mkdir()
+    source = plain / "src.py"
+    source.write_text('x = cast(int, "1")\n')
+    capsys.readouterr()
+
+    assert main(["agent-check", "--repo", str(plain), "--files", str(source)]) == 0
+
+    assert capsys.readouterr().out == ""
+
+
+def test_hook_mode_applies_global_rules_in_a_repo_with_no_byor(
+    home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    setup_global_rule(home)
+    plain = home / "plain"
+    plain.mkdir()
+    source = plain / "src.py"
+    source.write_text('x = cast(int, "1")\n')
+    stdin(monkeypatch, {"tool_input": {"file_path": str(source)}})
+    capsys.readouterr()
+
+    assert check(plain, "--stdin-hook", "claude-code") == 2
+
+    assert "Rule: no-python-cast" in capsys.readouterr().out
 
 
 def test_failing_check_appends_a_named_section_and_exits_two(

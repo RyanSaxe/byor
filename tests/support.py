@@ -58,6 +58,26 @@ def make_repo(home: Path, name: str = "repo", *extra: str) -> Path:
     return repo
 
 
+def install_agents(home: Path, *agents: str) -> None:
+    """Register AI agents globally (the `byor install` step) for test setup."""
+    assert main(["install", "--agents", ",".join(agents), "--non-interactive"]) == 0
+
+
+def repo_with_agents(home: Path, *agents: str) -> Path:
+    """An init'd repo plus the named agents registered globally."""
+    repo = make_repo(home)
+    install_agents(home, *agents)
+    return repo
+
+
+def global_agents() -> list[str]:
+    """The AI agents recorded in the global config (XDG-isolated in tests)."""
+    from byor.config import load_global_config
+    from byor.io.paths import global_config_dir
+
+    return load_global_config(global_config_dir()).agents
+
+
 def write_rule(path: Path, rule_id: str, message: str = "Avoid this.") -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(RULE_TEMPLATE.format(rule_id=rule_id, message=message))

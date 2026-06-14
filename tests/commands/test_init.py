@@ -9,7 +9,6 @@ from byor.cli import main
 from byor.config import (
     GlobalConfig,
     InitDefaults,
-    load_repo_config,
     load_repo_registry,
     save_global_config,
 )
@@ -23,15 +22,14 @@ TRACKED_FILES = (
     ".byor/rules/personal/local/.ignore",
     ".byor/rules/personal/global/.gitkeep",
     ".byor/rules/personal/global/.ignore",
-    ".agents/skills/byor/SKILL.md",
-    ".claude/skills/byor/SKILL.md",
 )
 
 
 @pytest.fixture
 def repo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """An empty repo dir, with the global config dir isolated under tmp_path."""
+    """An empty repo dir, with the global config dir and home isolated under tmp_path."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
     repo = tmp_path / "repo"
     repo.mkdir()
     return repo
@@ -51,6 +49,9 @@ def test_init_creates_repository_and_global_layout(repo: Path) -> None:
     for relpath in TRACKED_FILES:
         assert (repo / relpath).is_file(), relpath
     assert (repo / ".byor" / "local.yml").is_file()
+    # init is content-only: it installs no AI agents or skill into the repo.
+    assert not (repo / ".claude").exists()
+    assert not (repo / ".agents").exists()
 
     sgconfig = (repo / "sgconfig.yml").read_text()
     for rule_dir in (
@@ -128,20 +129,6 @@ def test_local_ignore_mode_uses_git_info_exclude(repo: Path) -> None:
     assert not (repo / ".gitignore").exists()
 
 
-def test_agents_are_recorded_and_merged_without_duplicates(repo: Path) -> None:
-    init(repo, "--agents", "claude-code,codex")
-    init(repo, "--agents", "claude-code,cursor")
-
-    assert load_repo_config(repo).agents == ["claude-code", "codex", "skill", "cursor"]
-
-
-def test_unknown_agent_fails_cleanly(
-    repo: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    assert init(repo, "--agents", "frobnicate") == 1
-    assert "Unknown agents: frobnicate" in capsys.readouterr().err
-
-
 def test_no_register_creates_empty_registry(repo: Path) -> None:
     assert init(repo, "--no-register") == 0
 
@@ -174,37 +161,21 @@ def test_init_ends_with_quick_doctor_surfacing_problems(
     assert f"Initialized BYOR in {repo}" in out
 
 
-def test_interactive_prompts_drive_agents_ignore_mode_and_hooks(
+def test_interactive_prompts_drive_ignore_mode_and_git_hooks(
     repo: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     git(repo, "init", "--quiet")
-    # Answers: agents -> claude-code, ignore -> local, git hooks -> yes,
-    # hook scope -> project (claude-code is hook-capable, so it is asked).
-    monkeypatch.setattr(sys, "stdin", io.StringIO("1\n2\n2\n1\n"))
+    # init no longer installs agents; answers: ignore -> local, git hooks -> yes.
+    monkeypatch.setattr(sys, "stdin", io.StringIO("2\n2\n"))
 
     assert main(["init", "--repo", str(repo)]) == 0
 
-    assert load_repo_config(repo).agents == ["claude-code", "skill"]
     assert (repo / ".git" / "info" / "exclude").is_file()
-    assert (repo / ".claude" / "settings.json").is_file()
     out = capsys.readouterr().out
     assert "Installed .git/hooks/post-merge" in out
     assert (repo / ".git" / "hooks" / "post-checkout").is_file()
-
-
-def test_init_hook_scope_global_writes_configs_under_home(
-    repo: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_home = repo.parent / "fake-home"
-    fake_home.mkdir()
-    monkeypatch.setattr(Path, "home", lambda: fake_home)
-
-    assert init(repo, "--agents", "cursor", "--hook-scope", "global") == 0
-
-    assert (fake_home / ".cursor" / "hooks.json").is_file()
-    assert not (repo / ".cursor" / "hooks.json").exists()
 
 
 def seed_init_defaults(repo: Path, defaults: InitDefaults) -> None:
@@ -214,29 +185,12 @@ def seed_init_defaults(repo: Path, defaults: InitDefaults) -> None:
 
 def test_non_interactive_honors_global_init_defaults(repo: Path) -> None:
     git(repo, "init", "--quiet")
-    seed_init_defaults(
-        repo, InitDefaults(agents=["claude-code"], ignore_mode="local", git_hooks=True)
-    )
+    seed_init_defaults(repo, InitDefaults(ignore_mode="local", git_hooks=True))
 
     assert init(repo) == 0
 
-    assert load_repo_config(repo).agents == ["claude-code", "skill"]
     assert (repo / ".git" / "info" / "exclude").is_file()
     assert (repo / ".git" / "hooks" / "post-merge").is_file()
-
-
-def test_global_hook_scope_default_routes_hooks_under_home(
-    repo: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_home = repo.parent / "fake-home"
-    fake_home.mkdir()
-    monkeypatch.setattr(Path, "home", lambda: fake_home)
-    seed_init_defaults(repo, InitDefaults(agents=["cursor"], hook_scope="global"))
-
-    assert init(repo) == 0
-
-    assert (fake_home / ".cursor" / "hooks.json").is_file()
-    assert not (repo / ".cursor" / "hooks.json").exists()
 
 
 def test_explicit_flag_overrides_global_init_default(repo: Path) -> None:

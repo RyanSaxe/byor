@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from byor.agents.hookconfig import HOOK_SCOPES, HookScope
-from byor.agents.install import AGENT_CHOICES, HOOK_HARNESSES, install_agents
 from byor.commands.doctor import quick_doctor_problems
+from byor.commands.prompts import prompt_choice
 from byor.config import (
     GlobalConfig,
     InitDefaults,
@@ -29,7 +27,7 @@ from byor.config import (
     save_repo_config,
     save_repo_registry,
 )
-from byor.errors import ConfigError, RepoNotInitialized
+from byor.errors import RepoNotInitialized
 from byor.io.paths import display_path, global_config_dir, resolve_repo_root
 from byor.rules.sync import load_canonical_rules, summarize_changes, sync_repo
 from byor.scaffold.githooks import install_git_shims
@@ -46,10 +44,8 @@ from byor.scaffold.sgconfig import ensure_rule_dirs
 class InitOptions:
     """Fully resolved init choices; defaults live in _options_from_args."""
 
-    agents: list[str]
     ignore_mode: IgnoreMode
     git_hooks: bool
-    hook_scope: HookScope
     register: bool
     replace_sgconfig: bool
 
@@ -71,7 +67,7 @@ def initialize_repo(
     """Run init steps 1-7; returns summary lines for changes made."""
     messages: list[str] = []
     global_config = _bootstrap_global_dir(config_dir)
-    repo_config = _ensure_repo_layout(repo_root, options.agents)
+    repo_config = _ensure_repo_layout(repo_root)
     sgconfig_message = ensure_rule_dirs(
         repo_root / repo_config.paths.sgconfig,
         rule_dir_relpaths(repo_config.paths),
@@ -82,7 +78,6 @@ def initialize_repo(
     if write_ignore_block(repo_root, options.ignore_mode):
         target = display_path(ignore_file(repo_root, options.ignore_mode), repo_root)
         messages.append(f"Wrote ignore block to {target}")
-    messages.extend(install_agents(repo_root, options.agents, options.hook_scope))
     if options.git_hooks:
         messages.extend(install_git_shims(repo_root))
     if options.register and register_repo(
@@ -111,12 +106,10 @@ def _bootstrap_global_dir(config_dir: Path) -> GlobalConfig:
     return config
 
 
-def _ensure_repo_layout(repo_root: Path, agents: list[str]) -> RepoConfig:
+def _ensure_repo_layout(repo_root: Path) -> RepoConfig:
     """Create .byor/ config files and rule directories."""
     config = _load_or_default_repo_config(repo_root)
-    new_agents = [agent for agent in agents if agent not in config.agents]
-    config.agents.extend(new_agents)
-    if new_agents or not repo_config_path(repo_root).is_file():
+    if not repo_config_path(repo_root).is_file():
         save_repo_config(repo_root, config)
     if not local_config_path(repo_root).is_file():
         save_local_config(repo_root, LocalConfig())
@@ -146,12 +139,6 @@ def _options_from_args(args: argparse.Namespace, defaults: InitDefaults) -> Init
     answers under `--non-interactive`; an explicit flag always overrides both.
     """
     interactive = not args.non_interactive
-    if args.agents is not None:
-        agents = _parse_agents(args.agents)
-    elif interactive:
-        agents = _prompt_agents(defaults.agents)
-    else:
-        agents = list(defaults.agents) if defaults.agents is not None else []
     if args.ignore_mode is not None:
         ignore_mode: IgnoreMode = args.ignore_mode
     else:
@@ -160,15 +147,9 @@ def _options_from_args(args: argparse.Namespace, defaults: InitDefaults) -> Init
         git_hooks: bool = args.git_hooks
     else:
         git_hooks = _resolve_git_hooks(defaults.git_hooks, interactive)
-    hook_scope = _resolve_hook_scope(args, agents, interactive, defaults.hook_scope)
-    # The harness-neutral rule-capture skill installs by default.
-    if "skill" not in agents:
-        agents.append("skill")
     return InitOptions(
-        agents=agents,
         ignore_mode=ignore_mode,
         git_hooks=git_hooks,
-        hook_scope=hook_scope,
         register=not args.no_register,
         replace_sgconfig=args.replace_sgconfig,
     )
@@ -184,68 +165,8 @@ def _resolve_git_hooks(default: bool | None, interactive: bool) -> bool:
     return _prompt_git_hooks(fallback) if interactive else fallback
 
 
-def _resolve_hook_scope(
-    args: argparse.Namespace,
-    agents: list[str],
-    interactive: bool,
-    default: str | None,
-) -> HookScope:
-    """Ask hook scope once for all selected hook-capable agents."""
-    if args.hook_scope is not None:
-        return args.hook_scope
-    fallback: HookScope = "global" if default == "global" else "project"
-    if interactive and any(agent in HOOK_HARNESSES for agent in agents):
-        return _prompt_hook_scope(fallback)
-    return fallback
-
-
-def _prompt_hook_scope(default: HookScope) -> HookScope:
-    choice = _prompt_choice(
-        "Where should byor register agent hooks?",
-        ("project (committed, shared with the team)", "global (~/, personal)"),
-        default=HOOK_SCOPES.index(default),
-    )
-    return HOOK_SCOPES[choice]
-
-
-def _parse_agents(raw: str) -> list[str]:
-    agents = list(
-        dict.fromkeys(item.strip() for item in raw.split(",") if item.strip())
-    )
-    unknown = [agent for agent in agents if agent not in AGENT_CHOICES]
-    if unknown:
-        raise ConfigError(
-            f"Unknown agents: {', '.join(unknown)}. "
-            f"Choose from: {', '.join(AGENT_CHOICES)}."
-        )
-    return agents
-
-
-def _prompt_agents(default: list[str] | None) -> list[str]:
-    _print_options("AI integrations to install:", AGENT_CHOICES)
-    answer = _default_agent_numbers(default)
-    while True:
-        raw = _ask("Enter numbers separated by commas", default=answer)
-        agents = _numbers_to_choices(raw, AGENT_CHOICES)
-        if agents is not None:
-            return agents
-        print(f"Please enter numbers between 1 and {len(AGENT_CHOICES)}.")
-
-
-def _default_agent_numbers(default: list[str] | None) -> str:
-    """The comma-separated prompt default seeded from the global agents list."""
-    if not default:
-        return "1"
-    numbers = [
-        str(AGENT_CHOICES.index(agent) + 1)
-        for agent in default
-        if agent in AGENT_CHOICES
-    ]
-    return ",".join(numbers) if numbers else "1"
-
-
 def _prompt_ignore_mode(default: IgnoreMode) -> IgnoreMode:
-    choice = _prompt_choice(
+    choice = prompt_choice(
         "Where should byor write its git ignore entries?",
         ("project .gitignore (team-visible)", "local .git/info/exclude (private)"),
         default=1 if default == "local" else 0,
@@ -254,45 +175,9 @@ def _prompt_ignore_mode(default: IgnoreMode) -> IgnoreMode:
 
 
 def _prompt_git_hooks(default: bool) -> bool:
-    choice = _prompt_choice(
+    choice = prompt_choice(
         "Install git hook shims that run `byor sync` after merge and checkout?",
         ("no", "yes"),
         default=1 if default else 0,
     )
     return choice == 1
-
-
-def _prompt_choice(intro: str, options: Sequence[str], default: int = 0) -> int:
-    """Ask a numbered single-choice question; returns the zero-based index."""
-    _print_options(intro, options)
-    while True:
-        raw = _ask("Enter a number", default=str(default + 1))
-        if raw.isdigit() and 1 <= int(raw) <= len(options):
-            return int(raw) - 1
-        print(f"Please enter a number between 1 and {len(options)}.")
-
-
-def _print_options(intro: str, options: Sequence[str]) -> None:
-    print(intro)
-    for number, option in enumerate(options, start=1):
-        print(f"  {number}. {option}")
-
-
-def _ask(question: str, default: str) -> str:
-    try:
-        answer = input(f"{question} [{default}]: ").strip()
-    except EOFError:
-        return default
-    return answer or default
-
-
-def _numbers_to_choices(raw: str, choices: Sequence[str]) -> list[str] | None:
-    picks: list[str] = []
-    for part in raw.split(","):
-        number = part.strip()
-        if not number.isdigit() or not 1 <= int(number) <= len(choices):
-            return None
-        pick = choices[int(number) - 1]
-        if pick not in picks:
-            picks.append(pick)
-    return picks

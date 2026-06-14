@@ -12,7 +12,12 @@ from typing import Literal
 from byor.agents.harness import EditPayload, Harness, emit, parse_payload
 from byor.config import load_global_config, repo_config_path
 from byor.errors import ByorError
-from byor.io.paths import display_path, global_config_dir, resolve_repo_root
+from byor.io.paths import (
+    display_path,
+    global_config_dir,
+    home_sgconfig_path,
+    resolve_repo_root,
+)
 from byor.scan.astgrep import ScanMatch, resolve_ast_grep, scan_files
 from byor.scan.checks import CheckOutcome, load_effective_checks, run_checks
 from byor.scan.linescope import Range, diff_ranges, edit_ranges, overlaps
@@ -85,10 +90,12 @@ def _hook_diagnostics(
 ) -> int:
     """Parse the payload, scan, and emit per harness.
 
-    Global hooks fire in every repo, so byor stays silent (exit 0) where
-    there is no `.byor/config.yml` to scope against.
+    Global hooks fire in every repo. A byor-init'd repo scopes against its own
+    rules; any other repo applies your global rules via the home sgconfig. With
+    neither in play there is nothing to check, so byor stays silent (exit 0)
+    without reading stdin or shelling out to ast-grep.
     """
-    if not repo_config_path(repo_root).is_file():
+    if not _has_any_rules(repo_root):
         return 0
     payload = _resolved_payload(parse_payload(harness, sys.stdin.read()), repo_root)
     if not payload.files:
@@ -139,6 +146,20 @@ def _render_feedback(
     return "\n".join(sections)
 
 
+def _repo_initialized(repo_root: Path) -> bool:
+    """Whether the repo has its own byor config (so ast-grep discovers its rules)."""
+    return repo_config_path(repo_root).is_file()
+
+
+def _has_any_rules(repo_root: Path) -> bool:
+    """Whether a scan could surface anything: repo rules or a global setup.
+
+    The cheap pre-check that keeps a global hook a near-instant no-op in a repo
+    that is neither byor-init'd nor covered by `~/sgconfig.yml`.
+    """
+    return _repo_initialized(repo_root) or home_sgconfig_path().is_file()
+
+
 def _diagnostics(
     args: argparse.Namespace,
     repo_root: Path,
@@ -148,9 +169,14 @@ def _diagnostics(
 ) -> list[Diagnostic]:
     if scope != "file" and not files:
         return []
+    if not _has_any_rules(repo_root):
+        return []
+    config = None if _repo_initialized(repo_root) else home_sgconfig_path()
     config_dir = global_config_dir()
     executable = resolve_ast_grep(load_global_config(config_dir).ast_grep_command)
-    result = scan_files(executable, repo_root, files, max_results=args.max_results)
+    result = scan_files(
+        executable, repo_root, files, max_results=args.max_results, config=config
+    )
     if result.warnings:
         print(result.warnings, file=sys.stderr)
     matches = result.matches

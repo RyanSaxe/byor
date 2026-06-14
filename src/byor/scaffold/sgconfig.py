@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -9,6 +10,7 @@ from pathlib import Path
 from ruamel.yaml.comments import CommentedMap
 
 from byor.errors import ConfigError
+from byor.io.paths import home_sgconfig_path
 from byor.io.yamlio import load_yaml_mapping, write_yaml_atomic
 
 BACKUP_TIMESTAMP_FORMAT = "%Y%m%d-%H%M%S"
@@ -47,6 +49,47 @@ def ensure_rule_dirs(
     existing.extend(missing)
     write_yaml_atomic(path, data)
     return f"Updated {path.name}"
+
+
+def ensure_home_sgconfig(rules_dir: Path, home: Path | None = None) -> str | None:
+    """Converge `~/sgconfig.yml` so ast-grep applies the global rules everywhere.
+
+    Creates the rules directory and adds it to `ruleDirs` expressed relative to
+    home (the sgconfig's own location). Appends to any pre-existing config the
+    user already keeps and never clobbers it. Returns a one-line summary, or
+    None when nothing changed.
+    """
+    home = home or Path.home()
+    rules_dir.mkdir(parents=True, exist_ok=True)
+    relpath = _home_relative(rules_dir, home)
+    return ensure_rule_dirs(home_sgconfig_path(home), [relpath])
+
+
+def remove_home_rule_dir(rules_dir: Path, home: Path | None = None) -> bool:
+    """Drop byor's global rules entry from `~/sgconfig.yml`, leaving user entries.
+
+    Deletes the file when it held only our entry; returns True when it changed.
+    """
+    home = home or Path.home()
+    path = home_sgconfig_path(home)
+    if not path.is_file():
+        return False
+    relpath = _home_relative(rules_dir, home)
+    data = load_yaml_mapping(path)
+    rule_dirs = data.get("ruleDirs")
+    if not isinstance(rule_dirs, list) or relpath not in rule_dirs:
+        return False
+    rule_dirs.remove(relpath)
+    if not rule_dirs and set(data) == {"ruleDirs"}:
+        path.unlink()
+    else:
+        write_yaml_atomic(path, data)
+    return True
+
+
+def _home_relative(rules_dir: Path, home: Path) -> str:
+    """The rules dir as a POSIX path relative to home (ast-grep resolves it there)."""
+    return Path(os.path.relpath(rules_dir, home)).as_posix()
 
 
 def _minimal_sgconfig(rule_dirs: list[str]) -> CommentedMap:

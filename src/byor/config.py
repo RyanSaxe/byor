@@ -38,11 +38,14 @@ class CheckDef:
 
 @dataclass
 class RepoConfig:
-    """Tracked repository config: .byor/config.yml."""
+    """Tracked repository config: .byor/config.yml.
+
+    A repo carries only rule/check content; AI agents are registered globally
+    (see GlobalConfig.agents), not per repo.
+    """
 
     project_name: str | None = None
     paths: RepoPaths = field(default_factory=RepoPaths)
-    agents: list[str] = field(default_factory=list)
     checks: list[CheckDef] = field(default_factory=list)
 
 
@@ -62,10 +65,8 @@ class InitDefaults:
     explicit init flag always wins over both.
     """
 
-    agents: list[str] | None = None
     ignore_mode: str | None = None
     git_hooks: bool | None = None
-    hook_scope: str | None = None
 
 
 @dataclass
@@ -78,6 +79,8 @@ class GlobalConfig:
     rules_path: str = "rules"
     repos_path: str = "repos.yml"
     ast_grep_command: str = "auto"
+    agents: list[str] = field(default_factory=list)
+    """The AI agents registered globally by `byor install` / `byor hook install`."""
     checks: list[CheckDef] = field(default_factory=list)
     init: InitDefaults = field(default_factory=InitDefaults)
 
@@ -121,7 +124,6 @@ def load_repo_config(repo_root: Path) -> RepoConfig:
     _check_version(data, path)
     project = _section(data, "project", path)
     paths = _section(data, "paths", path)
-    ai = _section(data, "ai", path)
     defaults = RepoPaths()
     return RepoConfig(
         project_name=_optional_string(project, "name", path),
@@ -135,7 +137,6 @@ def load_repo_config(repo_root: Path) -> RepoConfig:
                 paths, "personal_global_rules", defaults.personal_global_rules, path
             ),
         ),
-        agents=_string_list(ai, "agents", path),
         checks=_check_defs(data, path),
     )
 
@@ -155,7 +156,6 @@ def save_repo_config(repo_root: Path, config: RepoConfig) -> None:
             "personal_global_rules": config.paths.personal_global_rules,
         },
     )
-    _update_section(data, "ai", {"agents": list(config.agents)})
     _write_checks(data, config.checks)
     write_yaml_atomic(path, data)
 
@@ -195,11 +195,13 @@ def load_global_config(config_dir: Path) -> GlobalConfig:
     _check_version(data, path)
     paths = _section(data, "paths", path)
     ast_grep = _section(data, "ast_grep", path)
+    ai = _section(data, "ai", path)
     defaults = GlobalConfig()
     return GlobalConfig(
         rules_path=_string(paths, "rules", defaults.rules_path, path),
         repos_path=_string(paths, "repos", defaults.repos_path, path),
         ast_grep_command=_string(ast_grep, "command", defaults.ast_grep_command, path),
+        agents=_string_list(ai, "agents", path),
         checks=_check_defs(data, path),
         init=_init_defaults(_section(data, "init", path), path),
     )
@@ -213,6 +215,7 @@ def save_global_config(config_dir: Path, config: GlobalConfig) -> None:
         data, "paths", {"rules": config.rules_path, "repos": config.repos_path}
     )
     _update_section(data, "ast_grep", {"command": config.ast_grep_command})
+    _update_section(data, "ai", {"agents": list(config.agents)})
     _write_checks(data, config.checks)
     _write_init_defaults(data, config.init)
     write_yaml_atomic(path, data)
@@ -323,25 +326,18 @@ def _write_checks(data: CommentedMap, checks: list[CheckDef]) -> None:
 
 
 def _init_defaults(section: CommentedMap, path: Path) -> InitDefaults:
-    agents = section.get("agents")
     return InitDefaults(
-        agents=_string_list(section, "agents", path) if agents is not None else None,
         ignore_mode=_optional_string(section, "ignore_mode", path),
         git_hooks=_optional_bool(section, "git_hooks", path),
-        hook_scope=_optional_string(section, "hook_scope", path),
     )
 
 
 def _write_init_defaults(data: CommentedMap, init: InitDefaults) -> None:
     values: dict[str, str | None | bool | list[str]] = {}
-    if init.agents is not None:
-        values["agents"] = list(init.agents)
     if init.ignore_mode is not None:
         values["ignore_mode"] = init.ignore_mode
     if init.git_hooks is not None:
         values["git_hooks"] = init.git_hooks
-    if init.hook_scope is not None:
-        values["hook_scope"] = init.hook_scope
     if values:
         _update_section(data, "init", values)
 
