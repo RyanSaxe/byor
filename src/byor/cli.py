@@ -268,12 +268,6 @@ def _add_agent_check_arguments(command: argparse.ArgumentParser) -> None:
         default="text",
         help="Output format (default: text)",
     )
-    command.add_argument(
-        "--max-results",
-        type=int,
-        metavar="N",
-        help="Forwarded to ast-grep scan; also raises the 20-diagnostic render cap",
-    )
 
 
 def _add_doctor_arguments(command: argparse.ArgumentParser) -> None:

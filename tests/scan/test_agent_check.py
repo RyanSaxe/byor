@@ -147,9 +147,11 @@ def test_diagnostics_group_by_file_then_sort_by_line_and_rule_id(
     assert locations == ["a.py:1:15", "a.py:1:5", "a.py:2:5", "b.py:1:5"]
 
 
-def test_renders_at_most_twenty_diagnostics_with_overflow_line(
+def test_renders_every_diagnostic_without_truncation(
     check_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Every in-scope diagnostic is rendered: the agent must see the full set,
+    not a truncated sample it could mistake for the whole job."""
     source = check_repo / "src.py"
     source.write_text("".join(f"v{i} = cast(int, {i})\n" for i in range(21)))
 
@@ -157,22 +159,7 @@ def test_renders_at_most_twenty_diagnostics_with_overflow_line(
 
     out = capsys.readouterr().out
     assert out.startswith("BYOR found 21 issues in AI-written code.\n")
-    assert out.count("Rule: no-python-cast") == 20
-    assert out.endswith(
-        "...and 1 more diagnostics. Run ast-grep scan for the full list.\n"
-    )
-
-
-def test_max_results_is_forwarded_to_ast_grep(
-    check_repo: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    source = check_repo / "src.py"
-    source.write_text("".join(f"v{i} = cast(int, {i})\n" for i in range(3)))
-
-    assert check(check_repo, "--files", str(source), "--max-results", "1") == 2
-
-    out = capsys.readouterr().out
-    assert out.startswith("BYOR found 1 issue in AI-written code.\n")
+    assert out.count("Rule: no-python-cast") == 21
     assert "more diagnostics" not in out
 
 

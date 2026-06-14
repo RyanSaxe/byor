@@ -20,7 +20,7 @@ to run byor.
 
 ```bash
 byor agent-check [--repo PATH] [--files FILE ...] [--scope edit|diff|file]
-                   [--format text|json] [--max-results N]
+                   [--format text|json]
 ```
 
 Runs `ast-grep scan --json=compact --include-metadata --color never` on the
@@ -52,17 +52,11 @@ Instruction:
 Do not use typing.cast here. Fix the type by narrowing, changing the signature, introducing a protocol, or restructuring the value flow. If the cast is genuinely necessary, leave a concise comment explaining the invariant that the type checker cannot see.
 ```
 
-At most 20 diagnostics render by default; when more exist the output ends
-with:
-
-```text
-...and N more diagnostics. Run ast-grep scan for the full list.
-```
-
-`--max-results N` is forwarded to ast-grep and also replaces the 20-diagnostic
-render cap. `--format json` prints all diagnostics as
-`{"issues": [{"file", "line", "column", "rule_id", "severity", "message",
-"code", "instruction"}, ...]}` with 1-based positions and repo-relative paths.
+Every in-scope diagnostic is rendered — the agent sees the full set, never a
+truncated sample it could mistake for the whole job. `--format json` prints all
+diagnostics as `{"issues": [{"file", "line", "column", "rule_id", "severity",
+"message", "code", "instruction"}, ...]}` with 1-based positions and
+repo-relative paths.
 
 `--scope` keeps only diagnostics whose lines overlap the chosen ranges
 (default: `file` with `--files`, `edit` in hook mode). `diff` scopes to

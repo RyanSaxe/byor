@@ -23,7 +23,6 @@ from byor.scan.checks import CheckOutcome, load_effective_checks, run_checks
 from byor.scan.linescope import Range, diff_ranges, edit_ranges, overlaps
 
 DIAGNOSTICS_EXIT_CODE = 2
-DEFAULT_RENDER_LIMIT = 20
 
 Scope = Literal["edit", "diff", "file"]
 
@@ -64,7 +63,7 @@ def _run_files(
     if args.format == "json":
         print(json.dumps(_json_payload(diagnostics, outcome), indent=2))
     else:
-        for line in render_diagnostics(diagnostics, _render_limit(args)):
+        for line in render_diagnostics(diagnostics):
             print(line)
         for section in outcome.failures:
             print(section)
@@ -107,7 +106,7 @@ def _hook_diagnostics(
     outcome = run_checks(checks, repo_root, scoped)
     for warning in outcome.warnings:
         print(warning, file=sys.stderr)
-    rendered = _render_feedback(diagnostics, outcome, _render_limit(args))
+    rendered = _render_feedback(diagnostics, outcome)
     stdout, exit_code = emit(harness, rendered)
     if stdout:
         print(stdout)
@@ -138,11 +137,9 @@ def _json_payload(
     return payload
 
 
-def _render_feedback(
-    diagnostics: list[Diagnostic], outcome: CheckOutcome, limit: int
-) -> str:
+def _render_feedback(diagnostics: list[Diagnostic], outcome: CheckOutcome) -> str:
     """Combine ast-grep diagnostics and failing-check sections for the emitter."""
-    sections = render_diagnostics(diagnostics, limit) + outcome.failures
+    sections = render_diagnostics(diagnostics) + outcome.failures
     return "\n".join(sections)
 
 
@@ -174,19 +171,13 @@ def _diagnostics(
     config = None if _repo_initialized(repo_root) else home_sgconfig_path()
     config_dir = global_config_dir()
     executable = resolve_ast_grep(load_global_config(config_dir).ast_grep_command)
-    result = scan_files(
-        executable, repo_root, files, max_results=args.max_results, config=config
-    )
+    result = scan_files(executable, repo_root, files, config=config)
     if result.warnings:
         print(result.warnings, file=sys.stderr)
     matches = result.matches
     if scope != "file":
         matches = _matches_in_scope(matches, repo_root, scope, payload)
     return collect_diagnostics(matches, repo_root)
-
-
-def _render_limit(args: argparse.Namespace) -> int:
-    return args.max_results if args.max_results is not None else DEFAULT_RENDER_LIMIT
 
 
 def _resolve_scope(args: argparse.Namespace, harness: Harness | None) -> Scope:
@@ -293,14 +284,14 @@ def collect_diagnostics(matches: list[ScanMatch], repo_root: Path) -> list[Diagn
     return diagnostics
 
 
-def render_diagnostics(diagnostics: list[Diagnostic], limit: int) -> list[str]:
+def render_diagnostics(diagnostics: list[Diagnostic]) -> list[str]:
     """The rendered text output; empty when there are no diagnostics."""
     if not diagnostics:
         return []
     total = len(diagnostics)
     noun = "issue" if total == 1 else "issues"
     lines = [f"BYOR found {total} {noun} in AI-written code."]
-    for diagnostic in diagnostics[:limit]:
+    for diagnostic in diagnostics:
         lines += [
             "",
             f"{diagnostic.file}:{diagnostic.line}:{diagnostic.column}",
@@ -311,11 +302,5 @@ def render_diagnostics(diagnostics: list[Diagnostic], limit: int) -> list[str]:
             "",
             "Instruction:",
             diagnostic.instruction,
-        ]
-    if total > limit:
-        lines += [
-            "",
-            f"...and {total - limit} more diagnostics."
-            " Run ast-grep scan for the full list.",
         ]
     return lines
