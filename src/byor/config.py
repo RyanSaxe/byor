@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -315,6 +316,14 @@ def _check_def(entry: object, path: Path) -> CheckDef:
     run = _string(entry, "run", "", path)
     if not name or not run:
         raise ConfigError(f"{path}: each check needs a non-empty 'name' and 'run'")
+    try:
+        argv = shlex.split(run)
+    except ValueError as error:
+        raise ConfigError(
+            f"{path}: check '{name}' has an invalid 'run': {error}"
+        ) from error
+    if not argv:
+        raise ConfigError(f"{path}: check '{name}' has an empty 'run' command")
     return CheckDef(
         name=name,
         extensions=_string_list(entry, "extensions", path),

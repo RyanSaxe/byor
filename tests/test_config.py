@@ -71,6 +71,17 @@ def test_repo_config_rejects_a_check_missing_name_or_run(tmp_path: Path) -> None
         load_repo_config(tmp_path)
 
 
+def test_repo_config_rejects_a_check_with_an_unparseable_run(tmp_path: Path) -> None:
+    (tmp_path / ".byor").mkdir()
+    # run value is the single token `cmd "` — an unterminated shell quote.
+    (tmp_path / ".byor" / "config.yml").write_text(
+        "version: 1\nchecks:\n  - name: bad\n    run: 'cmd \"'\n"
+    )
+
+    with pytest.raises(ConfigError, match="invalid 'run'"):
+        load_repo_config(tmp_path)
+
+
 def test_local_config_defaults_when_file_absent(tmp_path: Path) -> None:
     assert load_local_config(tmp_path) == LocalConfig()
 

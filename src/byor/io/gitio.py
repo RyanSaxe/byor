@@ -18,3 +18,9 @@ def git_stdout(repo_root: Path, *args: str) -> str | None:
     except OSError:
         return None
     return result.stdout if result.returncode == 0 else None
+
+
+def git_output(repo_root: Path, *args: str) -> str | None:
+    """Stripped stdout of a git query, or None when git is missing or it fails."""
+    output = (git_stdout(repo_root, *args) or "").strip()
+    return output or None

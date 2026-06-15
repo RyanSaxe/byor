@@ -5,6 +5,20 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from byor.errors import ConfigError
+
+
+def resolve_within(root: Path, candidate: Path) -> Path:
+    """Resolve `candidate` and require it to stay within `root`.
+
+    Confines config-supplied paths (e.g. a repo's `personal_global_rules`) so
+    byor never writes to or deletes from outside the repository it operates on.
+    """
+    resolved = candidate.resolve()
+    if not resolved.is_relative_to(root.resolve()):
+        raise ConfigError(f"{candidate} resolves outside {root}")
+    return resolved
+
 
 def global_config_dir() -> Path:
     """$XDG_CONFIG_HOME/byor when set, else ~/.config/byor, on every platform."""

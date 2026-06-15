@@ -107,3 +107,20 @@ def test_missing_command_warns_once_and_does_not_fail(tmp_path: Path) -> None:
     assert outcome.failures == []
     assert len(outcome.warnings) == 1
     assert "ghost" in outcome.warnings[0]
+
+
+def test_uninvocable_command_warns_and_does_not_crash(tmp_path: Path) -> None:
+    # argv[0] is a directory, so exec raises an OSError other than FileNotFound.
+    not_executable = tmp_path / "adir"
+    not_executable.mkdir()
+    check = EffectiveCheck(
+        CheckDef("dir", ["py"], shlex.join([str(not_executable)])), origin="repo"
+    )
+    target = tmp_path / "src.py"
+    target.write_text("x = 1\n")
+
+    outcome = run_checks([check], tmp_path, [target])
+
+    assert outcome.failures == []
+    assert len(outcome.warnings) == 1
+    assert "dir" in outcome.warnings[0]

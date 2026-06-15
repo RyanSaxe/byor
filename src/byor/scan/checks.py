@@ -76,25 +76,40 @@ def load_effective_checks(repo_root: Path, config_dir: Path) -> list[EffectiveCh
     """Load the repo, global, and local configs and merge into effective checks.
 
     The single I/O wrapper around the pure `effective_checks`; every surface
-    (`agent-check`, `list`, `doctor`) routes through it so a missing repo config
-    or a malformed `.byor/local.yml` behaves identically everywhere. Returns
-    `[]` when the repo is not initialized.
+    (`agent-check`, `list`, `doctor`) routes through it. User-owned global checks
+    are personal standards that apply in every repo, so they load even when the
+    repo is not byor-initialized; repo checks load only when `.byor/config.yml`
+    exists. `.byor/local.yml` exclusions are honored either way.
     """
-    if not repo_config_path(repo_root).is_file():
-        return []
+    repo_config = (
+        load_repo_config(repo_root)
+        if repo_config_path(repo_root).is_file()
+        else RepoConfig()
+    )
     return effective_checks(
-        load_repo_config(repo_root),
+        repo_config,
         load_global_config(config_dir),
         load_local_config(repo_root),
     )
 
 
 def run_checks(
-    checks: list[EffectiveCheck], repo_root: Path, files: list[Path]
+    checks: list[EffectiveCheck],
+    repo_root: Path,
+    files: list[Path],
+    whole_repo: bool = False,
 ) -> CheckOutcome:
-    """Run each check whose extensions match an in-scope file."""
+    """Run each check whose extensions match an in-scope file.
+
+    `whole_repo` is the no-`--files` `agent-check` invocation: every check runs
+    once with no file arguments, so the command scans the repository itself
+    (e.g. a bare `ruff check`), mirroring ast-grep's whole-repo scan.
+    """
     outcome = CheckOutcome()
     for check in checks:
+        if whole_repo:
+            _run_one(check, repo_root, [], outcome)
+            continue
         matching = _matching_files(check.definition, files)
         if not matching:
             continue
@@ -110,9 +125,9 @@ def _run_one(
         result = subprocess.run(
             argv, cwd=repo_root, capture_output=True, text=True, check=False
         )
-    except FileNotFoundError:
+    except OSError as error:
         outcome.warnings.append(
-            f"byor: check '{check.name}' command not found: {argv[0]}"
+            f"byor: check '{check.name}' could not run ({argv[0]}): {error}"
         )
         return
     if result.returncode != 0:

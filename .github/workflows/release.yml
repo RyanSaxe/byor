@@ -1,9 +1,14 @@
 name: Release
 
 # One-click release: trigger from the Actions tab and pick the version part to
-# bump. This job runs the gates, bumps the version, publishes to PyPI, pushes the
-# "chore: release vX.Y.Z" commit to main, and creates a GitHub Release with
-# generated notes. Nothing to tag or publish by hand.
+# bump. The job runs the gates, then either starts a fresh release or finishes
+# an interrupted one, and publishes to PyPI as its final step.
+#
+# Recovery is automatic and never double-bumps. PyPI publication is the last
+# mutating step, so "the current version is on PyPI" reliably means "fully
+# released": the job bumps only when the current version is already published,
+# and otherwise finishes publishing the current version. Every git/GitHub step
+# is idempotent, so re-running after any partial failure converges.
 #
 # One-time setup (already done for byor):
 #   1. Register a Trusted Publisher at
@@ -33,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # full history for generated release notes
+          fetch-depth: 0  # full history and tags for notes and idempotent tagging
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
@@ -44,26 +49,46 @@ jobs:
       - run: uv run ty check
       - run: uv run pytest
 
-      - name: Bump version
+      # Fresh release vs. recovery: bump only when the current version is already
+      # on PyPI; otherwise finish publishing the current (unreleased) version.
+      - name: Resolve release version
+        id: version
         run: |
-          uv version --bump ${{ inputs.bump }}
+          current=$(uv version --short --color never)
+          if curl -fsSo /dev/null "https://pypi.org/pypi/byor/$current/json"; then
+            echo "v$current is already on PyPI; bumping ${{ inputs.bump }}."
+            uv version --bump ${{ inputs.bump }}
+            echo "bumped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "v$current is not on PyPI; finishing its release."
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+          fi
           echo "VERSION=$(uv version --short --color never)" >> "$GITHUB_ENV"
 
       - run: uv build
 
-      # Publish before pushing: a failed upload leaves main untouched and the run
-      # re-runnable, so the PyPI version is only ever consumed on success.
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-
-      - name: Push the version bump
+      - name: Commit, tag, and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "chore: release v$VERSION"
-          git push
+          if [ "${{ steps.version.outputs.bumped }}" = "true" ]; then
+            git commit -am "chore: release v$VERSION"
+          fi
+          git tag "v$VERSION" 2>/dev/null || echo "tag v$VERSION already exists"
+          git push origin HEAD
+          git push origin "v$VERSION"
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "v$VERSION" --generate-notes --title "v$VERSION"
+        run: |
+          gh release view "v$VERSION" >/dev/null 2>&1 \
+            || gh release create "v$VERSION" --generate-notes --title "v$VERSION"
+
+      # Last mutating step: once this succeeds the release is complete, so the
+      # next run sees the version on PyPI and bumps. skip-existing keeps a
+      # recovery re-run idempotent.
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true

@@ -57,7 +57,9 @@ def _run_files(
     scoped = _scoped_files(files, scope)
     diagnostics = _diagnostics(args, repo_root, scoped, scope, payload=None)
     checks = load_effective_checks(repo_root, global_config_dir())
-    outcome = run_checks(checks, repo_root, scoped)
+    outcome = run_checks(
+        checks, repo_root, scoped, whole_repo=scope == "file" and not scoped
+    )
     for warning in outcome.warnings:
         print(warning, file=sys.stderr)
     if args.format == "json":
@@ -91,11 +93,12 @@ def _hook_diagnostics(
     """Parse the payload, scan, and emit per harness.
 
     Global hooks fire in every repo. A byor-init'd repo scopes against its own
-    rules; any other repo applies your global rules via the home sgconfig. With
-    neither in play there is nothing to check, so byor stays silent (exit 0)
-    without reading stdin or shelling out to ast-grep.
+    rules; any other repo applies your global rules via the home sgconfig and any
+    user-owned global checks. With none of those in play there is nothing to
+    check, so byor stays silent (exit 0) without reading stdin or shelling out.
     """
-    if not _has_any_rules(repo_root):
+    config_dir = global_config_dir()
+    if not _has_any_rules(repo_root) and not load_global_config(config_dir).checks:
         return 0
     payload = _resolved_payload(parse_payload(harness, sys.stdin.read()), repo_root)
     if not payload.files:
@@ -103,7 +106,7 @@ def _hook_diagnostics(
     scope = _resolve_scope(args, harness)
     scoped = _scoped_files(payload.files, scope)
     diagnostics = _diagnostics(args, repo_root, scoped, scope, payload)
-    checks = load_effective_checks(repo_root, global_config_dir())
+    checks = load_effective_checks(repo_root, config_dir)
     outcome = run_checks(checks, repo_root, scoped)
     for warning in outcome.warnings:
         print(warning, file=sys.stderr)

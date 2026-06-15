@@ -19,7 +19,7 @@ from byor.config import (
     repo_registry_path,
 )
 from byor.io.fsio import MANAGED_MARKER, write_marked_text, write_text_atomic
-from byor.io.paths import global_config_dir, resolve_repo_root
+from byor.io.paths import global_config_dir, resolve_repo_root, resolve_within
 from byor.rules.rules import Rule, check_id_conflicts, discover_rule_files, load_rules
 from byor.rules.skill import SKILL_MARKDOWN, global_skill_paths
 from byor.scaffold.ignore import write_rule_visibility_file
@@ -130,7 +130,7 @@ def repo_sync_plan(repo_root: Path, canonical: CanonicalRules) -> tuple[SyncPlan
         load_local_config(repo_root).excluded_rule_ids,
         canonical,
     )
-    return plan, repo_root / paths.personal_global_rules
+    return plan, resolve_within(repo_root, repo_root / paths.personal_global_rules)
 
 
 def sync_repo(

@@ -90,7 +90,7 @@ def load_rule(path: Path) -> Rule:
     if not isinstance(data.get("rule"), CommentedMap):
         raise RuleValidationError(f"{path}: expected 'rule' to be a mapping")
     return Rule(
-        id=_string(data, "id", path),
+        id=_safe_rule_id(_string(data, "id", path), path),
         language=_string(data, "language", path),
         message=_string(data, "message", path),
         path=path,
@@ -103,6 +103,20 @@ def load_rule(path: Path) -> Rule:
 def load_rules(rules_dir: Path) -> list[Rule]:
     """Discover and parse every rule below rules_dir."""
     return [load_rule(path) for path in discover_rule_files(rules_dir)]
+
+
+def _safe_rule_id(rule_id: str, path: Path) -> str:
+    """A rule's id becomes its filename (`<id>.yml`), so it must be a bare name.
+
+    Rejects path separators and traversal components outright; the softer
+    recommended-pattern check (uppercase, dots) stays a warning.
+    """
+    if rule_id in ("", ".", "..") or "\\" in rule_id or rule_id != Path(rule_id).name:
+        raise RuleValidationError(
+            f"{path}: rule ID '{rule_id}' must be a bare name, with no path "
+            "separators or '..' components"
+        )
+    return rule_id
 
 
 def rule_id_warnings(rules: Iterable[Rule]) -> list[str]:

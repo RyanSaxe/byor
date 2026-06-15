@@ -27,7 +27,8 @@ Runs `ast-grep scan --json=compact --include-metadata --color never` on the
 given files (the whole repository when `--files` is omitted) and renders each
 match with the rule's `metadata.byor.agent_prompt`, falling back to
 `message` when the rule has none. It then runs any configured extra checks (see
-[Extra checks](#extra-checks)) on the in-scope files.
+[Extra checks](#extra-checks)) on the in-scope files, or across the whole
+repository when `--files` is omitted.
 
 Exit codes:
 
@@ -108,8 +109,10 @@ warning line to stderr and is skipped — it never crashes the hook. `byor
 list` and `byor doctor` show the effective checks with their origin and any
 exclusions.
 
-Trust model: committed checks run on every contributor's machine, the same
-model as pre-commit hooks. Only add checks whose commands you trust.
+Scope: project checks live in committed `.byor/config.yml`, so they are shared
+with anyone who works in the repo — like a committed pre-commit config — and
+apply only to that repo. Global checks are your own and run in every repo you
+work in. Only commit (or add) checks whose commands you trust.
 
 ## Installing and removing integrations
 
