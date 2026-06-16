@@ -271,9 +271,11 @@ exit 2, appends the diagnostics to the tool output the model sees. Any other
 exit code appends nothing, so a byor configuration error never breaks the
 agent loop.
 
-The plugin covers `edit`, `write`, and `apply_patch` calls that name a single
-`filePath`; a multi-file `apply_patch` or a file changed another way (for
-example via a shell command) is not auto-checked.
+`edit` and `write` name the touched file in `filePath`; `apply_patch` — the
+only edit tool some models (e.g. GPT-5) use — instead carries a `patchText`,
+so the plugin reads the changed paths from its `*** Add File:` / `*** Update
+File:` markers and checks each. A file changed another way (for example via a
+shell command) is not auto-checked.
 
 ### pi
 

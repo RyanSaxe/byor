@@ -17,6 +17,7 @@ def test_install_writes_the_plugin(home: Path) -> None:
     assert plugin.startswith(OPENCODE_MARKER)
     assert '"tool.execute.after"' in plugin
     assert '["edit", "write", "apply_patch"]' in plugin
+    assert "patchText" in plugin  # apply_patch paths come from the patch text
     assert "byor agent-check --scope diff --files" in plugin
     assert ".nothrow()" in plugin  # exit codes other than 2 never break the loop
     assert "output.output" in plugin
