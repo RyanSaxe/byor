@@ -20,7 +20,7 @@ to run byor.
 
 ```bash
 byor agent-check [--repo PATH] [--files FILE ...] [--scope edit|diff|file]
-                   [--format text|json]
+                   [--format text|json] [--concise]
 ```
 
 Runs `ast-grep scan --json=compact --include-metadata --color never` on the
@@ -59,6 +59,28 @@ truncated sample it could mistake for the whole job. `--format json` prints all
 diagnostics as `{"issues": [{"file", "line", "column", "rule_id", "severity",
 "message", "code", "instruction"}, ...]}` with 1-based positions and
 repo-relative paths.
+
+`--concise` trims each diagnostic to its location and fix instruction, dropping
+the code block and the redundant `Message` line — fewer tokens injected back into
+the agent on every matching edit, while keeping the guidance it needs to
+self-correct:
+
+```text
+BYOR found 1 issue in AI-written code.
+
+src/example.py:3:9  [warning] no-python-cast
+Do not use typing.cast here. Fix the type by narrowing, changing the signature, introducing a protocol, or restructuring the value flow. If the cast is genuinely necessary, leave a concise comment explaining the invariant that the type checker cannot see.
+```
+
+To make it the default in every repo, including hook runs, opt in globally in
+`~/.config/byor/config.yml`:
+
+```yaml
+output:
+  concise: true
+```
+
+`--format json` is unaffected — JSON always carries every field.
 
 `--scope` keeps only diagnostics whose lines overlap the chosen ranges
 (default: `file` with `--files`, `edit` in hook mode). `diff` scopes to
