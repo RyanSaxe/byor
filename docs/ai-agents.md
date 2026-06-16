@@ -130,7 +130,7 @@ before it reports — the agent then spends tokens only on what it could not fix
 #!/usr/bin/env zsh
 # byor appends the in-scope files as arguments.
 [[ $# -eq 0 ]] && exit 0
-uvx ruff check --fix --quiet "$@"
+uvx ruff check --fix-only --quiet "$@"   # apply fixes without reporting them
 uvx ruff format --quiet "$@"
 # Report only the irreducible remainder; a nonzero exit makes byor surface it.
 uvx ruff check --output-format concise "$@"
