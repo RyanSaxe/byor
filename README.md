@@ -101,7 +101,7 @@ byor supports five harnesses:
 | Harness | Skill | Real hook | Diagnostic precision |
 | --- | --- | --- | --- |
 | Claude Code | yes | `PostToolUse` | the edited lines |
-| Codex | yes | `PostToolUse` | the patched lines |
+| Codex | yes | `PostToolUse` | the edited lines |
 | Copilot CLI | yes | `postToolUse` | the edited lines |
 | OpenCode | yes | `tool.execute.after` plugin | the changed file |
 | Pi | yes | `tool_result` extension | the changed file |
