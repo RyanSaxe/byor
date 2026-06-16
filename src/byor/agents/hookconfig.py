@@ -57,7 +57,7 @@ HOOK_SPECS: dict[Harness, HookSpec] = {
         harness="claude-code",
         global_relpath="settings.json",
         key_path=("hooks", "PostToolUse"),
-        matcher="Write|Edit|MultiEdit|NotebookEdit",
+        matcher="Write|Edit|MultiEdit",
         nests_command=True,
         stderr_feedback=True,
     ),

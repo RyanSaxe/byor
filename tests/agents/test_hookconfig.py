@@ -141,6 +141,13 @@ def test_copilot_uninstall_deletes_its_owned_file(isolated_home: Path) -> None:
     assert not config_path(isolated_home, "copilot").exists()
 
 
+def test_claude_code_matcher_excludes_notebook_edit() -> None:
+    # NotebookEdit payloads carry notebook_path/new_source, which the parser
+    # cannot read, so the hook must not subscribe to them and scan nothing.
+    matcher = HOOK_SPECS["claude-code"].matcher
+    assert matcher is not None and "NotebookEdit" not in matcher
+
+
 def test_malformed_config_raises_a_clean_config_error(isolated_home: Path) -> None:
     path = config_path(isolated_home, "cursor")
     path.parent.mkdir(parents=True)
