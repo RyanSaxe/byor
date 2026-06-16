@@ -82,6 +82,8 @@ class GlobalConfig:
     rules_path: str = "rules"
     repos_path: str = "repos.yml"
     ast_grep_command: str = "auto"
+    output_concise: bool = False
+    """Trim text diagnostics to one line plus the fix; `--concise` forces it on."""
     agents: list[str] = field(default_factory=list)
     """The AI agents registered globally by `byor install` / `byor hook install`."""
     checks: list[CheckDef] = field(default_factory=list)
@@ -198,6 +200,7 @@ def load_global_config(config_dir: Path) -> GlobalConfig:
     _check_version(data, path)
     paths = _section(data, "paths", path)
     ast_grep = _section(data, "ast_grep", path)
+    output = _section(data, "output", path)
     ai = _section(data, "ai", path)
     init = _section(data, "init", path)
     defaults = GlobalConfig()
@@ -205,6 +208,7 @@ def load_global_config(config_dir: Path) -> GlobalConfig:
         rules_path=_string(paths, "rules", defaults.rules_path, path),
         repos_path=_string(paths, "repos", defaults.repos_path, path),
         ast_grep_command=_string(ast_grep, "command", defaults.ast_grep_command, path),
+        output_concise=_bool(output, "concise", defaults.output_concise, path),
         agents=_string_list(ai, "agents", path),
         checks=_check_defs(data, path),
         init=InitDefaults(
@@ -222,6 +226,7 @@ def save_global_config(config_dir: Path, config: GlobalConfig) -> None:
         data, "paths", {"rules": config.rules_path, "repos": config.repos_path}
     )
     _update_section(data, "ast_grep", {"command": config.ast_grep_command})
+    _update_section(data, "output", {"concise": config.output_concise})
     _update_section(data, "ai", {"agents": list(config.agents)})
     _write_checks(data, config.checks)
     _write_init_defaults(data, config.init)
@@ -289,6 +294,13 @@ def _string(section: CommentedMap, key: str, default: str, path: Path) -> str:
     value = section.get(key, default)
     if not isinstance(value, str):
         raise ConfigError(f"{path}: expected '{key}' to be a string")
+    return value
+
+
+def _bool(section: CommentedMap, key: str, default: bool, path: Path) -> bool:
+    value = section.get(key, default)
+    if not isinstance(value, bool):
+        raise ConfigError(f"{path}: expected '{key}' to be a boolean")
     return value
 
 
