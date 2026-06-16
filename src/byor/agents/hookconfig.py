@@ -84,6 +84,7 @@ HOOK_SPECS: dict[Harness, HookSpec] = {
         key_path=("hooks", "postToolUse"),
         matcher=None,
         nests_command=False,
+        root_fields={"version": 1},
     ),
 }
 
@@ -98,7 +99,10 @@ def install_hook(harness: Harness) -> list[str]:
     config = _load_config(path, relpath)
     entries = _entries(config, spec, relpath)
     current = _byor_entry(spec)
-    if current in entries:
+    root_present = all(
+        config.get(key) == value for key, value in spec.root_fields.items()
+    )
+    if current in entries and root_present:
         return []
     kept = [entry for entry in entries if not _is_byor_entry(entry)]
     if any(_contains_byor_command(entry) for entry in kept):

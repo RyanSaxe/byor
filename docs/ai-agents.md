@@ -300,6 +300,16 @@ Codex must be recent enough that `apply_patch` edits fire `PostToolUse` hooks:
 older versions (through ~0.118) fired them only for the Bash tool, so byor saw
 no edits there.
 
+### cursor
+
+Install writes a `postToolUse` hook into `~/.cursor/hooks.json` with the
+required `version: 1`, and replies with `additional_context` (which Cursor reads
+on `postToolUse`, not on the output-less `afterFileEdit` hook). The parser
+accepts `file_path`/`edits` both at the top level and nested under `tool_input`.
+Cursor has no headless CLI to dogfood against, so the `postToolUse`
+`tool_input` field names are a best effort pending verification on a live
+Cursor.
+
 ### claude-code
 
 Install merges a `PostToolUse` hook into `~/.claude/settings.json`, creating it

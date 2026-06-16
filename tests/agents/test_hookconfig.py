@@ -141,6 +141,20 @@ def test_copilot_uninstall_deletes_its_owned_file(isolated_home: Path) -> None:
     assert not config_path(isolated_home, "copilot").exists()
 
 
+def test_cursor_install_backfills_the_required_version(isolated_home: Path) -> None:
+    # An old byor-written hooks.json has the byor entry but no version field;
+    # reinstalling must add it, not short-circuit on the matching entry.
+    path = config_path(isolated_home, "cursor")
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps({"hooks": {"postToolUse": [{"command": hook_command("cursor")}]}})
+    )
+
+    assert install_hook("cursor")  # not a no-op: it backfills version
+
+    assert json.loads(path.read_text())["version"] == 1
+
+
 def test_claude_code_matcher_excludes_notebook_edit() -> None:
     # NotebookEdit payloads carry notebook_path/new_source, which the parser
     # cannot read, so the hook must not subscribe to them and scan nothing.

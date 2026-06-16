@@ -83,11 +83,21 @@ def _claude_edit_contents(tool_input: dict[str, JsonValue]) -> list[str]:
 
 
 def _parse_cursor(payload: dict[str, JsonValue]) -> EditPayload:
-    """file_path plus edits[] of old_string/new_string pairs."""
-    file_path = _string(payload.get("file_path"))
+    """file_path plus edits[], at the top level or nested under tool_input.
+
+    Cursor's `postToolUse` hook nests the tool's arguments under `tool_input`,
+    while the dedicated `afterFileEdit` hook puts file_path/edits at the top
+    level; accept either. Cursor has no local CLI to dogfood against, so the
+    nested field names are a best effort pending live verification — the
+    top-level shape is confirmed.
+    """
+    source = payload.get("tool_input")
+    if not isinstance(source, dict):
+        source = payload
+    file_path = _string(source.get("file_path"))
     if file_path is None:
         return EditPayload()
-    contents = _new_strings_from_edits(payload.get("edits"))
+    contents = _new_strings_from_edits(source.get("edits"))
     path = Path(file_path)
     return EditPayload(files=[path], edits={path: contents})
 

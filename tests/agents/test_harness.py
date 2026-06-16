@@ -42,17 +42,30 @@ def test_claude_code_collects_multiedit_and_content_strings() -> None:
     assert payload.edits == {Path("/repo/src.py"): ["whole file\n", "a", "b"]}
 
 
-def test_cursor_parses_file_path_and_edits() -> None:
-    raw = json.dumps(
+def test_cursor_parses_top_level_and_nested_edits() -> None:
+    # afterFileEdit puts file_path/edits at the top level; postToolUse nests
+    # them under tool_input. Both resolve to the same payload.
+    top_level = json.dumps(
         {
             "file_path": "/repo/app.ts",
-            "edits": [{"old_string": "old", "new_string": "new"}],
+            "edits": [{"old_string": "o", "new_string": "new"}],
         }
     )
-
-    assert parse_payload("cursor", raw) == EditPayload(
+    nested = json.dumps(
+        {
+            "tool_name": "edit",
+            "tool_input": {
+                "file_path": "/repo/app.ts",
+                "edits": [{"new_string": "new"}],
+            },
+        }
+    )
+    expected = EditPayload(
         files=[Path("/repo/app.ts")], edits={Path("/repo/app.ts"): ["new"]}
     )
+
+    assert parse_payload("cursor", top_level) == expected
+    assert parse_payload("cursor", nested) == expected
 
 
 def test_copilot_decodes_stringified_tool_args_and_edit_text() -> None:
