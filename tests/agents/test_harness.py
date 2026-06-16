@@ -55,18 +55,36 @@ def test_cursor_parses_file_path_and_edits() -> None:
     )
 
 
-def test_copilot_extracts_path_from_tool_args() -> None:
-    raw = json.dumps({"toolName": "edit", "toolArgs": {"filePath": "/repo/m.go"}})
+def test_copilot_decodes_stringified_tool_args_and_edit_text() -> None:
+    # Copilot's CLI delivers toolArgs as a JSON-encoded string, not an object.
+    raw = json.dumps(
+        {
+            "toolName": "edit",
+            "toolArgs": json.dumps({"path": "/repo/m.go", "new_str": "x = 1\n"}),
+        }
+    )
 
     payload = parse_payload("copilot", raw)
 
     assert payload.files == [Path("/repo/m.go")]
-    # No recognizable edit string: scope this file by diff (empty contents).
-    assert payload.edits == {Path("/repo/m.go"): []}
+    assert payload.edits == {Path("/repo/m.go"): ["x = 1\n"]}
+
+
+def test_copilot_captures_create_file_text() -> None:
+    raw = json.dumps(
+        {
+            "toolName": "create",
+            "toolArgs": json.dumps({"path": "/r/n.py", "file_text": "y\n"}),
+        }
+    )
+
+    assert parse_payload("copilot", raw) == EditPayload(
+        files=[Path("/r/n.py")], edits={Path("/r/n.py"): ["y\n"]}
+    )
 
 
 def test_copilot_without_a_recognizable_path_scans_nothing() -> None:
-    raw = json.dumps({"toolName": "shell", "toolArgs": {"command": "ls"}})
+    raw = json.dumps({"toolName": "shell", "toolArgs": json.dumps({"command": "ls"})})
 
     assert parse_payload("copilot", raw) == EditPayload()
 

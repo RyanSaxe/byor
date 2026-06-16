@@ -93,16 +93,30 @@ def _parse_cursor(payload: dict[str, JsonValue]) -> EditPayload:
 
 
 def _parse_copilot(payload: dict[str, JsonValue]) -> EditPayload:
-    """toolArgs with a best-effort path; undocumented shape falls back to diff."""
-    tool_args = payload.get("toolArgs")
-    if not isinstance(tool_args, dict):
+    """toolArgs (a JSON-encoded string) carrying the edit tool's path and text."""
+    tool_args = _copilot_tool_args(payload.get("toolArgs"))
+    if tool_args is None:
         return EditPayload()
-    file_path = next(iter(_strings(tool_args, ("filePath", "file_path", "path"))), None)
+    file_path = next(iter(_strings(tool_args, ("path", "filePath", "file_path"))), None)
     if file_path is None:
         return EditPayload()
-    contents = _strings(tool_args, ("newString", "new_string", "content"))
+    contents = _strings(tool_args, ("new_str", "file_text", "new_string", "content"))
     path = Path(file_path)
     return EditPayload(files=[path], edits={path: contents})
+
+
+def _copilot_tool_args(value: JsonValue) -> dict[str, JsonValue] | None:
+    """Copilot delivers `toolArgs` as a JSON string; decode it to a mapping.
+
+    The SDK surface documents an object instead, so an already-decoded mapping is
+    accepted too; anything else (or undecodable JSON) scans nothing.
+    """
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+    return value if isinstance(value, dict) else None
 
 
 def _parse_codex(payload: dict[str, JsonValue]) -> EditPayload:
