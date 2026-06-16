@@ -99,14 +99,6 @@ def test_codex_install_prints_the_trust_step(
     assert "/hooks" in capsys.readouterr().out
 
 
-def test_cursor_is_a_full_agent_choice(home: Path) -> None:
-    assert main(["hook", "install", "--agent", "cursor"]) == 0
-
-    hooks = json.loads((home / ".cursor" / "hooks.json").read_text())
-    assert BYOR_COMMAND_SIGNATURE in json.dumps(hooks)
-    assert global_agents() == ["cursor"]
-
-
 def test_doctor_flags_a_recorded_harness_whose_hook_was_removed(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -78,14 +78,6 @@ HOOK_SPECS: dict[Harness, HookSpec] = {
         root_fields={"version": 1},
         owns_file=True,
     ),
-    "cursor": HookSpec(
-        harness="cursor",
-        global_relpath="hooks.json",
-        key_path=("hooks", "postToolUse"),
-        matcher=None,
-        nests_command=False,
-        root_fields={"version": 1},
-    ),
 }
 
 
@@ -99,16 +91,11 @@ def install_hook(harness: Harness) -> list[str]:
     config = _load_config(path, relpath)
     entries = _entries(config, spec, relpath)
     current = _byor_entry(spec)
-    root_present = all(
-        config.get(key) == value for key, value in spec.root_fields.items()
-    )
-    if current in entries and root_present:
+    if current in entries:
         return []
     kept = [entry for entry in entries if not _is_byor_entry(entry)]
     if any(_contains_byor_command(entry) for entry in kept):
         return []
-    for key, value in spec.root_fields.items():
-        config.setdefault(key, value)
     _set_entries(config, spec, [*kept, current])
     _save_config(path, config)
     return [f"Installed a {harness} post-edit hook in {relpath}"]
@@ -147,9 +134,6 @@ def uninstall_hook(harness: Harness) -> list[str]:
     if len(kept) == len(entries):
         return []
     _set_entries(config, spec, kept)
-    if not kept:
-        for key in spec.root_fields:
-            config.pop(key, None)
     if config:
         _save_config(path, config)
     else:
@@ -188,7 +172,6 @@ _GLOBAL_DIRS: dict[Harness, str] = {
     "claude-code": ".claude",
     "codex": ".codex",
     "copilot": ".copilot",
-    "cursor": ".cursor",
 }
 
 

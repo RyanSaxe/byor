@@ -1,4 +1,4 @@
-"""Normalized hook payloads and responses across the five harnesses.
+"""Normalized hook payloads and responses across the stdin-hook harnesses.
 
 Each harness pipes a different post-edit JSON shape on stdin and reads back a
 different feedback channel. This module is the single normalized pipeline:
@@ -21,9 +21,9 @@ JsonValue: TypeAlias = (
     "None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]"
 )
 
-Harness = Literal["claude-code", "codex", "copilot", "cursor"]
+Harness = Literal["claude-code", "codex", "copilot"]
 
-HARNESS_CHOICES: tuple[Harness, ...] = ("claude-code", "codex", "copilot", "cursor")
+HARNESS_CHOICES: tuple[Harness, ...] = ("claude-code", "codex", "copilot")
 
 # Copilot caps additionalContext at 10KB; keep a margin for the JSON envelope.
 COPILOT_CONTEXT_CAP = 10_000
@@ -80,26 +80,6 @@ def _claude_edit_contents(tool_input: dict[str, JsonValue]) -> list[str]:
     """Post-edit strings from a Write/Edit/MultiEdit payload, in any combination."""
     direct = _strings(tool_input, ("new_string", "content"))
     return direct + _new_strings_from_edits(tool_input.get("edits"))
-
-
-def _parse_cursor(payload: dict[str, JsonValue]) -> EditPayload:
-    """file_path plus edits[], at the top level or nested under tool_input.
-
-    Cursor's `postToolUse` hook nests the tool's arguments under `tool_input`,
-    while the dedicated `afterFileEdit` hook puts file_path/edits at the top
-    level; accept either. Cursor has no local CLI to dogfood against, so the
-    nested field names are a best effort pending live verification — the
-    top-level shape is confirmed.
-    """
-    source = payload.get("tool_input")
-    if not isinstance(source, dict):
-        source = payload
-    file_path = _string(source.get("file_path"))
-    if file_path is None:
-        return EditPayload()
-    contents = _new_strings_from_edits(source.get("edits"))
-    path = Path(file_path)
-    return EditPayload(files=[path], edits={path: contents})
 
 
 def _parse_copilot(payload: dict[str, JsonValue]) -> EditPayload:
@@ -209,11 +189,6 @@ def _emit_copilot(rendered: str) -> tuple[str, int]:
     return json.dumps(envelope, separators=(",", ":")), 0
 
 
-def _emit_cursor(rendered: str) -> tuple[str, int]:
-    envelope: dict[str, JsonValue] = {"additional_context": rendered}
-    return json.dumps(envelope, separators=(",", ":")), 0
-
-
 def _truncate_to_cap(rendered: str) -> str:
     """Trim diagnostics so the encoded copilot envelope fits the 10KB cap.
 
@@ -267,12 +242,10 @@ _PARSERS: dict[Harness, _Parser] = {
     "claude-code": _parse_claude_code,
     "codex": _parse_codex,
     "copilot": _parse_copilot,
-    "cursor": _parse_cursor,
 }
 
 _EMITTERS: dict[Harness, _Emitter] = {
     "claude-code": _emit_claude_code,
     "codex": _emit_codex,
     "copilot": _emit_copilot,
-    "cursor": _emit_cursor,
 }

@@ -27,9 +27,9 @@ def test_install_records_agents_globally_and_adds_the_skill(home: Path) -> None:
 
 def test_install_is_idempotent_and_merges_without_duplicates(home: Path) -> None:
     main(["install", "--non-interactive", "--agents", "claude-code,codex"])
-    main(["install", "--non-interactive", "--agents", "claude-code,cursor"])
+    main(["install", "--non-interactive", "--agents", "claude-code,copilot"])
 
-    assert global_agents() == ["claude-code", "codex", "skill", "cursor"]
+    assert global_agents() == ["claude-code", "codex", "skill", "copilot"]
 
 
 def test_unknown_agent_fails_cleanly(

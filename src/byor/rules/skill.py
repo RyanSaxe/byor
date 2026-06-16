@@ -22,9 +22,9 @@ from byor.rules.rules import ALLOW_EXCEPTIONS_SENTENCE
 def global_skill_paths(home: Path | None = None) -> tuple[Path, Path]:
     """The two global locations byor writes the rendered skill to.
 
-    `~/.agents/skills/byor/SKILL.md` is read by Cursor, Codex, Copilot, opencode,
-    and pi; `~/.claude/skills/byor/SKILL.md` by Claude Code, which reads only its
-    own directory. The skill describes byor itself, not any repo, so a single
+    `~/.agents/skills/byor/SKILL.md` is read by Codex, Copilot, opencode, and pi;
+    `~/.claude/skills/byor/SKILL.md` by Claude Code, which reads only its own
+    directory. The skill describes byor itself, not any repo, so a single
     render per machine — kept current by self-heal — serves every repo.
     """
     base = home or Path.home()

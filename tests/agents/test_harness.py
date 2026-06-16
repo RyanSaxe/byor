@@ -42,32 +42,6 @@ def test_claude_code_collects_multiedit_and_content_strings() -> None:
     assert payload.edits == {Path("/repo/src.py"): ["whole file\n", "a", "b"]}
 
 
-def test_cursor_parses_top_level_and_nested_edits() -> None:
-    # afterFileEdit puts file_path/edits at the top level; postToolUse nests
-    # them under tool_input. Both resolve to the same payload.
-    top_level = json.dumps(
-        {
-            "file_path": "/repo/app.ts",
-            "edits": [{"old_string": "o", "new_string": "new"}],
-        }
-    )
-    nested = json.dumps(
-        {
-            "tool_name": "edit",
-            "tool_input": {
-                "file_path": "/repo/app.ts",
-                "edits": [{"new_string": "new"}],
-            },
-        }
-    )
-    expected = EditPayload(
-        files=[Path("/repo/app.ts")], edits={Path("/repo/app.ts"): ["new"]}
-    )
-
-    assert parse_payload("cursor", top_level) == expected
-    assert parse_payload("cursor", nested) == expected
-
-
 def test_copilot_decodes_stringified_tool_args_and_edit_text() -> None:
     # Copilot's CLI delivers toolArgs as a JSON-encoded string, not an object.
     raw = json.dumps(
@@ -137,7 +111,7 @@ def test_apply_patch_handles_multiple_files_and_pure_deletions() -> None:
 
 
 def test_malformed_payloads_fail_open_to_an_empty_result() -> None:
-    for harness in ("claude-code", "codex", "copilot", "cursor"):
+    for harness in ("claude-code", "codex", "copilot"):
         assert parse_payload(harness, "{not json") == EditPayload()
         assert parse_payload(harness, "[]") == EditPayload()
         assert parse_payload(harness, "{}") == EditPayload()
@@ -161,13 +135,6 @@ def test_codex_emitter_wraps_text_in_hook_specific_output() -> None:
     assert "\n" not in stdout
 
 
-def test_cursor_emitter_uses_additional_context() -> None:
-    stdout, code = emit("cursor", "diag text")
-
-    assert code == 0
-    assert json.loads(stdout) == {"additional_context": "diag text"}
-
-
 def test_copilot_emitter_truncates_to_the_ten_kb_cap() -> None:
     # Newlines double under JSON escaping, so the encoded envelope, not the raw
     # text, must stay within the cap.
@@ -179,5 +146,5 @@ def test_copilot_emitter_truncates_to_the_ten_kb_cap() -> None:
 
 
 def test_empty_diagnostics_emit_plain_exit_zero_everywhere() -> None:
-    for harness in ("claude-code", "codex", "copilot", "cursor"):
+    for harness in ("claude-code", "codex", "copilot"):
         assert emit(harness, "") == ("", 0)
