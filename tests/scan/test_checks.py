@@ -4,6 +4,8 @@ import shlex
 import sys
 from pathlib import Path
 
+import pytest
+
 from byor.config import CheckDef, GlobalConfig, LocalConfig, RepoConfig
 from byor.scan.checks import EffectiveCheck, effective_checks, run_checks
 
@@ -92,6 +94,27 @@ def test_check_skips_files_whose_extension_does_not_match(tmp_path: Path) -> Non
     outcome = run_checks([check], tmp_path, [only_js])
 
     assert outcome.failures == []
+
+
+def test_run_command_expands_a_leading_tilde_to_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    scripts = home / ".config" / "byor" / "scripts"
+    scripts.mkdir(parents=True)
+    script = scripts / "check.py"
+    script.write_text("print('ran from home'); raise SystemExit(1)\n")
+    monkeypatch.setenv("HOME", str(home))
+    run = f"{shlex.quote(sys.executable)} ~/.config/byor/scripts/check.py"
+    check = EffectiveCheck(CheckDef("tilde", ["py"], run), origin="global")
+    target = tmp_path / "src.py"
+    target.write_text("x = 1\n")
+
+    outcome = run_checks([check], tmp_path, [target])
+
+    assert outcome.warnings == []
+    assert len(outcome.failures) == 1
+    assert "ran from home" in outcome.failures[0]
 
 
 def test_missing_command_warns_once_and_does_not_fail(tmp_path: Path) -> None:

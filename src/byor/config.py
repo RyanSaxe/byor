@@ -28,8 +28,10 @@ class RepoPaths:
 class CheckDef:
     """An extra command-line check run after ast-grep.
 
-    `run` is shlex-split into argv; in-scope files are appended as trailing
-    arguments. `extensions` (no dots) filters which files trigger the check.
+    `run` is shlex-split into argv and run without a shell; the in-scope files
+    are appended as trailing arguments, so the command must accept a list of
+    file paths. A leading `~`/`~/` in the command expands to the user's home.
+    `extensions` (no dots) filters which files trigger the check.
     """
 
     name: str
