@@ -19,6 +19,7 @@ from byor.config import (
     save_repo_config,
 )
 from byor.scaffold.sgconfig import ensure_home_sgconfig
+from byor.scan.agent_check import Diagnostic, render_diagnostics
 
 CAST_PROMPT = (
     "Do not use typing.cast here. Fix the type by narrowing, changing the "
@@ -130,6 +131,60 @@ def test_one_diagnostic_renders_the_spec_block(
         "Instruction:\n"
         f"{CAST_PROMPT}\n"
     )
+
+
+def test_concise_render_keeps_location_severity_and_instruction() -> None:
+    diagnostic = Diagnostic(
+        file="src.py",
+        line=2,
+        column=5,
+        rule_id="no-print",
+        severity="warning",
+        message="Avoid print in library code.",
+        code='print("x")',
+        instruction="Use the logger instead.",
+    )
+
+    assert render_diagnostics([diagnostic], concise=True) == [
+        "BYOR found 1 issue in AI-written code.",
+        "",
+        "src.py:2:5  [warning] no-print",
+        "Use the logger instead.",
+    ]
+
+
+def test_concise_flag_trims_the_verbose_block(
+    check_repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = check_repo / "src.py"
+    source.write_text('from typing import cast\nx = cast(int, "1")\n')
+
+    args = agent_check_args(check_repo, "--files", str(source), "--concise")
+    assert main(args) == 2
+
+    assert capsys.readouterr().out == (
+        "BYOR found 1 issue in AI-written code.\n"
+        "\n"
+        "src.py:2:5  [warning] no-python-cast\n"
+        f"{CAST_PROMPT}\n"
+    )
+
+
+def test_global_concise_setting_applies_without_the_flag(
+    check_repo: Path, home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config_dir = home / "xdg" / "byor"
+    config = load_global_config(config_dir)
+    config.output_concise = True
+    save_global_config(config_dir, config)
+    source = check_repo / "src.py"
+    source.write_text('from typing import cast\nx = cast(int, "1")\n')
+
+    assert main(agent_check_args(check_repo, "--files", str(source))) == 2
+
+    concise = capsys.readouterr().out
+    assert "src.py:2:5  [warning] no-python-cast" in concise
+    assert "Code:" not in concise
 
 
 def test_multiline_code_renders_exact_indentation_behind_numbered_gutter(

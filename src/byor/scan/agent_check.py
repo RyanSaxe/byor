@@ -54,9 +54,10 @@ def _run_files(
     args: argparse.Namespace, repo_root: Path, files: list[Path], scope: Scope
 ) -> int:
     """The `--files` path: print diagnostics in the requested text/json format."""
+    config_dir = global_config_dir()
     scoped = _scoped_files(files, scope)
     diagnostics = _diagnostics(args, repo_root, scoped, scope, payload=None)
-    checks = load_effective_checks(repo_root, global_config_dir())
+    checks = load_effective_checks(repo_root, config_dir)
     outcome = run_checks(
         checks, repo_root, scoped, whole_repo=scope == "file" and not scoped
     )
@@ -65,7 +66,8 @@ def _run_files(
     if args.format == "json":
         print(json.dumps(_json_payload(diagnostics, outcome), indent=2))
     else:
-        for line in render_diagnostics(diagnostics):
+        concise = _resolve_concise(args, config_dir)
+        for line in render_diagnostics(diagnostics, concise):
             print(line)
         for section in outcome.failures:
             print(section)
@@ -98,7 +100,8 @@ def _hook_diagnostics(
     check, so byor stays silent (exit 0) without reading stdin or shelling out.
     """
     config_dir = global_config_dir()
-    if not _has_any_rules(repo_root) and not load_global_config(config_dir).checks:
+    global_config = load_global_config(config_dir)
+    if not _has_any_rules(repo_root) and not global_config.checks:
         return 0
     payload = _resolved_payload(parse_payload(harness, sys.stdin.read()), repo_root)
     if not payload.files:
@@ -110,7 +113,8 @@ def _hook_diagnostics(
     outcome = run_checks(checks, repo_root, scoped)
     for warning in outcome.warnings:
         print(warning, file=sys.stderr)
-    rendered = _render_feedback(diagnostics, outcome)
+    concise = args.concise or global_config.output_concise
+    rendered = _render_feedback(diagnostics, outcome, concise)
     stdout, exit_code = emit(harness, rendered)
     if stdout:
         print(stdout)
@@ -141,10 +145,17 @@ def _json_payload(
     return payload
 
 
-def _render_feedback(diagnostics: list[Diagnostic], outcome: CheckOutcome) -> str:
+def _render_feedback(
+    diagnostics: list[Diagnostic], outcome: CheckOutcome, concise: bool
+) -> str:
     """Combine ast-grep diagnostics and failing-check sections for the emitter."""
-    sections = render_diagnostics(diagnostics) + outcome.failures
+    sections = render_diagnostics(diagnostics, concise) + outcome.failures
     return "\n".join(sections)
+
+
+def _resolve_concise(args: argparse.Namespace, config_dir: Path) -> bool:
+    """Concise when `--concise` is passed or the global config opts in."""
+    return args.concise or load_global_config(config_dir).output_concise
 
 
 def _has_any_rules(repo_root: Path) -> bool:
@@ -283,13 +294,25 @@ def collect_diagnostics(matches: list[ScanMatch], repo_root: Path) -> list[Diagn
     return diagnostics
 
 
-def render_diagnostics(diagnostics: list[Diagnostic]) -> list[str]:
+def render_diagnostics(
+    diagnostics: list[Diagnostic], concise: bool = False
+) -> list[str]:
     """The rendered text output; empty when there are no diagnostics."""
     if not diagnostics:
         return []
+    header = [_summary_line(diagnostics)]
+    body = _render_concise(diagnostics) if concise else _render_verbose(diagnostics)
+    return header + body
+
+
+def _summary_line(diagnostics: list[Diagnostic]) -> str:
     total = len(diagnostics)
     noun = "issue" if total == 1 else "issues"
-    lines = [f"BYOR found {total} {noun} in AI-written code."]
+    return f"BYOR found {total} {noun} in AI-written code."
+
+
+def _render_verbose(diagnostics: list[Diagnostic]) -> list[str]:
+    lines: list[str] = []
     for diagnostic in diagnostics:
         lines += [
             "",
@@ -300,6 +323,19 @@ def render_diagnostics(diagnostics: list[Diagnostic]) -> list[str]:
             *_render_code(diagnostic.code, diagnostic.line),
             "",
             "Instruction:",
+            diagnostic.instruction,
+        ]
+    return lines
+
+
+def _render_concise(diagnostics: list[Diagnostic]) -> list[str]:
+    """One location line plus the fix instruction; no code block or ceremony."""
+    lines: list[str] = []
+    for diagnostic in diagnostics:
+        location = f"{diagnostic.file}:{diagnostic.line}:{diagnostic.column}"
+        lines += [
+            "",
+            f"{location}  [{diagnostic.severity}] {diagnostic.rule_id}",
             diagnostic.instruction,
         ]
     return lines

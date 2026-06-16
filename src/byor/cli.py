@@ -256,6 +256,11 @@ def _add_agent_check_arguments(command: argparse.ArgumentParser) -> None:
         default="text",
         help="Output format (default: text)",
     )
+    command.add_argument(
+        "--concise",
+        action="store_true",
+        help="Trim each diagnostic to its location and fix (or set output.concise)",
+    )
 
 
 def _add_doctor_arguments(command: argparse.ArgumentParser) -> None:

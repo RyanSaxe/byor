@@ -148,6 +148,21 @@ def test_global_config_round_trips_checks_and_init_defaults(tmp_path: Path) -> N
     assert load_global_config(tmp_path) == config
 
 
+def test_global_config_round_trips_output_concise(tmp_path: Path) -> None:
+    config = GlobalConfig(output_concise=True)
+
+    save_global_config(tmp_path, config)
+
+    assert load_global_config(tmp_path) == config
+
+
+def test_global_config_rejects_non_boolean_concise(tmp_path: Path) -> None:
+    (tmp_path / "config.yml").write_text("version: 1\noutput:\n  concise: maybe\n")
+
+    with pytest.raises(ConfigError, match="concise"):
+        load_global_config(tmp_path)
+
+
 def test_global_init_defaults_absent_when_unset(tmp_path: Path) -> None:
     (tmp_path / "config.yml").write_text("version: 1\n")
 
@@ -162,6 +177,7 @@ def test_global_config_partial_file_fills_defaults(tmp_path: Path) -> None:
     assert loaded.ast_grep_command == "sg"
     assert loaded.rules_path == "rules"
     assert loaded.repos_path == "repos.yml"
+    assert loaded.output_concise is False
 
 
 def test_global_paths_resolve_relative_to_config_dir_unless_absolute(

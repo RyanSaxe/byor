@@ -2,7 +2,7 @@ from importlib.metadata import version
 
 import pytest
 
-from byor.cli import main
+from byor.cli import build_parser, main
 
 
 def test_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
@@ -26,3 +26,10 @@ def test_unknown_command_exits_nonzero() -> None:
         main(["frobnicate"])
 
     assert excinfo.value.code != 0
+
+
+def test_agent_check_concise_defaults_false_and_flag_sets_it() -> None:
+    parser = build_parser()
+
+    assert parser.parse_args(["agent-check"]).concise is False
+    assert parser.parse_args(["agent-check", "--concise"]).concise is True
