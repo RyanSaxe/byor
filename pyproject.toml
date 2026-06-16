@@ -1,6 +1,6 @@
 [project]
 name = "byor"
-version = "0.1.1"
+version = "0.1.2"
 description = "Make custom ast-grep diagnostics easy to set up, share, and expose to AI agents"
 readme = "README.md"
 authors = [
