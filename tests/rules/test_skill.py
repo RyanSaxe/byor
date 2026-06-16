@@ -61,6 +61,16 @@ def test_skill_teaches_the_full_capture_loop(home: Path) -> None:
     assert ALLOW_EXCEPTIONS_SENTENCE in content
 
 
+def test_skill_teaches_authoring_a_check_script(home: Path) -> None:
+    install_agents(home)
+    content = global_skill_paths(home)[0].read_text()
+
+    # The script path: pick a tool, or write a check script for bespoke logic.
+    assert "Author a check script" in content
+    assert "without a shell" in content
+    assert "trailing path arguments" in content
+
+
 def test_uninstall_removes_only_marked_renders(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

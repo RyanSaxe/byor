@@ -7,10 +7,19 @@ check's raw output is appended under a `### <name>` header and yields the same
 diagnostics-exist exit code as an ast-grep finding. A missing command warns
 once and never crashes the hook — committed checks run on contributors'
 machines under the same trust model as pre-commit.
+
+The command is `shlex.split` and run directly (never through a shell): that is
+what keeps a committed check string from being a shell-injection vector, so
+there is no `&&`, pipe, redirection, or alias — multi-step logic belongs in a
+script the check points at. byor expands a leading `~`/`~/` in the command
+itself so such a script can live under `~/.config/byor` and resolve everywhere;
+the in-scope files are appended as trailing arguments, so a check command must
+accept a list of file paths.
 """
 
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 from dataclasses import dataclass, field
@@ -120,7 +129,8 @@ def run_checks(
 def _run_one(
     check: EffectiveCheck, repo_root: Path, files: list[Path], outcome: CheckOutcome
 ) -> None:
-    argv = shlex.split(check.definition.run) + [str(file) for file in files]
+    command = [_expand_home(token) for token in shlex.split(check.definition.run)]
+    argv = command + [str(file) for file in files]
     try:
         result = subprocess.run(
             argv, cwd=repo_root, capture_output=True, text=True, check=False
@@ -132,6 +142,20 @@ def _run_one(
         return
     if result.returncode != 0:
         outcome.failures.append(_section(check.name, result.stdout, result.stderr))
+
+
+def _expand_home(token: str) -> str:
+    """Expand a leading ``~``/``~/`` to the user's home; leave any other token literal.
+
+    Checks run without a shell (see the module docstring), so byor expands the
+    home shorthand itself — but only the unambiguous home forms, never a
+    mid-token ``~`` or a ``~user`` that might be meant literally. This is what
+    lets a check point ``run`` at a script under ``~/.config/byor`` and have it
+    resolve in every repo.
+    """
+    if token == "~" or token.startswith("~/"):
+        return os.path.expanduser(token)
+    return token
 
 
 def _matching_files(check: CheckDef, files: list[Path]) -> list[Path]:
