@@ -92,9 +92,15 @@ checks:
 
 `run` is shlex-split into argv and invoked directly (never through a shell);
 the in-scope files whose extension is listed in `extensions` are appended as
-trailing arguments (an empty `extensions` matches every in-scope file). Checks
-merge by `name` with the repo config winning over the global one, and
-`.byor/local.yml` disables them per repo:
+trailing arguments (an empty `extensions` matches every in-scope file), so **a
+check command must accept a list of file paths**. The command runs without a
+shell — that is what keeps a committed check string from being a
+shell-injection vector — so there is no `&&`, pipe, redirection, or alias.
+Anything multi-step (autofix, then format, then report the rest) belongs in a
+script the check points at; byor expands a leading `~`/`~/` in the command so
+that script can live under `~/.config/byor` and resolve in every repo (see
+[Check scripts](#check-scripts)). Checks merge by `name` with the repo config
+winning over the global one, and `.byor/local.yml` disables them per repo:
 
 ```yaml
 checks:
@@ -113,6 +119,33 @@ Scope: project checks live in committed `.byor/config.yml`, so they are shared
 with anyone who works in the repo — like a committed pre-commit config — and
 apply only to that repo. Global checks are your own and run in every repo you
 work in. Only commit (or add) checks whose commands you trust.
+
+### Check scripts
+
+Because `run` is a single shell-free command, anything with more than one step
+goes in a script the check points at. A script also lets a check *autofix*
+before it reports — the agent then spends tokens only on what it could not fix:
+
+```sh
+#!/usr/bin/env zsh
+# byor appends the in-scope files as arguments.
+[[ $# -eq 0 ]] && exit 0
+uvx ruff check --fix --quiet "$@"
+uvx ruff format --quiet "$@"
+# Report only the irreducible remainder; a nonzero exit makes byor surface it.
+uvx ruff check --output-format concise "$@"
+```
+
+A check script must accept the trailing file-path arguments, exit nonzero when
+a file still violates, and keep its output concise (it lands in the agent's
+context verbatim). Put it where it is callable and matches the policy's scope:
+a personal standard near the global config (`~/.config/byor/scripts/`,
+referenced with `~/`); a repo policy committed in the repo
+(`.byor/scripts/`, referenced by its repo-relative path, which already
+resolves against the repo root). Make it executable, or name the interpreter in
+`run` (`run: zsh ~/.config/byor/scripts/ruff.sh`). The bundled rule-capture
+skill walks an agent through authoring one when a policy fits a script better
+than an ast-grep rule or an off-the-shelf tool.
 
 ## Installing and removing integrations
 
