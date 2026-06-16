@@ -106,6 +106,42 @@ channel), in CI, and/or as a pre-commit hook. That setup is a normal
 engineering task you perform directly; it does not go through the byor rule
 commands. Keep ast-grep for the syntax patterns it is uniquely good at.
 
+## Author a check script
+
+Some policies are mechanically checkable but are neither a syntax shape ast-grep
+matches nor something an off-the-shelf tool already owns — they need real logic
+over the file. For these, write a small script and wire it as a byor `check`.
+Like the tool setup above, this is a normal engineering task you do directly,
+not through the byor rule commands.
+
+A byor check runs your command on the in-scope files **without a shell** (so no
+`&&`, pipe, or alias) and appends them as trailing path arguments. So the
+script:
+
+- accepts a list of file paths as its arguments;
+- exits nonzero, with concise output, when any file still violates — that output
+  is fed verbatim into the agent's context, so keep it short;
+- may autofix in place first and then report only what it could not fix, so the
+  next agent spends tokens only on the remainder.
+
+Put it where it is callable and matches the policy's scope: a personal standard
+near the global config (`~/.config/byor/scripts/`, referenced in `run` with
+`~/`, which byor expands); a repo policy committed with the repo
+(`.byor/scripts/`, referenced by its repo-relative path). Make it executable
+with a shebang, or name the interpreter in `run`. Then add the check — to the
+global config for a personal standard, or to `.byor/config.yml` for a project
+one:
+
+```yaml
+checks:
+  - name: no-banned-env
+    extensions: [py]
+    run: ~/.config/byor/scripts/no-banned-env.sh
+```
+
+Verify it like a rule: `byor list` (or `byor doctor`) shows the effective check
+and its origin; then trip it on an example file to confirm it fires.
+
 ## When to Decline
 
 If the preference is not expressible as an ast-grep pattern and no linter,
