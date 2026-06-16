@@ -103,9 +103,16 @@ byor supports six harnesses:
 | Claude Code | yes | `PostToolUse` | the edited lines |
 | Codex | yes | `PostToolUse` | the patched lines |
 | Copilot CLI | yes | `postToolUse` | best-effort path |
-| Cursor | yes | `postToolUse` | the edited lines |
+| Cursor | yes | `postToolUse`¹ | the edited lines |
 | OpenCode | yes | `tool.execute.after` plugin | the changed file |
 | Pi | yes | `tool_result` extension | the changed file |
+
+¹ **Cursor hook is unreliable.** byor installs the hook and returns
+`additional_context`, but Cursor often does not inject it into the agent's
+context — and in some builds the hook does not fire at all. Cursor has
+[confirmed this upstream](https://forum.cursor.com/t/native-posttooluse-hooks-accept-and-log-additional-context-successfully-but-the-injected-context-is-not-surfaced-to-the-model/155689)
+(forum thread; there is no public GitHub issue). Treat the Cursor integration
+as best-effort until Cursor fixes the consumer-side plumbing.
 
 A `checks:` section in `.byor/config.yml` (or your global config) runs extra
 command-line tools (a linter, a type checker, anything) on the changed files and
