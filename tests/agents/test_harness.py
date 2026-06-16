@@ -99,7 +99,7 @@ def test_codex_parses_the_apply_patch_envelope() -> None:
         "+also = 2\n"
         "*** End Patch"
     )
-    raw = json.dumps({"tool_name": "shell", "tool_input": {"command": patch}})
+    raw = json.dumps({"tool_name": "apply_patch", "tool_input": {"command": patch}})
 
     payload = parse_payload("codex", raw)
 

@@ -65,7 +65,7 @@ HOOK_SPECS: dict[Harness, HookSpec] = {
         harness="codex",
         global_relpath="hooks.json",
         key_path=("hooks", "PostToolUse"),
-        matcher="Edit|Write",
+        matcher="apply_patch|Edit|Write",
         nests_command=True,
     ),
     "copilot": HookSpec(

@@ -289,10 +289,16 @@ work.
 
 ### codex
 
-Install writes a `PostToolUse` hook (matcher `Edit|Write`) into
-`~/.codex/hooks.json`. Codex does not run a new hook until you trust it: run
-`/hooks` in the Codex session and approve the byor entry once —
-`byor hook install --agent codex` prints this reminder.
+Install writes a `PostToolUse` hook (matcher `apply_patch|Edit|Write`) into
+`~/.codex/hooks.json`. Codex edits files through `apply_patch` (its real
+`tool_name`); `Edit`/`Write` remain in the matcher as Codex's documented
+aliases. Codex does not run a new hook until you trust it: run `/hooks` in the
+Codex session and approve the byor entry once — `byor hook install --agent
+codex` prints this reminder.
+
+Codex must be recent enough that `apply_patch` edits fire `PostToolUse` hooks:
+older versions (through ~0.118) fired them only for the Bash tool, so byor saw
+no edits there.
 
 ### claude-code
 

@@ -293,7 +293,7 @@ def test_codex_hook_edit_scopes_an_apply_patch_and_emits_its_json(
         "+b = cast(int, 2)\n"
         "*** End Patch"
     )
-    stdin(monkeypatch, {"tool_name": "shell", "tool_input": {"command": patch}})
+    stdin(monkeypatch, {"tool_name": "apply_patch", "tool_input": {"command": patch}})
 
     assert main(agent_check_args(check_repo, "--stdin-hook", "codex")) == 0
 
