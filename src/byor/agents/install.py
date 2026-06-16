@@ -26,7 +26,7 @@ from byor.io.fsio import MANAGED_MARKER, marked_text_status, write_marked_text
 from byor.io.paths import global_config_dir
 from byor.rules.skill import SKILL_MARKDOWN, global_skill_paths
 
-# The four real-hook harnesses: a set for membership, a map for Harness lookup.
+# The stdin-hook harnesses: a set for membership, a map for Harness lookup.
 HOOK_HARNESSES: frozenset[str] = frozenset(HARNESS_CHOICES)
 HARNESS_BY_NAME: dict[str, Harness] = {harness: harness for harness in HARNESS_CHOICES}
 
@@ -53,7 +53,6 @@ AGENT_CHOICES = (
     "claude-code",
     "codex",
     "copilot",
-    "cursor",
     "opencode",
     "pi",
     "skill",

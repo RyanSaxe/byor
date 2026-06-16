@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from byor.agents.harness import Harness, JsonValue
@@ -43,6 +43,13 @@ class HookSpec:
     """True when the command lives in a nested hooks[] list (claude/codex)."""
     stderr_feedback: bool = False
     """True when the harness reads feedback from stderr + exit 2, not stdout JSON."""
+    typed_entry: bool = False
+    """True when a flat entry must carry `"type": "command"` (copilot)."""
+    root_fields: dict[str, JsonValue] = field(default_factory=dict)
+    """Top-level keys the config file requires (e.g. `{"version": 1}`)."""
+    owns_file: bool = False
+    """True when the file is byor's alone (a dedicated `byor.json`), so install
+    writes it wholesale and uninstall deletes it — no user entries to preserve."""
 
 
 HOOK_SPECS: dict[Harness, HookSpec] = {
@@ -50,7 +57,7 @@ HOOK_SPECS: dict[Harness, HookSpec] = {
         harness="claude-code",
         global_relpath="settings.json",
         key_path=("hooks", "PostToolUse"),
-        matcher="Write|Edit|MultiEdit|NotebookEdit",
+        matcher="Write|Edit|MultiEdit",
         nests_command=True,
         stderr_feedback=True,
     ),
@@ -58,22 +65,18 @@ HOOK_SPECS: dict[Harness, HookSpec] = {
         harness="codex",
         global_relpath="hooks.json",
         key_path=("hooks", "PostToolUse"),
-        matcher="Edit|Write",
+        matcher="apply_patch|Edit|Write",
         nests_command=True,
     ),
     "copilot": HookSpec(
         harness="copilot",
         global_relpath="hooks/byor.json",
-        key_path=("postToolUse",),
-        matcher=None,
-        nests_command=False,
-    ),
-    "cursor": HookSpec(
-        harness="cursor",
-        global_relpath="hooks.json",
         key_path=("hooks", "postToolUse"),
         matcher=None,
         nests_command=False,
+        typed_entry=True,
+        root_fields={"version": 1},
+        owns_file=True,
     ),
 }
 
@@ -83,6 +86,8 @@ def install_hook(harness: Harness) -> list[str]:
     spec = HOOK_SPECS[harness]
     path = _config_path(spec)
     relpath = _display_relpath(spec)
+    if spec.owns_file:
+        return _install_owned_hook(spec, path, relpath)
     config = _load_config(path, relpath)
     entries = _entries(config, spec, relpath)
     current = _byor_entry(spec)
@@ -96,6 +101,21 @@ def install_hook(harness: Harness) -> list[str]:
     return [f"Installed a {harness} post-edit hook in {relpath}"]
 
 
+def _install_owned_hook(spec: HookSpec, path: Path, relpath: str) -> list[str]:
+    """Write a byor-dedicated hook file wholesale; its name (`byor.json`) is ours."""
+    desired = _owned_config(spec)
+    if path.is_file() and _load_config(path, relpath) == desired:
+        return []
+    _save_config(path, desired)
+    return [f"Installed a {spec.harness} post-edit hook in {relpath}"]
+
+
+def _owned_config(spec: HookSpec) -> dict[str, JsonValue]:
+    config: dict[str, JsonValue] = dict(spec.root_fields)
+    _set_entries(config, spec, [_byor_entry(spec)])
+    return config
+
+
 def uninstall_hook(harness: Harness) -> list[str]:
     """Drop byor-owned entries from the global config; user entries stay."""
     spec = HOOK_SPECS[harness]
@@ -103,6 +123,11 @@ def uninstall_hook(harness: Harness) -> list[str]:
     relpath = _display_relpath(spec)
     if not path.is_file():
         return []
+    if spec.owns_file:
+        if not hook_installed(harness):
+            return []
+        path.unlink()
+        return [f"Removed the {harness} post-edit hook from {relpath}"]
     config = _load_config(path, relpath)
     entries = _entries(config, spec, relpath)
     kept = [entry for entry in entries if not _is_byor_entry(entry)]
@@ -147,7 +172,6 @@ _GLOBAL_DIRS: dict[Harness, str] = {
     "claude-code": ".claude",
     "codex": ".codex",
     "copilot": ".copilot",
-    "cursor": ".cursor",
 }
 
 
@@ -165,6 +189,8 @@ def _byor_entry(spec: HookSpec) -> dict[str, JsonValue]:
         entry: dict[str, JsonValue] = {
             "hooks": [{"type": "command", "command": command}]
         }
+    elif spec.typed_entry:
+        entry = {"type": "command", "command": command}
     else:
         entry = {"command": command}
     if spec.matcher is not None:

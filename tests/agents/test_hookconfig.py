@@ -32,6 +32,11 @@ def config_path(home: Path, harness: Harness) -> Path:
     return global_hook_dir(harness, home) / HOOK_SPECS[harness].global_relpath
 
 
+# Harnesses whose config file may hold the user's own entries (so byor must
+# preserve them); a byor-owned `byor.json` is excluded — byor owns it wholesale.
+SHARED_HARNESSES = [h for h in HARNESS_CHOICES if not HOOK_SPECS[h].owns_file]
+
+
 @pytest.mark.parametrize("harness", HARNESS_CHOICES)
 def test_install_writes_an_unguarded_command(
     harness: Harness, isolated_home: Path
@@ -49,7 +54,7 @@ def test_claude_code_command_redirects_to_stderr() -> None:
     assert hook_command("claude-code") == f"{BYOR_COMMAND_SIGNATURE} claude-code >&2"
 
 
-@pytest.mark.parametrize("harness", ["codex", "copilot", "cursor"])
+@pytest.mark.parametrize("harness", ["codex", "copilot"])
 def test_non_claude_commands_are_bare(harness: Harness) -> None:
     assert hook_command(harness) == f"{BYOR_COMMAND_SIGNATURE} {harness}"
 
@@ -63,7 +68,7 @@ def test_install_is_idempotent(harness: Harness, isolated_home: Path) -> None:
     assert config_path(isolated_home, harness).read_text() == snapshot
 
 
-@pytest.mark.parametrize("harness", HARNESS_CHOICES)
+@pytest.mark.parametrize("harness", SHARED_HARNESSES)
 def test_uninstall_removes_only_the_byor_entry(
     harness: Harness, isolated_home: Path
 ) -> None:
@@ -103,13 +108,53 @@ def test_install_preserves_unrelated_keys_and_user_entries(isolated_home: Path) 
     assert user_group in data["hooks"]["PostToolUse"]
 
 
+def test_copilot_writes_the_documented_envelope(isolated_home: Path) -> None:
+    install_hook("copilot")
+
+    data = json.loads(config_path(isolated_home, "copilot").read_text())
+    assert data == {
+        "version": 1,
+        "hooks": {
+            "postToolUse": [{"type": "command", "command": hook_command("copilot")}]
+        },
+    }
+
+
+def test_copilot_owned_install_overwrites_a_stale_file(isolated_home: Path) -> None:
+    # Upgrading over an old byor-written file must not leave a stale top-level key.
+    path = config_path(isolated_home, "copilot")
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"postToolUse": [{"command": hook_command("copilot")}]}))
+
+    install_hook("copilot")
+
+    data = json.loads(path.read_text())
+    assert "postToolUse" not in data  # the stale top-level key is gone
+    assert data["hooks"]["postToolUse"] == [
+        {"type": "command", "command": hook_command("copilot")}
+    ]
+
+
+def test_copilot_uninstall_deletes_its_owned_file(isolated_home: Path) -> None:
+    install_hook("copilot")
+    assert uninstall_hook("copilot")
+    assert not config_path(isolated_home, "copilot").exists()
+
+
+def test_claude_code_matcher_excludes_notebook_edit() -> None:
+    # NotebookEdit payloads carry notebook_path/new_source, which the parser
+    # cannot read, so the hook must not subscribe to them and scan nothing.
+    matcher = HOOK_SPECS["claude-code"].matcher
+    assert matcher is not None and "NotebookEdit" not in matcher
+
+
 def test_malformed_config_raises_a_clean_config_error(isolated_home: Path) -> None:
-    path = config_path(isolated_home, "cursor")
+    path = config_path(isolated_home, "codex")
     path.parent.mkdir(parents=True)
     path.write_text("{not json")
 
     with pytest.raises(ConfigError, match="not valid JSON"):
-        install_hook("cursor")
+        install_hook("codex")
 
 
 def _config_with_entry(

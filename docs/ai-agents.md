@@ -68,10 +68,10 @@ lines a hook payload's edit touched, so it requires `--stdin-hook`, and falls
 back to `diff` then `file` when the edit contents cannot be located. Under
 `edit`/`diff` scope, files missing on disk are skipped silently.
 
-`--stdin-hook HARNESS` (claude-code|codex|copilot|cursor, instead of `--files`)
+`--stdin-hook HARNESS` (claude-code|codex|copilot, instead of `--files`)
 reads that harness's post-edit JSON payload on stdin, normalizes it to the
 edited file(s) and edit text, and replies in the harness's own feedback format
-(claude-code via stderr + exit 2; codex/copilot/cursor via a JSON envelope on
+(claude-code via stderr + exit 2; codex/copilot via a JSON envelope on
 stdout). Codex payloads carry an `apply_patch` envelope, which byor parses
 for the added lines. Payloads without a recognizable file — including malformed
 ones — exit 0 without scanning, and hook mode is silent in a repo with no
@@ -171,7 +171,7 @@ byor hook install --agent AGENT
 byor hook uninstall --agent AGENT
 ```
 
-`AGENT` is one of `claude-code`, `codex`, `copilot`, `cursor`, `opencode`,
+`AGENT` is one of `claude-code`, `codex`, `copilot`, `opencode`,
 `pi`, or `skill`. byor records the agents you install under `ai.agents` in
 `~/.config/byor/config.yml`, which `doctor` and `hook uninstall` read.
 
@@ -198,15 +198,17 @@ Each integration lands in its agent's own configuration under your home director
 | Agent | Integration |
 | --- | --- |
 | `claude-code` | Real `PostToolUse` hook (`~/.claude/settings.json`) |
-| `codex` | Real `PostToolUse` hook (`~/.codex/hooks.json`, matcher `Edit\|Write`); trust the hook via `/hooks` |
+| `codex` | Real `PostToolUse` hook (`~/.codex/hooks.json`, matcher `apply_patch\|Edit\|Write`); trust the hook via `/hooks` |
 | `copilot` | Real `postToolUse` hook (`~/.copilot/hooks/byor.json`) |
-| `cursor` | Real `postToolUse` hook (`~/.cursor/hooks.json`) |
 | `opencode` | Real `tool.execute.after` plugin (`~/.config/opencode/plugin/byor.ts`) |
 | `pi` | Real `tool_result` extension (`~/.pi/agent/extensions/byor.ts`) |
 | `skill` | Rule-capture skill rendered into `~/.agents/skills/byor/SKILL.md` and `~/.claude/skills/byor/SKILL.md`; installed by `byor install` by default |
 
-Codex, Copilot, Cursor, OpenCode, and Pi auto-discover the `byor` rule-capture
+Codex, Copilot, OpenCode, and Pi auto-discover the `byor` rule-capture
 skill from `~/.agents/skills/byor/SKILL.md`, so they get the capture loop natively.
+
+Cursor and Antigravity are not supported: neither exposes a post-edit hook that
+byor can reliably integrate with, so byor omits them until that changes.
 
 ### skill
 
@@ -245,7 +247,7 @@ no single one is read by every harness:
 | Harness | Reads the skill from |
 | --- | --- |
 | Claude Code | `~/.claude/skills/byor/SKILL.md` |
-| Codex, Cursor, Pi | `~/.agents/skills/byor/SKILL.md` |
+| Codex, Pi | `~/.agents/skills/byor/SKILL.md` |
 | Copilot, OpenCode | `~/.agents/skills/byor/SKILL.md`; also read `~/.claude/skills/` |
 
 byor owns both renders, like the OpenCode plugin or the generated rule copies.
@@ -271,9 +273,11 @@ exit 2, appends the diagnostics to the tool output the model sees. Any other
 exit code appends nothing, so a byor configuration error never breaks the
 agent loop.
 
-The plugin covers `edit`, `write`, and `apply_patch` calls that name a single
-`filePath`; a multi-file `apply_patch` or a file changed another way (for
-example via a shell command) is not auto-checked.
+`edit` and `write` name the touched file in `filePath`; `apply_patch` — the
+only edit tool some models (e.g. GPT-5) use — instead carries a `patchText`,
+so the plugin reads the changed paths from its `*** Add File:` / `*** Update
+File:` markers and checks each. A file changed another way (for example via a
+shell command) is not auto-checked.
 
 ### pi
 
@@ -287,10 +291,16 @@ work.
 
 ### codex
 
-Install writes a `PostToolUse` hook (matcher `Edit|Write`) into
-`~/.codex/hooks.json`. Codex does not run a new hook until you trust it: run
-`/hooks` in the Codex session and approve the byor entry once —
-`byor hook install --agent codex` prints this reminder.
+Install writes a `PostToolUse` hook (matcher `apply_patch|Edit|Write`) into
+`~/.codex/hooks.json`. Codex edits files through `apply_patch` (its real
+`tool_name`); `Edit`/`Write` remain in the matcher as Codex's documented
+aliases. Codex does not run a new hook until you trust it: run `/hooks` in the
+Codex session and approve the byor entry once — `byor hook install --agent
+codex` prints this reminder.
+
+Codex must be recent enough that `apply_patch` edits fire `PostToolUse` hooks:
+older versions (through ~0.118) fired them only for the Bash tool, so byor saw
+no edits there.
 
 ### claude-code
 
@@ -302,7 +312,7 @@ if absent and preserving existing keys and hook groups:
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "matcher": "Write|Edit|MultiEdit",
         "hooks": [
           {
             "type": "command",

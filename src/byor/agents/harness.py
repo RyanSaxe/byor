@@ -1,4 +1,4 @@
-"""Normalized hook payloads and responses across the five harnesses.
+"""Normalized hook payloads and responses across the stdin-hook harnesses.
 
 Each harness pipes a different post-edit JSON shape on stdin and reads back a
 different feedback channel. This module is the single normalized pipeline:
@@ -21,9 +21,9 @@ JsonValue: TypeAlias = (
     "None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]"
 )
 
-Harness = Literal["claude-code", "codex", "copilot", "cursor"]
+Harness = Literal["claude-code", "codex", "copilot"]
 
-HARNESS_CHOICES: tuple[Harness, ...] = ("claude-code", "codex", "copilot", "cursor")
+HARNESS_CHOICES: tuple[Harness, ...] = ("claude-code", "codex", "copilot")
 
 # Copilot caps additionalContext at 10KB; keep a margin for the JSON envelope.
 COPILOT_CONTEXT_CAP = 10_000
@@ -82,27 +82,31 @@ def _claude_edit_contents(tool_input: dict[str, JsonValue]) -> list[str]:
     return direct + _new_strings_from_edits(tool_input.get("edits"))
 
 
-def _parse_cursor(payload: dict[str, JsonValue]) -> EditPayload:
-    """file_path plus edits[] of old_string/new_string pairs."""
-    file_path = _string(payload.get("file_path"))
-    if file_path is None:
-        return EditPayload()
-    contents = _new_strings_from_edits(payload.get("edits"))
-    path = Path(file_path)
-    return EditPayload(files=[path], edits={path: contents})
-
-
 def _parse_copilot(payload: dict[str, JsonValue]) -> EditPayload:
-    """toolArgs with a best-effort path; undocumented shape falls back to diff."""
-    tool_args = payload.get("toolArgs")
-    if not isinstance(tool_args, dict):
+    """toolArgs (a JSON-encoded string) carrying the edit tool's path and text."""
+    tool_args = _copilot_tool_args(payload.get("toolArgs"))
+    if tool_args is None:
         return EditPayload()
-    file_path = next(iter(_strings(tool_args, ("filePath", "file_path", "path"))), None)
+    file_path = next(iter(_strings(tool_args, ("path", "filePath", "file_path"))), None)
     if file_path is None:
         return EditPayload()
-    contents = _strings(tool_args, ("newString", "new_string", "content"))
+    contents = _strings(tool_args, ("new_str", "file_text", "new_string", "content"))
     path = Path(file_path)
     return EditPayload(files=[path], edits={path: contents})
+
+
+def _copilot_tool_args(value: JsonValue) -> dict[str, JsonValue] | None:
+    """Copilot delivers `toolArgs` as a JSON string; decode it to a mapping.
+
+    The SDK surface documents an object instead, so an already-decoded mapping is
+    accepted too; anything else (or undecodable JSON) scans nothing.
+    """
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+    return value if isinstance(value, dict) else None
 
 
 def _parse_codex(payload: dict[str, JsonValue]) -> EditPayload:
@@ -185,11 +189,6 @@ def _emit_copilot(rendered: str) -> tuple[str, int]:
     return json.dumps(envelope, separators=(",", ":")), 0
 
 
-def _emit_cursor(rendered: str) -> tuple[str, int]:
-    envelope: dict[str, JsonValue] = {"additional_context": rendered}
-    return json.dumps(envelope, separators=(",", ":")), 0
-
-
 def _truncate_to_cap(rendered: str) -> str:
     """Trim diagnostics so the encoded copilot envelope fits the 10KB cap.
 
@@ -243,12 +242,10 @@ _PARSERS: dict[Harness, _Parser] = {
     "claude-code": _parse_claude_code,
     "codex": _parse_codex,
     "copilot": _parse_copilot,
-    "cursor": _parse_cursor,
 }
 
 _EMITTERS: dict[Harness, _Emitter] = {
     "claude-code": _emit_claude_code,
     "codex": _emit_codex,
     "copilot": _emit_copilot,
-    "cursor": _emit_cursor,
 }

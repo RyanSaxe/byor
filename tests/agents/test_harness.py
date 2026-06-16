@@ -42,31 +42,36 @@ def test_claude_code_collects_multiedit_and_content_strings() -> None:
     assert payload.edits == {Path("/repo/src.py"): ["whole file\n", "a", "b"]}
 
 
-def test_cursor_parses_file_path_and_edits() -> None:
+def test_copilot_decodes_stringified_tool_args_and_edit_text() -> None:
+    # Copilot's CLI delivers toolArgs as a JSON-encoded string, not an object.
     raw = json.dumps(
         {
-            "file_path": "/repo/app.ts",
-            "edits": [{"old_string": "old", "new_string": "new"}],
+            "toolName": "edit",
+            "toolArgs": json.dumps({"path": "/repo/m.go", "new_str": "x = 1\n"}),
         }
     )
-
-    assert parse_payload("cursor", raw) == EditPayload(
-        files=[Path("/repo/app.ts")], edits={Path("/repo/app.ts"): ["new"]}
-    )
-
-
-def test_copilot_extracts_path_from_tool_args() -> None:
-    raw = json.dumps({"toolName": "edit", "toolArgs": {"filePath": "/repo/m.go"}})
 
     payload = parse_payload("copilot", raw)
 
     assert payload.files == [Path("/repo/m.go")]
-    # No recognizable edit string: scope this file by diff (empty contents).
-    assert payload.edits == {Path("/repo/m.go"): []}
+    assert payload.edits == {Path("/repo/m.go"): ["x = 1\n"]}
+
+
+def test_copilot_captures_create_file_text() -> None:
+    raw = json.dumps(
+        {
+            "toolName": "create",
+            "toolArgs": json.dumps({"path": "/r/n.py", "file_text": "y\n"}),
+        }
+    )
+
+    assert parse_payload("copilot", raw) == EditPayload(
+        files=[Path("/r/n.py")], edits={Path("/r/n.py"): ["y\n"]}
+    )
 
 
 def test_copilot_without_a_recognizable_path_scans_nothing() -> None:
-    raw = json.dumps({"toolName": "shell", "toolArgs": {"command": "ls"}})
+    raw = json.dumps({"toolName": "shell", "toolArgs": json.dumps({"command": "ls"})})
 
     assert parse_payload("copilot", raw) == EditPayload()
 
@@ -81,7 +86,7 @@ def test_codex_parses_the_apply_patch_envelope() -> None:
         "+also = 2\n"
         "*** End Patch"
     )
-    raw = json.dumps({"tool_name": "shell", "tool_input": {"command": patch}})
+    raw = json.dumps({"tool_name": "apply_patch", "tool_input": {"command": patch}})
 
     payload = parse_payload("codex", raw)
 
@@ -106,7 +111,7 @@ def test_apply_patch_handles_multiple_files_and_pure_deletions() -> None:
 
 
 def test_malformed_payloads_fail_open_to_an_empty_result() -> None:
-    for harness in ("claude-code", "codex", "copilot", "cursor"):
+    for harness in ("claude-code", "codex", "copilot"):
         assert parse_payload(harness, "{not json") == EditPayload()
         assert parse_payload(harness, "[]") == EditPayload()
         assert parse_payload(harness, "{}") == EditPayload()
@@ -130,13 +135,6 @@ def test_codex_emitter_wraps_text_in_hook_specific_output() -> None:
     assert "\n" not in stdout
 
 
-def test_cursor_emitter_uses_additional_context() -> None:
-    stdout, code = emit("cursor", "diag text")
-
-    assert code == 0
-    assert json.loads(stdout) == {"additional_context": "diag text"}
-
-
 def test_copilot_emitter_truncates_to_the_ten_kb_cap() -> None:
     # Newlines double under JSON escaping, so the encoded envelope, not the raw
     # text, must stay within the cap.
@@ -148,5 +146,5 @@ def test_copilot_emitter_truncates_to_the_ten_kb_cap() -> None:
 
 
 def test_empty_diagnostics_emit_plain_exit_zero_everywhere() -> None:
-    for harness in ("claude-code", "codex", "copilot", "cursor"):
+    for harness in ("claude-code", "codex", "copilot"):
         assert emit(harness, "") == ("", 0)

@@ -8,9 +8,9 @@ from ~/.agents/skills/, so the rule-capture skill needs no Pi-specific work. A
 `//` comment marker stands in for the HTML-comment marker, which is not valid
 TypeScript.
 
-The exact Pi extension API is verified against the real CLI during dogfooding,
-not in tests; the extension is written defensively (multiple path keys, exit
-codes other than 2 ignored) so an API mismatch degrades to a no-op.
+It fails safe: the touched path is read from any of several key names, and every
+exit code other than the diagnostics signal is ignored, so an unexpected payload
+or a byor error degrades to a no-op instead of blocking the agent.
 """
 
 from __future__ import annotations
