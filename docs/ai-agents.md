@@ -124,21 +124,32 @@ work in. Only commit (or add) checks whose commands you trust.
 
 Because `run` is a single shell-free command, anything with more than one step
 goes in a script the check points at. A script also lets a check *autofix*
-before it reports — the agent then spends tokens only on what it could not fix:
+before it reports — the agent then spends tokens only on what it could not fix.
+But an autofixing check must also **tell the agent what it changed**: the
+harness already notifies the agent that "a hook modified the file," and without
+a reason the agent re-reads and is surprised its code changed. So report the
+fixes and exit nonzero whenever the file was touched — even when nothing is left
+to fix, so byor still surfaces the note:
 
 ```sh
 #!/usr/bin/env zsh
 # byor appends the in-scope files as arguments.
 [[ $# -eq 0 ]] && exit 0
-uvx ruff check --fix-only --quiet "$@"   # apply fixes without reporting them
-uvx ruff format --quiet "$@"
-# Report only the irreducible remainder; a nonzero exit makes byor surface it.
-uvx ruff check --output-format concise "$@"
+export NO_COLOR=1   # the agent reads this output; keep it plain text
+
+fixed=$(uvx ruff check --fix-only --show-fixes "$@" 2>/dev/null)   # apply + summarize
+uvx ruff format "$@" >/dev/null 2>&1
+remaining=$(uvx ruff check --quiet --output-format concise "$@" 2>/dev/null)
+
+[[ -z "$fixed$remaining" ]] && exit 0   # already clean: stay silent
+[[ -n "$fixed" ]] && print -r -- "autofixed by ruff (no action needed):"$'\n'"$fixed"
+[[ -n "$remaining" ]] && print -r -- "remaining ruff issues to fix:"$'\n'"$remaining"
+exit 2
 ```
 
 A check script must accept the trailing file-path arguments, exit nonzero when
-a file still violates, and keep its output concise (it lands in the agent's
-context verbatim). Put it where it is callable and matches the policy's scope:
+it changed a file or one still violates, and keep its output concise and plain
+(it lands in the agent's context verbatim). Put it where it is callable and matches the policy's scope:
 a personal standard near the global config (`~/.config/byor/scripts/`,
 referenced with `~/`); a repo policy committed in the repo
 (`.byor/scripts/`, referenced by its repo-relative path, which already

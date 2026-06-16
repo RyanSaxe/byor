@@ -119,10 +119,14 @@ A byor check runs your command on the in-scope files **without a shell** (so no
 script:
 
 - accepts a list of file paths as its arguments;
-- exits nonzero, with concise output, when any file still violates — that output
-  is fed verbatim into the agent's context, so keep it short;
+- exits nonzero, with concise plain-text output, when any file still violates —
+  that output is fed verbatim into the agent's context, so keep it short and
+  free of ANSI color;
 - may autofix in place first and then report only what it could not fix, so the
-  next agent spends tokens only on the remainder.
+  next agent spends tokens only on the remainder. When it does autofix, it must
+  also say what it changed and exit nonzero on any change — the harness tells the
+  agent "a hook modified the file," and without a reason the agent is surprised
+  its code changed.
 
 Put it where it is callable and matches the policy's scope: a personal standard
 near the global config (`~/.config/byor/scripts/`, referenced in `run` with
