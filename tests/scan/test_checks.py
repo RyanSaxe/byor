@@ -104,7 +104,9 @@ def test_run_command_expands_a_leading_tilde_to_home(
     scripts.mkdir(parents=True)
     script = scripts / "check.py"
     script.write_text("print('ran from home'); raise SystemExit(1)\n")
+    # os.path.expanduser reads HOME on POSIX and USERPROFILE on Windows.
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     run = f"{shlex.quote(sys.executable)} ~/.config/byor/scripts/check.py"
     check = EffectiveCheck(CheckDef("tilde", ["py"], run), origin="global")
     target = tmp_path / "src.py"
