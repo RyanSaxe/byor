@@ -2,6 +2,13 @@
   <img src="https://raw.githubusercontent.com/RyanSaxe/byor/main/assets/banner.png" alt="byor: Build Your Own Rules" width="600">
 </p>
 
+<p align="center">
+  <a href="https://github.com/RyanSaxe/byor/actions/workflows/ci.yml"><img src="https://github.com/RyanSaxe/byor/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://pypi.org/project/byor/"><img src="https://img.shields.io/pypi/v/byor" alt="PyPI"></a>
+  <a href="https://pypi.org/project/byor/"><img src="https://img.shields.io/pypi/pyversions/byor" alt="Python versions"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/pypi/l/byor" alt="License"></a>
+</p>
+
 Write a custom lint rule once and it becomes a live diagnostic in your terminal,
 your editor, and your AI agent's feedback loop.
 
