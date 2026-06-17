@@ -17,6 +17,7 @@ These are ordered from the simplest mechanism to the most expressive:
 | [`no-print`](rules/no-print.yml) | A bare `pattern` with a variadic metavariable (`$$$ARGS`). |
 | [`no-python-cast`](rules/no-python-cast.yml) | A `pattern` with named metavariables (`$TYPE`, `$VALUE`). |
 | [`no-routing-functions`](rules/no-routing-functions.yml) | Relational rules — `any`/`all`, `inside`, `follows`, and `nthChild` with `reverse`, to match "a call that is a function's only statement." |
+| [`no-console-log`](rules/no-console-log.yml) | The same bare `pattern` mechanism in a non-Python language (`language: typescript`). |
 
 Each file's `metadata.byor.agent_prompt` is the directive byor hands an AI agent
 when the rule trips; the leading comment explains the ast-grep technique.

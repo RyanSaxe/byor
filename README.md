@@ -51,9 +51,11 @@ byor install            # set up the skill + your agents' hooks (once)
 byor init               # add byor to a repo
 ```
 
-byor bundles ast-grep, so Python 3.11+ is the only requirement. `byor install`
-registers your editor and agent integrations machine-wide; `byor init` adds a
-repository's rule directories and `sgconfig.yml`.
+byor bundles ast-grep, so Python 3.11+ is all you need to *run* it — the rules
+themselves work in any language ast-grep supports (TypeScript, Go, Rust, and
+more), not just Python. `byor install` registers your editor and agent
+integrations machine-wide; `byor init` adds a repository's rule directories and
+`sgconfig.yml`.
 [docs/ai-agents.md](docs/ai-agents.md) covers what each step writes.
 
 You can also let your AI coding agent handle it: open it in the repo and ask it
