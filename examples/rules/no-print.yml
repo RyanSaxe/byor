@@ -1,0 +1,20 @@
+# Demonstrates: the simplest rule — a single `pattern` with a variadic
+# metavariable. `$$$ARGS` matches zero or more arguments, so this catches every
+# `print(...)` call regardless of what is passed to it.
+id: no-print
+language: python
+severity: warning
+message: Use the logging module, not print, in library code.
+rule:
+  pattern: print($$$ARGS)
+metadata:
+  byor:
+    rationale: >
+      print writes unconditionally to stdout, bypassing log levels, handlers,
+      and formatting. In library code it is noise the caller cannot control.
+    agent_prompt: >
+      Replace this print with a module-level logger,
+      logging.getLogger(__name__), at the appropriate level.
+    tags:
+      - python
+      - logging

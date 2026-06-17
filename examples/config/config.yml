@@ -1,0 +1,39 @@
+# A global byor config (~/.config/byor/config.yml). This is where byor goes
+# beyond plain ast-grep: it wires external linters and type checkers into the
+# same diagnostic loop as your rules, and lists the AI agents to feed.
+version: 1
+
+paths:
+  rules: rules # global rules live in ~/.config/byor/rules/
+  repos: repos.yml # repos byor syncs global rules into
+
+ast_grep:
+  command: auto # use the bundled ast-grep; set a path to override
+
+output:
+  concise: true # one line per diagnostic, easiest for agents to parse
+
+# `checks` run alongside ast-grep rules. Each runs on files matching its
+# extensions; byor appends the in-scope paths as arguments and feeds any
+# nonzero-exit output back to the agent. A check can be a one-liner or a script
+# (see scripts/ruff.sh for the autofix-then-report pattern).
+checks:
+  - name: ruff
+    extensions:
+      - py
+    run: ~/.config/byor/scripts/ruff.sh
+  - name: ty
+    extensions:
+      - py
+    run: uvx ty check --output-format concise
+
+# The agents byor installs hooks for. `byor install --agents ...` writes these;
+# the post-edit hook in each runs `byor agent-check` after edits.
+ai:
+  agents:
+    - claude-code
+    - codex
+    - copilot
+    - opencode
+    - pi
+    - skill
