@@ -66,8 +66,11 @@ def _run_files(
     if args.format == "json":
         print(json.dumps(_json_payload(diagnostics, outcome), indent=2))
     else:
-        concise = _resolve_concise(args, config_dir)
-        for line in render_diagnostics(diagnostics, concise):
+        global_config = load_global_config(config_dir)
+        concise = args.concise or global_config.output_concise
+        for line in render_diagnostics(
+            diagnostics, concise, global_config.output_max_diagnostics
+        ):
             print(line)
         for section in outcome.failures:
             print(section)
@@ -122,7 +125,9 @@ def _hook_diagnostics(
     for warning in outcome.warnings:
         print(warning, file=sys.stderr)
     concise = args.concise or global_config.output_concise
-    rendered = _render_feedback(diagnostics, outcome, concise)
+    rendered = _render_feedback(
+        diagnostics, outcome, concise, global_config.output_max_diagnostics
+    )
     stdout, exit_code = emit(harness, rendered)
     if stdout:
         print(stdout)
@@ -154,16 +159,14 @@ def _json_payload(
 
 
 def _render_feedback(
-    diagnostics: list[Diagnostic], outcome: CheckOutcome, concise: bool
+    diagnostics: list[Diagnostic],
+    outcome: CheckOutcome,
+    concise: bool,
+    limit: int | None,
 ) -> str:
     """Combine ast-grep diagnostics and failing-check sections for the emitter."""
-    sections = render_diagnostics(diagnostics, concise) + outcome.failures
+    sections = render_diagnostics(diagnostics, concise, limit) + outcome.failures
     return "\n".join(sections)
-
-
-def _resolve_concise(args: argparse.Namespace, config_dir: Path) -> bool:
-    """Concise when `--concise` is passed or the global config opts in."""
-    return args.concise or load_global_config(config_dir).output_concise
 
 
 def _has_any_rules(repo_root: Path) -> bool:
@@ -303,13 +306,21 @@ def collect_diagnostics(matches: list[ScanMatch], repo_root: Path) -> list[Diagn
 
 
 def render_diagnostics(
-    diagnostics: list[Diagnostic], concise: bool = False
+    diagnostics: list[Diagnostic], concise: bool = False, limit: int | None = None
 ) -> list[str]:
-    """The rendered text output; empty when there are no diagnostics."""
+    """The rendered text output; empty when there are no diagnostics.
+
+    `limit` caps how many diagnostics are rendered; the summary still counts
+    them all and a trailing note reports the remainder. None renders every one.
+    """
     if not diagnostics:
         return []
     header = [_summary_line(diagnostics)]
-    body = _render_concise(diagnostics) if concise else _render_verbose(diagnostics)
+    shown = diagnostics if limit is None else diagnostics[:limit]
+    body = _render_concise(shown) if concise else _render_verbose(shown)
+    hidden = len(diagnostics) - len(shown)
+    if hidden:
+        body += ["", f"... and {hidden} more not shown (raise output.max_diagnostics)."]
     return header + body
 
 

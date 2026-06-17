@@ -163,6 +163,27 @@ def test_global_config_rejects_non_boolean_concise(tmp_path: Path) -> None:
         load_global_config(tmp_path)
 
 
+def test_global_config_round_trips_output_max_diagnostics(tmp_path: Path) -> None:
+    config = GlobalConfig(output_max_diagnostics=5)
+
+    save_global_config(tmp_path, config)
+
+    assert load_global_config(tmp_path).output_max_diagnostics == 5
+
+
+def test_global_config_omits_max_diagnostics_when_unlimited(tmp_path: Path) -> None:
+    save_global_config(tmp_path, GlobalConfig())
+
+    assert "max_diagnostics" not in (tmp_path / "config.yml").read_text()
+
+
+def test_global_config_rejects_non_positive_max_diagnostics(tmp_path: Path) -> None:
+    (tmp_path / "config.yml").write_text("version: 1\noutput:\n  max_diagnostics: 0\n")
+
+    with pytest.raises(ConfigError, match="max_diagnostics"):
+        load_global_config(tmp_path)
+
+
 def test_global_init_defaults_absent_when_unset(tmp_path: Path) -> None:
     (tmp_path / "config.yml").write_text("version: 1\n")
 

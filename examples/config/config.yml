@@ -12,6 +12,7 @@ ast_grep:
 
 output:
   concise: true # one line per diagnostic, easiest for agents to parse
+  # max_diagnostics: 10 # cap rendered diagnostics, noting "... and N more"; default unlimited
 
 # `checks` run alongside ast-grep rules. Each runs on files matching its
 # extensions; byor appends the in-scope paths as arguments and feeds any

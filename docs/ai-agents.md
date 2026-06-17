@@ -80,6 +80,15 @@ output:
   concise: true
 ```
 
+`output.max_diagnostics` caps how many diagnostics the text and hook feedback
+render, appending a `... and N more` note so the agent fixes a batch at a time
+instead of drowning in a long list. It is unlimited by default:
+
+```yaml
+output:
+  max_diagnostics: 10
+```
+
 `--format json` is unaffected — JSON always carries every field.
 
 `--scope` keeps only diagnostics whose lines overlap the chosen ranges

@@ -13,6 +13,9 @@ from byor.io.yamlio import load_yaml_mapping, write_yaml_atomic
 
 CONFIG_VERSION = 1
 
+# The value types a managed config section may hold, written back in place.
+SectionValue = str | None | bool | int | list[str]
+
 
 @dataclass
 class RepoPaths:
@@ -84,6 +87,8 @@ class GlobalConfig:
     ast_grep_command: str = "auto"
     output_concise: bool = False
     """Trim text diagnostics to one line plus the fix; `--concise` forces it on."""
+    output_max_diagnostics: int | None = None
+    """Cap rendered diagnostics, noting how many more were found; None is unlimited."""
     agents: list[str] = field(default_factory=list)
     """The AI agents registered globally by `byor install` / `byor hook install`."""
     checks: list[CheckDef] = field(default_factory=list)
@@ -209,6 +214,7 @@ def load_global_config(config_dir: Path) -> GlobalConfig:
         repos_path=_string(paths, "repos", defaults.repos_path, path),
         ast_grep_command=_string(ast_grep, "command", defaults.ast_grep_command, path),
         output_concise=_bool(output, "concise", defaults.output_concise, path),
+        output_max_diagnostics=_optional_positive_int(output, "max_diagnostics", path),
         agents=_string_list(ai, "agents", path),
         checks=_check_defs(data, path),
         init=InitDefaults(
@@ -226,7 +232,10 @@ def save_global_config(config_dir: Path, config: GlobalConfig) -> None:
         data, "paths", {"rules": config.rules_path, "repos": config.repos_path}
     )
     _update_section(data, "ast_grep", {"command": config.ast_grep_command})
-    _update_section(data, "output", {"concise": config.output_concise})
+    output_values: dict[str, SectionValue] = {"concise": config.output_concise}
+    if config.output_max_diagnostics is not None:
+        output_values["max_diagnostics"] = config.output_max_diagnostics
+    _update_section(data, "output", output_values)
     _update_section(data, "ai", {"agents": list(config.agents)})
     _write_checks(data, config.checks)
     _write_init_defaults(data, config.init)
@@ -265,7 +274,7 @@ def _load_or_new(path: Path) -> CommentedMap:
 
 
 def _update_section(
-    data: CommentedMap, key: str, values: dict[str, str | None | bool | list[str]]
+    data: CommentedMap, key: str, values: dict[str, SectionValue]
 ) -> None:
     """Set managed keys in place so user comments and unknown keys survive."""
     section = data.get(key)
@@ -353,7 +362,7 @@ def _write_checks(data: CommentedMap, checks: list[CheckDef]) -> None:
 
 
 def _write_init_defaults(data: CommentedMap, init: InitDefaults) -> None:
-    values: dict[str, str | None | bool | list[str]] = {}
+    values: dict[str, SectionValue] = {}
     if init.ignore_mode is not None:
         values["ignore_mode"] = init.ignore_mode
     if init.git_hooks is not None:
@@ -368,6 +377,16 @@ def _optional_bool(section: CommentedMap, key: str, path: Path) -> bool | None:
         return None
     if not isinstance(value, bool):
         raise ConfigError(f"{path}: expected '{key}' to be a boolean")
+    return value
+
+
+def _optional_positive_int(section: CommentedMap, key: str, path: Path) -> int | None:
+    value = section.get(key)
+    if value is None:
+        return None
+    # bool is an int subclass; reject it so `true`/`false` is not read as 1/0.
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ConfigError(f"{path}: expected '{key}' to be a positive integer or null")
     return value
 
 
