@@ -751,4 +751,7 @@ def test_hook_mode_fails_open_on_an_internal_error(
 
     assert main(agent_check_args(check_repo, "--stdin-hook", "claude-code")) == 0
 
-    assert capsys.readouterr().out == ""
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    # Exit 0 never blocks, but a stderr breadcrumb keeps the failure visible.
+    assert "skipped after an internal error" in captured.err

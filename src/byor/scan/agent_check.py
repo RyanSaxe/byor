@@ -78,14 +78,22 @@ def _run_files(
 def _run_hook(args: argparse.Namespace, repo_root: Path, harness: Harness) -> int:
     """The `--stdin-hook HARNESS` path: fail-open, never block the agent.
 
-    Any internal byor error is swallowed to a silent exit 0 so a global-scope
-    hook (which carries no shell `|| true` guard) cannot block the agent loop
-    on a byor bug or config problem.
+    Any internal byor error is caught and reported on stderr but still exits 0,
+    so a global-scope hook (which carries no shell `|| true` guard) cannot block
+    the agent loop on a byor bug or config problem.
     """
     # fail-open: a byor bug must never block the agent loop
-    try:  # ast-grep-ignore: no-broad-except
+    try:
         return _hook_diagnostics(args, repo_root, harness)
-    except Exception:
+    except Exception as error:
+        # Still exit 0 (never block), but leave a breadcrumb so "byor couldn't
+        # run" is distinguishable from "byor found nothing". Hook stderr is not
+        # fed to the agent on exit 0, so this stays out of its context; `byor
+        # doctor` surfaces the root cause (e.g. a missing rule directory).
+        print(
+            f"byor: agent-check skipped after an internal error: {error}",
+            file=sys.stderr,
+        )
         return 0
 
 
