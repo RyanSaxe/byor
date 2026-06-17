@@ -57,3 +57,7 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - run: uv run ast-grep scan --error
+      # The example rules are validated against their samples so docs can't
+      # drift from the tool. --skip-snapshot-tests enforces valid/invalid match
+      # expectations without committing snapshot files.
+      - run: uv run ast-grep test -c examples/sgconfig.yml --skip-snapshot-tests

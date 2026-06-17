@@ -5,6 +5,12 @@
 Write a custom lint rule once and it becomes a live diagnostic in your terminal,
 your editor, and your AI agent's feedback loop.
 
+The usual way to teach an agent your standards is a wall of prose in `AGENTS.md`
+or `CLAUDE.md` — which inflates every prompt, gets followed unevenly, and does
+nothing in your terminal or editor. byor makes the standard a rule instead:
+checked mechanically everywhere, and surfaced to the agent only when its own
+change trips it, scoped to the lines it touched.
+
 byor is a small CLI around [ast-grep](https://ast-grep.github.io), a fast
 structural search-and-lint tool. `ast-grep scan` lints from the terminal and
 `ast-grep lsp` shows diagnostics in your editor; byor arranges plain rule files
@@ -163,3 +169,4 @@ Every command takes `--help`, and repo-operating commands take `--repo PATH`
 - [docs/rules.md](docs/rules.md) — rule format, scopes, and the rule workflow
 - [docs/ai-agents.md](docs/ai-agents.md) — AI agent integration and `agent-check`
 - [docs/sync-model.md](docs/sync-model.md) — copies, self-healing, and git hooks
+- [examples/](examples/) — reference rules (simple → advanced) and config setups

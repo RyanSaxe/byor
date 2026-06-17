@@ -226,3 +226,9 @@ metadata:
       - python
       - abstraction
 ```
+
+This `pattern` only catches a literal one-line `def`; the
+[`examples/`](../examples/) directory has `no-routing-functions`, a relational
+version that also catches multi-line bodies, awaited calls, and docstringed
+one-liners. The examples there run from a bare pattern up to that rule, each with
+the ast-grep technique it demonstrates.

@@ -1,0 +1,32 @@
+id: no-routing-functions
+valid:
+  # Module-level call: not inside a function body.
+  - configure(settings)
+  # Does real work before forwarding — not a pass-through.
+  - |
+    def save(user):
+        validate(user)
+        return store(user)
+  # The call's result is bound and used, not merely forwarded.
+  - |
+    def load(user_id):
+        record = fetch(user_id)
+        return hydrate(record)
+invalid:
+  # A lone forwarding return.
+  - |
+    def save(user):
+        return store(user)
+  # A lone forwarding bare call.
+  - |
+    def notify(user):
+        send(user)
+  # Awaited pass-through.
+  - |
+    async def save(user):
+        return await store(user)
+  # Documented one-liner: a docstring still leaves a single real statement.
+  - |
+    def save(user):
+        """Persist the user."""
+        return store(user)

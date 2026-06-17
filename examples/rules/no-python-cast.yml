@@ -1,0 +1,22 @@
+# Demonstrates: a `pattern` with named metavariables. `$TYPE` and `$VALUE` each
+# bind one node, so this matches any two-argument `cast(...)` call. The bound
+# names are not used here, but they document what the pattern's holes mean.
+id: no-python-cast
+language: python
+severity: warning
+message: Avoid typing.cast in Python code.
+rule:
+  pattern: cast($TYPE, $VALUE)
+metadata:
+  byor:
+    rationale: >
+      Casting hides type-model problems and can make invalid assumptions
+      invisible to both reviewers and type checkers.
+    agent_prompt: >
+      Do not use typing.cast here. Fix the type by narrowing, changing the
+      signature, introducing a protocol, or restructuring the value flow. If the
+      cast is genuinely necessary, leave a concise comment explaining the
+      invariant that the type checker cannot see.
+    tags:
+      - python
+      - typing

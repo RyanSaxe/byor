@@ -1,0 +1,7 @@
+# Scopes the example rules to this directory so they validate in isolation and
+# never fire on byor's own source. `ast-grep test -c examples/sgconfig.yml`
+# checks each rule against the samples in rule-tests/.
+ruleDirs:
+  - rules
+testConfigs:
+  - testDir: rule-tests
