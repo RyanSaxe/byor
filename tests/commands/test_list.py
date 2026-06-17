@@ -125,6 +125,20 @@ def test_list_surfaces_effective_checks_with_origin_and_exclusions(
     assert "mypy" not in out  # excluded in local.yml
 
 
+def test_list_guides_the_user_when_there_are_no_rules(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    capsys.readouterr()
+
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    assert (
+        capsys.readouterr().out
+        == "No rules or checks yet. Add a rule with `byor add`.\n"
+    )
+
+
 def test_list_fails_cleanly_outside_an_initialized_repo(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

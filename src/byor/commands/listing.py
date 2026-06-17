@@ -35,7 +35,9 @@ def run_list(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(_json_payload(rules, skipped, checks), indent=2))
     else:
-        for line in render_listing(rules, skipped, checks):
+        listing = render_listing(rules, skipped, checks)
+        empty = ["No rules or checks yet. Add a rule with `byor add`."]
+        for line in listing or empty:
             print(line)
     return 0
 
