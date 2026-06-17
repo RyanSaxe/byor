@@ -1,7 +1,7 @@
 # Examples
 
-Reference configurations for byor, mined from a real setup and rewritten to
-teach the mechanics. Copy what fits; nothing here is an enabled default.
+Reference rules and configuration for byor, written to teach the mechanics.
+Copy what fits; nothing here is an enabled default.
 
 Everything in this directory is exercised in CI: the rules are validated with
 `ast-grep test` against the samples in [`rule-tests/`](rule-tests), so the
