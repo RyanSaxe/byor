@@ -190,20 +190,29 @@ def _emit_copilot(rendered: str) -> tuple[str, int]:
 
 
 def _truncate_to_cap(rendered: str) -> str:
-    """Trim diagnostics so the encoded copilot envelope fits the 10KB cap.
+    """Keep the longest prefix whose encoded copilot envelope fits the 10KB cap.
 
-    JSON-escaping a newline doubles its byte count, so the encoded length is
-    bounded by trimming the raw text until the envelope fits rather than by a
-    fixed character budget.
+    JSON-escaping inflates the encoded length unevenly (a newline doubles, a
+    multibyte character grows several-fold), so the budget is on the *encoded*
+    envelope, not the character count. A binary search measures in encoded
+    length but slices in characters; the old subtract-the-overshoot loop mixed
+    the two and collapsed multibyte text to almost nothing.
     """
-    text = rendered
-    while text:
-        encoded = json.dumps({"additionalContext": text}, separators=(",", ":"))
-        overshoot = len(encoded) - COPILOT_CONTEXT_CAP
-        if overshoot <= 0:
-            break
-        text = text[: -max(overshoot, 1)]
-    return text
+    if _fits_cap(rendered):
+        return rendered
+    low, high = 0, len(rendered)
+    while low < high:
+        mid = (low + high + 1) // 2
+        if _fits_cap(rendered[:mid]):
+            low = mid
+        else:
+            high = mid - 1
+    return rendered[:low]
+
+
+def _fits_cap(text: str) -> bool:
+    encoded = json.dumps({"additionalContext": text}, separators=(",", ":"))
+    return len(encoded) <= COPILOT_CONTEXT_CAP
 
 
 def _load_object(raw: str) -> dict[str, JsonValue] | None:

@@ -145,6 +145,18 @@ def test_copilot_emitter_truncates_to_the_ten_kb_cap() -> None:
     assert json.loads(stdout)["additionalContext"].startswith("line")
 
 
+def test_copilot_emitter_keeps_multibyte_diagnostics_near_the_cap() -> None:
+    # Multibyte characters inflate the JSON-encoded length more than the raw
+    # character count; the truncation must measure the encoded envelope, not
+    # subtract a byte overshoot from a character slice (which collapsed the text
+    # to a fraction of the cap).
+    stdout, code = emit("copilot", "diagnostic with em—dashes “quotes” …\n" * 600)
+
+    assert code == 0
+    assert len(stdout) <= COPILOT_CONTEXT_CAP
+    assert len(stdout) > COPILOT_CONTEXT_CAP * 0.9
+
+
 def test_empty_diagnostics_emit_plain_exit_zero_everywhere() -> None:
     for harness in ("claude-code", "codex", "copilot"):
         assert emit(harness, "") == ("", 0)
