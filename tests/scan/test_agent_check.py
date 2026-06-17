@@ -241,6 +241,29 @@ def test_diagnostics_group_by_file_then_sort_by_line_and_rule_id(
     assert locations == ["a.py:1:15", "a.py:1:5", "a.py:2:5", "b.py:1:5"]
 
 
+def test_limit_caps_rendered_diagnostics_and_notes_the_remainder() -> None:
+    diagnostics = [
+        Diagnostic(
+            file="src.py",
+            line=line,
+            column=1,
+            rule_id="no-print",
+            severity="warning",
+            message="Avoid print.",
+            code='print("x")',
+            instruction="Use the logger instead.",
+        )
+        for line in range(1, 4)
+    ]
+
+    rendered = render_diagnostics(diagnostics, concise=True, limit=2)
+
+    # The summary still counts all three; only two are rendered, with a note.
+    assert rendered[0] == "BYOR found 3 issues in AI-written code."
+    assert sum("no-print" in line for line in rendered) == 2
+    assert "... and 1 more not shown (raise output.max_diagnostics)." in rendered
+
+
 def test_renders_every_diagnostic_without_truncation(
     check_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -751,4 +774,7 @@ def test_hook_mode_fails_open_on_an_internal_error(
 
     assert main(agent_check_args(check_repo, "--stdin-hook", "claude-code")) == 0
 
-    assert capsys.readouterr().out == ""
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    # Exit 0 never blocks, but a stderr breadcrumb keeps the failure visible.
+    assert "skipped after an internal error" in captured.err

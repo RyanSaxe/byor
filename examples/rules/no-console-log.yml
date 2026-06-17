@@ -1,0 +1,20 @@
+# Demonstrates: rules are not Python-specific. Set `language` to any grammar
+# ast-grep supports (TypeScript, Go, Rust, ...) and the same mechanisms apply —
+# this is the bare-pattern rule from no-print, pointed at TypeScript.
+id: no-console-log
+language: typescript
+severity: warning
+message: Remove console.log from committed TypeScript.
+rule:
+  pattern: console.log($$$ARGS)
+metadata:
+  byor:
+    rationale: >
+      console.log left in shipped code leaks debug noise and can surface data in
+      the browser console.
+    agent_prompt: >
+      Remove this console.log. If you need durable logging, use the project's
+      logger; if it was debug output, delete the line.
+    tags:
+      - typescript
+      - logging

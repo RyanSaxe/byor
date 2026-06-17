@@ -2,6 +2,13 @@
   <img src="https://raw.githubusercontent.com/RyanSaxe/byor/main/assets/banner.png" alt="byor: Build Your Own Rules" width="600">
 </p>
 
+<p align="center">
+  <a href="https://github.com/RyanSaxe/byor/actions/workflows/ci.yml"><img src="https://github.com/RyanSaxe/byor/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://pypi.org/project/byor/"><img src="https://img.shields.io/pypi/v/byor" alt="PyPI"></a>
+  <a href="https://pypi.org/project/byor/"><img src="https://img.shields.io/pypi/pyversions/byor" alt="Python versions"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/pypi/l/byor" alt="License"></a>
+</p>
+
 Write a custom lint rule once and it becomes a live diagnostic in your terminal,
 your editor, and your AI agent's feedback loop.
 
@@ -44,9 +51,11 @@ byor install            # set up the skill + your agents' hooks (once)
 byor init               # add byor to a repo
 ```
 
-byor bundles ast-grep, so Python 3.11+ is the only requirement. `byor install`
-registers your editor and agent integrations machine-wide; `byor init` adds a
-repository's rule directories and `sgconfig.yml`.
+byor bundles ast-grep, so Python 3.11+ is all you need to *run* it — the rules
+themselves work in any language ast-grep supports (TypeScript, Go, Rust, and
+more), not just Python. `byor install` registers your editor and agent
+integrations machine-wide; `byor init` adds a repository's rule directories and
+`sgconfig.yml`.
 [docs/ai-agents.md](docs/ai-agents.md) covers what each step writes.
 
 You can also let your AI coding agent handle it: open it in the repo and ask it

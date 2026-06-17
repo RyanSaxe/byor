@@ -1,0 +1,7 @@
+id: no-console-log
+valid:
+  - logger.debug("hi")
+  - console.error("boom")
+invalid:
+  - console.log("hi")
+  - console.log(user, count)
