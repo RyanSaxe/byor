@@ -46,16 +46,16 @@ directive byor hands your AI agent when it trips the rule.
 ## Install
 
 ```bash
-uv tool install byor    # or `uvx byor` to try without installing
-byor install            # set up the skill + your agents' hooks (once)
-byor init               # add byor to a repo
+uv tool install byor && byor install   # install the CLI, then set up the skill + agent hooks (once)
+byor init                              # optional — only for repo-scoped or shared rules (see below)
 ```
 
 byor bundles ast-grep, so Python 3.11+ is all you need to *run* it — the rules
 themselves work in any language ast-grep supports (TypeScript, Go, Rust, and
 more), not just Python. `byor install` registers your editor and agent
-integrations machine-wide; `byor init` adds a repository's rule directories and
-`sgconfig.yml`.
+integrations machine-wide. `byor init` is **optional**: run it only when you want
+rules or checks scoped to a repository, or shared with contributors — your
+personal global rules and checks already work in every repo without it.
 [docs/ai-agents.md](docs/ai-agents.md) covers what each step writes.
 
 After that one-time bootstrap, let your AI coding agent handle the rest: open it
