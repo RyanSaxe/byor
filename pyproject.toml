@@ -1,6 +1,6 @@
 [project]
 name = "byor"
-version = "0.1.4"
+version = "0.1.5"
 description = "Build Your Own Rules: define code checks (ast-grep rules, linters, type checkers, scripts) once, and have your terminal, editor, and AI agents enforce them"
 readme = "README.md"
 authors = [
