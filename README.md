@@ -12,13 +12,16 @@
 Your AI agent keeps breaking rules you have already given it. You say arguments
 past the first couple should be keyword-only; it agrees and listens, but then
 later in the session it writes `create_user(name, email, True, False, None)`. So
-you add a line to your ever-growing `AGENTS.md` in the hope it fixes it. It doesn't.
+you add a line to your ever-growing `AGENTS.md` in the hope it fixes it. **It doesn't.**
 
-> **`byor` is the sheepdog for your flock of coding agents**: you set the rules and it reins in any agent that attempts to stray in real time. `byor` can do this because it's rules are real executable checks, not markdown prompts.
+> `byor` is the sheepdog for your flock of coding agents: you set the rules and it
+> reins in any agent that attempts to stray in real time. 
 
-You rarely write one of these rules by hand. If you tell your agent to create a rule,
-or even give it critical feedback about code it has written, it will use `byor`'s skill
-to create the best automated system to keep your agent in check. Here is an example:
+`byor` can do this reliably because the rules it creates are real executable checks, 
+not markdown prompts. You rarely write one of these rules by hand. If you tell your 
+agent to create a rule, or even give it critical feedback about code it has written,
+it will use `byor`'s skill to create the best automated system to keep your agent in
+check. Here is an example:
 
 ```yaml
 # .byor/rules/project/keyword-only-args.yml
@@ -43,14 +46,14 @@ metadata:
 ```
 
 A rule like this is a structural [ast-grep](https://ast-grep.github.io) check,
-and byor puts it in three places:
+and `byor` is set up so this naturally just works wherever you do:
 
-- **Terminal** — `ast-grep scan` shows the `message`.
 - **IDE** — set up your IDE with `ast-grep lsp` to see `message` as a diagnostic.
-- **Your AI agent** — a post-edit hook hands over the `agent_prompt`, scoped to
+- **AI agent** — a post-edit hook hands over the `agent_prompt`, scoped to
   the lines it changed, so the agent fixes the violation before moving on.
+- **Terminal** — `ast-grep scan` shows the `message`.
 
-ast-grep rules are byor's built-in kind; it also runs any linter, type checker, or
+ast-grep rules are `byor`'s built-in kind; it also runs any linter, type checker, or
 script you already use and folds their output into the same agent feedback. This
 rule and others live in [examples/](examples/), exercised in CI.
 
@@ -61,7 +64,7 @@ uv tool install byor && byor install   # install the CLI, then set up the skill 
 byor init                              # optional — only for repo-scoped or shared rules (see below)
 ```
 
-byor bundles ast-grep, so Python 3.11+ is all you need to *run* it — the rules
+`byor` bundles ast-grep, so Python 3.11+ is all you need to *run* it — the rules
 themselves work in any language ast-grep supports (TypeScript, Go, Rust, and
 more), not just Python. `byor install` registers your editor and agent
 integrations machine-wide. `byor init` is **optional**: run it only when you want
