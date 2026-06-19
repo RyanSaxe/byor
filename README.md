@@ -114,7 +114,8 @@ adds or drops one later.
 
 ```bash
 byor install --agents claude-code,codex
-byor hook install --agent copilot
+byor hook install --agent copilot       # add an agent later
+byor hook uninstall --agent copilot     # or remove one (--agent skill removes the skill)
 ```
 
 byor supports five harnesses:
