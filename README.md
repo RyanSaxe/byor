@@ -58,8 +58,10 @@ integrations machine-wide; `byor init` adds a repository's rule directories and
 `sgconfig.yml`.
 [docs/ai-agents.md](docs/ai-agents.md) covers what each step writes.
 
-You can also let your AI coding agent handle it: open it in the repo and ask it
-to set up byor.
+After that one-time bootstrap, let your AI coding agent handle the rest: open it
+in the repo and say **"set up byor"**. The skill verifies the install, runs
+`byor init` if you want repo or team rules, and offers to import the preferences
+you already wrote in your CLAUDE.md / AGENTS.md as enforced rules.
 
 ## Terminal and editor
 
@@ -102,6 +104,10 @@ Agents can both obey your rules and write new ones:
   do that") into an ast-grep rule: the agent drafts it, confirms once, and runs
   `byor add`. When a linter or type checker fits better, the skill offers that
   instead.
+- **Setup.** The same skill onboards you: say "set up byor" and it checks the
+  install, optionally inits the repo, and imports the mechanically checkable
+  preferences from your existing CLAUDE.md / AGENTS.md as rules — and can clean up
+  an existing repo on a throwaway branch so you start without a wall of warnings.
 
 `byor install` wires up the agents you pick (once, machine-wide); `byor hook`
 adds or drops one later.

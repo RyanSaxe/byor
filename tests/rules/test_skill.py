@@ -17,7 +17,7 @@ SKILL_NAME_PATTERN = r"[a-z0-9]+(-[a-z0-9]+)*"
 MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024
 
-REFERENCES = ("references/patterns.md", "references/checks.md")
+REFERENCES = ("references/patterns.md", "references/checks.md", "references/setup.md")
 
 
 def agents_dir(home: Path) -> Path:
@@ -60,7 +60,8 @@ def test_frontmatter_meets_the_cross_agent_standard(home: Path) -> None:
     assert re.fullmatch(SKILL_NAME_PATTERN, name)
     assert 1 <= len(name) <= MAX_NAME_LENGTH
     assert len(description) <= MAX_DESCRIPTION_LENGTH
-    assert "never" in description  # states when to trigger
+    assert "never" in description  # states the capture trigger
+    assert "set up" in description  # and the setup trigger
 
 
 def test_hub_teaches_the_capture_loop(home: Path) -> None:
@@ -96,6 +97,16 @@ def test_checks_reference_teaches_authoring_a_check_script(home: Path) -> None:
     assert "trailing path arguments" in checks
 
 
+def test_setup_reference_teaches_onboarding(home: Path) -> None:
+    install_agents(home)
+    setup = (agents_dir(home) / "references/setup.md").read_text()
+
+    assert "byor doctor" in setup
+    assert "uv tool install byor" in setup  # the one bootstrap step a skill can't do
+    assert "byor init" in setup
+    assert "byor/initial-cleanup" in setup  # the optional cleanup pass
+
+
 def test_uninstall_removes_marked_files_and_prunes_dirs(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -118,15 +129,13 @@ def test_self_heal_refreshes_a_drifted_reference(home: Path) -> None:
     drifted from the package — references included, not just the hub."""
     repo = make_repo(home)
     install_agents(home)
-    drifted = agents_dir(home) / "references" / "checks.md"
+    drifted = agents_dir(home) / "references" / "setup.md"
     drifted.write_text(f"{MANAGED_MARKER}\nstale render\n")
 
     assert main(["list", "--repo", str(repo)]) == 0  # any command self-heals
 
-    assert (
-        drifted.read_text() == (claude_dir(home) / "references/checks.md").read_text()
-    )
-    assert "Author a check script" in drifted.read_text()
+    assert drifted.read_text() == (claude_dir(home) / "references/setup.md").read_text()
+    assert "Set Up byor" in drifted.read_text()
 
 
 def test_self_heal_leaves_a_user_owned_file_untouched(home: Path) -> None:

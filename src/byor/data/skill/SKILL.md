@@ -1,12 +1,15 @@
 ---
 name: byor
-description: Capture durable, mechanically checkable code feedback as ast-grep rules. Trigger when the user states a lasting preference about code syntax or structure — "never use X", "always do Y", "stop doing Z" — that a syntax pattern can check. Do not trigger on one-off requests about the current change or vague philosophy. If the preference cannot be expressed as a syntax pattern, follow the skill's decline guidance.
+description: Capture durable, mechanically checkable code feedback as ast-grep rules, and set up or onboard byor. Trigger to capture when the user states a lasting preference about code syntax or structure — "never use X", "always do Y", "stop doing Z" — that a syntax pattern can check. Trigger to set up when the user wants to get started with byor, install it, or import existing preferences from CLAUDE.md / AGENTS.md. Do not trigger on one-off requests about the current change or vague philosophy. If a preference cannot be expressed as a syntax pattern, follow the decline guidance.
 ---
 # BYOR Rule Capture
 
 This repository uses BYOR to enforce custom ast-grep diagnostics. When the
 user gives feedback that a syntax pattern can check, capture it as a rule so
 every future session enforces it automatically — do not just remember it.
+
+For getting started, repairing the install, or importing the user's existing
+preferences from their instruction files, follow **references/setup.md**.
 
 ## When to Act
 
@@ -106,3 +109,4 @@ force a bad pattern.
 
 - **references/patterns.md** — ast-grep pattern primer and a worked example.
 - **references/checks.md** — pick the right tool, or author a check script.
+- **references/setup.md** — set up byor and import existing preferences.

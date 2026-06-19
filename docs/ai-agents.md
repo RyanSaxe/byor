@@ -233,20 +233,27 @@ Each integration lands in its agent's own configuration under your home director
 | `copilot` | Real `postToolUse` hook (`~/.copilot/hooks/byor.json`) |
 | `opencode` | Real `tool.execute.after` plugin (`~/.config/opencode/plugin/byor.ts`) |
 | `pi` | Real `tool_result` extension (`~/.pi/agent/extensions/byor.ts`) |
-| `skill` | Rule-capture skill rendered into `~/.agents/skills/byor/SKILL.md` and `~/.claude/skills/byor/SKILL.md`; installed by `byor install` by default |
+| `skill` | The `byor` skill (hub `SKILL.md` + `references/`) rendered into `~/.agents/skills/byor/` and `~/.claude/skills/byor/`; installed by `byor install` by default |
 
-Codex, Copilot, OpenCode, and Pi auto-discover the `byor` rule-capture
-skill from `~/.agents/skills/byor/SKILL.md`, so they get the capture loop natively.
+Codex, Copilot, OpenCode, and Pi auto-discover the `byor` skill from
+`~/.agents/skills/byor/SKILL.md`, so they get the capture loop natively.
 
 Cursor and Antigravity are not supported: neither exposes a post-edit hook that
 byor can reliably integrate with, so byor omits them until that changes.
 
 ### skill
 
-The rule-capture skill teaches agents to *create* rules from your feedback,
-not just obey them. When you voice a durable, mechanically checkable
-preference about code syntax or structure — "never use X", "always do Y" —
-the agent:
+The `byor` skill is a hub `SKILL.md` plus reference files
+(`references/patterns.md`, `references/checks.md`, `references/setup.md`),
+following the Agent Skills progressive-disclosure pattern so the shared
+rule-authoring guidance lives in one place. It does two things: **capture** (the
+default) and **setup**.
+
+#### Capture
+
+The hub teaches agents to *create* rules from your feedback, not just obey them.
+When you voice a durable, mechanically checkable preference about code syntax or
+structure — "never use X", "always do Y" — the agent:
 
 1. **Drafts** a complete ast-grep rule: id, language, severity, message,
    `rule.pattern`, and `metadata.byor` with a rationale, an imperative
@@ -262,13 +269,26 @@ the agent:
    validates, syncs, and runs doctor), then **verifies** it by running
    `ast-grep scan` against an in-repo example of the violation.
 
-The skill body that drives this ships with byor as Markdown (`byor/data/skill.md`);
+The skill tree that drives this ships with byor as Markdown (`byor/data/skill/`);
 when a feedback policy is really better solved by a linter, type checker, or
-formatter (line length, import order, a wrong type), the skill has the agent
-say so and offer to configure that tool and wire it in — as a byor `check`, in
-CI, or as a pre-commit hook. A preference no tool can express (naming
+formatter (line length, import order, a wrong type), `references/checks.md` has
+the agent say so and offer to configure that tool and wire it in — as a byor
+`check`, in CI, or as a pre-commit hook. A preference no tool can express (naming
 philosophy, architectural taste) is declined with a pointer to the harness's
 own instruction file (CLAUDE.md, AGENTS.md, …).
+
+#### Setup
+
+`references/setup.md` drives onboarding. After the one-time bootstrap
+(`uv tool install byor && byor install`), say "set up byor" in your agent and it
+verifies the install with `byor doctor` (repairing or adding harnesses by
+re-running `byor install`), optionally runs `byor init` if you want repo-scoped
+or team-shared rules, and — with your say-so — scans your existing instruction
+files (CLAUDE.md, AGENTS.md, copilot-instructions.md), proposes rules for the
+mechanically checkable preferences, and creates the ones you approve. For an
+existing repo it can also run a one-time cleanup pass on an isolated branch so
+you adopt byor on a clean tree instead of a wall of diagnostics. It never edits
+your instruction files unless you ask.
 
 ### The skill is byor-owned
 
@@ -282,11 +302,11 @@ no single one is read by every harness:
 | Copilot, OpenCode | `~/.agents/skills/byor/SKILL.md`; also read `~/.claude/skills/` |
 
 byor owns both renders, like the OpenCode plugin or the generated rule copies.
-It writes them from the packaged skill (`byor/data/skill.md`) and keeps them
-current with the **same self-heal that runs on every byor command**: a render
-that drifts from the installed byor's skill is silently rewritten, so the skill
-can never go stale against a changed CLI, and there is no refresh command to
-remember.
+It writes them from the packaged skill tree (`byor/data/skill/`) and keeps them
+current with the **same self-heal that runs on every byor command**: any file
+(hub or reference) that drifts from the installed byor's skill is silently
+rewritten, so the skill can never go stale against a changed CLI, and there is no
+refresh command to remember.
 
 To take a render over, **remove its byor marker**: byor then leaves that file
 alone (the standard ownership escape hatch), and you maintain it. The frontmatter
