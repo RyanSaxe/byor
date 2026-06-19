@@ -1,4 +1,4 @@
-"""The byor rule-capture skill: rendering, global installation, self-heal."""
+"""The byor skill: rendering the hub + references, global installation, self-heal."""
 
 import re
 from pathlib import Path
@@ -10,32 +10,50 @@ from byor.agents.install import MANAGED_MARKER
 from byor.cli import main
 from byor.io.yamlio import parse_yaml_mapping
 from byor.rules.rules import ALLOW_EXCEPTIONS_SENTENCE
-from byor.rules.skill import global_skill_paths
+from byor.rules.skill import global_skill_dirs
 
 SKILL_NAME_PATTERN = r"[a-z0-9]+(-[a-z0-9]+)*"
 
 MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024
 
+REFERENCES = ("references/patterns.md", "references/checks.md")
 
-def test_install_renders_the_skill_into_both_global_locations(home: Path) -> None:
+
+def agents_dir(home: Path) -> Path:
+    """The cross-agent skill dir (read by Codex, Copilot, opencode, pi)."""
+    return global_skill_dirs(home)[0]
+
+
+def claude_dir(home: Path) -> Path:
+    """The Claude Code skill dir, which reads only its own directory."""
+    return global_skill_dirs(home)[1]
+
+
+def test_install_renders_the_whole_tree_into_both_global_locations(home: Path) -> None:
     install_agents(home)
 
-    contents = [path.read_text() for path in global_skill_paths(home)]
-    assert contents[0] == contents[1]
+    for relpath in ("SKILL.md", *REFERENCES):
+        agents_copy = (agents_dir(home) / relpath).read_text()
+        claude_copy = (claude_dir(home) / relpath).read_text()
+        assert agents_copy == claude_copy
     assert "skill" in global_agents()
 
-    content = contents[0]
-    assert content.startswith("---\n")  # frontmatter at byte 0
-    after_frontmatter = content.split("---\n", 2)[2]
+    hub = (agents_dir(home) / "SKILL.md").read_text()
+    assert hub.startswith("---\n")  # frontmatter at byte 0
+    after_frontmatter = hub.split("---\n", 2)[2]
     assert after_frontmatter.startswith(MANAGED_MARKER)
+
+    # Reference files carry no frontmatter, so the marker leads the file.
+    for relpath in REFERENCES:
+        assert (agents_dir(home) / relpath).read_text().startswith(MANAGED_MARKER)
 
 
 def test_frontmatter_meets_the_cross_agent_standard(home: Path) -> None:
     install_agents(home)
 
-    frontmatter_text = global_skill_paths(home)[0].read_text().split("---\n", 2)[1]
-    frontmatter = parse_yaml_mapping(frontmatter_text, source=Path("SKILL.md"))
+    hub = (agents_dir(home) / "SKILL.md").read_text()
+    frontmatter = parse_yaml_mapping(hub.split("---\n", 2)[1], source=Path("SKILL.md"))
 
     name = frontmatter["name"]
     description = frontmatter["description"]
@@ -45,67 +63,78 @@ def test_frontmatter_meets_the_cross_agent_standard(home: Path) -> None:
     assert "never" in description  # states when to trigger
 
 
-def test_skill_teaches_the_full_capture_loop(home: Path) -> None:
+def test_hub_teaches_the_capture_loop(home: Path) -> None:
     install_agents(home)
-    content = global_skill_paths(home)[0].read_text()
+    hub = (agents_dir(home) / "SKILL.md").read_text()
 
-    # Create, verify, decline, worked example, and the pattern primer.
-    assert "byor add --scope" in content
-    assert "--from" in content
-    assert "ast-grep scan" in content
-    assert "never use print for logging" in content
-    assert "$$$" in content
-    assert "ast-grep run -p" in content
+    assert "byor add --scope" in hub
+    assert "--from" in hub
+    assert "ast-grep scan" in hub
     # The single confirmation question folds in "are exceptions allowed?".
-    assert "whether exceptions" in content
-    assert ALLOW_EXCEPTIONS_SENTENCE in content
+    assert "whether exceptions" in hub
+    assert ALLOW_EXCEPTIONS_SENTENCE in hub
+    # The hub points to each reference rather than restating them.
+    for relpath in REFERENCES:
+        assert relpath in hub
 
 
-def test_skill_teaches_authoring_a_check_script(home: Path) -> None:
+def test_patterns_reference_has_primer_and_worked_example(home: Path) -> None:
     install_agents(home)
-    content = global_skill_paths(home)[0].read_text()
+    patterns = (agents_dir(home) / "references/patterns.md").read_text()
 
-    # The script path: pick a tool, or write a check script for bespoke logic.
-    assert "Author a check script" in content
-    assert "without a shell" in content
-    assert "trailing path arguments" in content
+    assert "never use print for logging" in patterns
+    assert "$$$" in patterns
+    assert "ast-grep run -p" in patterns
 
 
-def test_uninstall_removes_only_marked_renders(
+def test_checks_reference_teaches_authoring_a_check_script(home: Path) -> None:
+    install_agents(home)
+    checks = (agents_dir(home) / "references/checks.md").read_text()
+
+    assert "Author a check script" in checks
+    assert "without a shell" in checks
+    assert "trailing path arguments" in checks
+
+
+def test_uninstall_removes_marked_files_and_prunes_dirs(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     install_agents(home)
-    user_render = global_skill_paths(home)[1]
-    user_render.write_text("my own skill\n")
+    user_file = claude_dir(home) / "references" / "patterns.md"
+    user_file.write_text("my own notes\n")  # no marker: user-owned
 
     assert main(["hook", "uninstall", "--agent", "skill"]) == 0
 
-    assert not global_skill_paths(home)[0].exists()
-    assert user_render.read_text() == "my own skill\n"
+    # Marked files (and the dirs they left empty) are gone; the user file stays.
+    assert not (agents_dir(home) / "SKILL.md").exists()
+    assert not agents_dir(home).exists()  # fully pruned
+    assert user_file.read_text() == "my own notes\n"
     assert "without the BYOR marker" in capsys.readouterr().out
     assert "skill" not in global_agents()
 
 
-def test_self_heal_refreshes_a_drifted_skill_render(home: Path) -> None:
-    """byor owns the skill, so running any command rewrites a managed render
-    that drifted from the packaged skill — no explicit reinstall needed."""
+def test_self_heal_refreshes_a_drifted_reference(home: Path) -> None:
+    """byor owns the skill, so running any command rewrites a managed file that
+    drifted from the package — references included, not just the hub."""
     repo = make_repo(home)
     install_agents(home)
-    drifted = global_skill_paths(home)[0]
+    drifted = agents_dir(home) / "references" / "checks.md"
     drifted.write_text(f"{MANAGED_MARKER}\nstale render\n")
 
     assert main(["list", "--repo", str(repo)]) == 0  # any command self-heals
 
-    assert drifted.read_text() == global_skill_paths(home)[1].read_text()
-    assert "BYOR Rule Capture" in drifted.read_text()
+    assert (
+        drifted.read_text() == (claude_dir(home) / "references/checks.md").read_text()
+    )
+    assert "Author a check script" in drifted.read_text()
 
 
-def test_self_heal_leaves_a_user_owned_render_untouched(home: Path) -> None:
+def test_self_heal_leaves_a_user_owned_file_untouched(home: Path) -> None:
     """Dropping the marker hands the file to the user; self-heal never clobbers
     it, the standard ownership escape hatch."""
     repo = make_repo(home)
     install_agents(home)
-    owned = global_skill_paths(home)[0]
+    owned = agents_dir(home) / "SKILL.md"
     owned.write_text("# our house skill\n")  # no marker: user-owned
 
     assert main(["list", "--repo", str(repo)]) == 0
@@ -119,4 +148,4 @@ def test_install_writes_the_hook_and_global_skill(home: Path) -> None:
     install_agents(home, "claude-code")
 
     assert (home / ".claude" / "settings.json").is_file()
-    assert global_skill_paths(home)[1].is_file()
+    assert (claude_dir(home) / "SKILL.md").is_file()
