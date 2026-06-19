@@ -28,11 +28,17 @@ def fake_executable(path: Path, script: str = 'echo "ast-grep 9.9.9"') -> Path:
 
 @pytest.fixture
 def bin_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """An initially empty PATH, with $BYOR_AST_GREP unset."""
+    """An initially empty PATH, with $BYOR_AST_GREP unset.
+
+    The interpreter dir (the auto-mode fallback) is pointed at the same empty
+    dir, so resolution sees only what a test puts here — not the real bundled
+    ast-grep that lives beside the test runner's interpreter.
+    """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     monkeypatch.setenv("PATH", str(bin_dir))
     monkeypatch.delenv("BYOR_AST_GREP", raising=False)
+    monkeypatch.setattr(sys, "executable", str(bin_dir / "python"))
     return bin_dir
 
 
@@ -74,6 +80,19 @@ def test_resolution_falls_through_to_a_real_ast_grep(bin_dir: Path) -> None:
     ast_grep = fake_executable(bin_dir / "ast-grep")
 
     assert resolve_ast_grep() == ast_grep
+
+
+@requires_sh
+def test_resolution_falls_back_to_the_interpreter_dir_when_not_on_path(
+    bin_dir: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`uv tool install byor` puts only `byor` on PATH; the bundled ast-grep sits
+    in byor's own venv bin next to the interpreter, so auto mode looks there."""
+    venv_bin = tmp_path / "venv-bin"
+    bundled = fake_executable(venv_bin / "ast-grep")
+    monkeypatch.setattr(sys, "executable", str(venv_bin / "python"))  # not on PATH
+
+    assert resolve_ast_grep() == bundled
 
 
 @requires_sh
