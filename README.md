@@ -14,9 +14,7 @@ past the first couple should be keyword-only; it agrees and listens, but then
 later in the session it writes `create_user(name, email, True, False, None)`. So
 you add a line to your ever-growing `AGENTS.md` in the hope it fixes it. It doesn't.
 
-> `byor` is the sheepdog for your flock of coding agents: you set the rules and it reins in any agent that attempts to stray in real time.
-
-**`byor` can do this because it's rules are real executable checks, not markdown prompts.**
+> **`byor` is the sheepdog for your flock of coding agents**: you set the rules and it reins in any agent that attempts to stray in real time. `byor` can do this because it's rules are real executable checks, not markdown prompts.
 
 You rarely write one of these rules by hand. If you tell your agent to create a rule,
 or even give it critical feedback about code it has written, it will use `byor`'s skill
