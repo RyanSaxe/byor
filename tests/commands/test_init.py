@@ -177,6 +177,8 @@ def test_init_ends_with_quick_doctor_surfacing_problems(
     empty_bin.mkdir()
     monkeypatch.setenv("PATH", str(empty_bin))
     monkeypatch.delenv("BYOR_AST_GREP", raising=False)
+    # Also hide the bundled ast-grep beside the interpreter (the auto fallback).
+    monkeypatch.setattr(sys, "executable", str(empty_bin / "python"))
 
     assert main(["init", "--repo", str(repo), "--non-interactive"]) == 0
 

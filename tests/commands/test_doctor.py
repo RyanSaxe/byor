@@ -1,5 +1,6 @@
 import json
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -99,6 +100,8 @@ def test_doctor_reports_missing_ast_grep_with_the_install_message(
     empty_bin.mkdir()
     monkeypatch.setenv("PATH", str(empty_bin))
     monkeypatch.delenv("BYOR_AST_GREP", raising=False)
+    # Also hide the bundled ast-grep beside the interpreter (the auto fallback).
+    monkeypatch.setattr(sys, "executable", str(empty_bin / "python"))
     capsys.readouterr()
 
     assert main(["doctor", "--repo", str(repo)]) == 1

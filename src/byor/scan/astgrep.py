@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,7 +37,13 @@ def resolve_ast_grep(command: str = "auto") -> Path:
 
     `$BYOR_AST_GREP` wins when set. Otherwise a non-`auto` `command` (the
     global config's `ast_grep.command`: a name or absolute path) is used
-    exactly, and `auto` tries `ast-grep` then `sg` on PATH.
+    exactly, and `auto` tries `ast-grep` then `sg`.
+
+    In `auto` mode each name is looked up on PATH first, then in the directory of
+    the running interpreter — where the bundled `ast-grep-cli` console script
+    lives. `uv tool install byor` exposes only the `byor` script on PATH, leaving
+    that bundled ast-grep invisible to a bare PATH lookup, so this fallback is
+    what makes "ast-grep ships with byor" hold for that install.
 
     A candidate is accepted only if `<candidate> --version` reports an
     ast-grep version; otherwise resolution continues down the chain (Ubuntu's
@@ -50,18 +57,34 @@ def resolve_ast_grep(command: str = "auto") -> Path:
         candidates = (command,)
     else:
         candidates = ("ast-grep", "sg")
+    # The bundled ast-grep sits beside the interpreter; consult it only in auto
+    # mode, so an explicit override or configured command is honored exactly.
+    fallback_dir = (
+        os.path.dirname(sys.executable) if not override and command == "auto" else None
+    )
     probed: set[Path] = set()
     for candidate in candidates:
-        found = shutil.which(candidate)
-        if found is None:
-            continue
-        executable = Path(found)
-        if executable in probed:
-            continue
-        probed.add(executable)
-        if _reports_ast_grep_version(executable):
-            return executable
+        for found in _candidate_locations(candidate, fallback_dir):
+            executable = Path(found)
+            if executable in probed:
+                continue
+            probed.add(executable)
+            if _reports_ast_grep_version(executable):
+                return executable
     raise AstGrepNotFound(NOT_FOUND_MESSAGE)
+
+
+def _candidate_locations(candidate: str, fallback_dir: str | None) -> list[str]:
+    """`candidate` on PATH, then in `fallback_dir` when given — first match each."""
+    locations: list[str] = []
+    on_path = shutil.which(candidate)
+    if on_path is not None:
+        locations.append(on_path)
+    if fallback_dir is not None:
+        beside_interpreter = shutil.which(candidate, path=fallback_dir)
+        if beside_interpreter is not None:
+            locations.append(beside_interpreter)
+    return locations
 
 
 @dataclass
