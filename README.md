@@ -10,19 +10,17 @@
 </p>
 
 Your AI agent keeps breaking rules you have already given it. You say arguments
-past the first couple should be keyword-only; it agrees, then writes
-`create_user(name, email, True, False, None)` in the very next file. The usual
-answer is another line in `AGENTS.md`, and another, until it is a wall of prose
-that bloats every session and gets followed only when the model feels like it.
-byor is the sheepdog for your flock of coding agents: you set the rules, let them
-run, and it reins in any that stray.
+past the first couple should be keyword-only; it agrees and listens, but then
+later in the session it writes `create_user(name, email, True, False, None)`. So
+you add a line to your ever-growing `AGENTS.md` in the hope it fixes it. It doesn't.
 
-> **byor rules are executable checks, not Claude/Cursor-style prompt rules.**
-> Those are just more markdown; a byor rule is real code that runs against your
-> agent's edits.
+> `byor` is the sheepdog for your flock of coding agents: you set the rules and it reins in any agent that attempts to stray in real time.
 
-You rarely write one by hand. Describe the convention to your agent and byor's
-bundled skill drafts the check, confirms it with you, and saves it:
+**`byor` can do this because it's rules are real executable checks, not markdown prompts.**
+
+You rarely write one of these rules by hand. If you tell your agent to create a rule,
+or even give it critical feedback about code it has written, it will use `byor`'s skill
+to create the best automated system to keep your agent in check. Here is an example:
 
 ```yaml
 # .byor/rules/project/keyword-only-args.yml
@@ -49,9 +47,10 @@ metadata:
 A rule like this is a structural [ast-grep](https://ast-grep.github.io) check,
 and byor puts it in three places:
 
-- **Terminal and editor** — `ast-grep scan` and `ast-grep lsp` show the `message`.
+- **Terminal** — `ast-grep scan` shows the `message`.
+- **IDE** — set up your IDE with `ast-grep lsp` to see `message` as a diagnostic.
 - **Your AI agent** — a post-edit hook hands over the `agent_prompt`, scoped to
-  the lines it changed, so it fixes the violation before moving on.
+  the lines it changed, so the agent fixes the violation before moving on.
 
 ast-grep rules are byor's built-in kind; it also runs any linter, type checker, or
 script you already use and folds their output into the same agent feedback. This
