@@ -1,0 +1,43 @@
+id: keyword-only-args
+valid:
+  # Two positional parameters is the limit.
+  - |
+    def make_user(name, email):
+        return name
+  # Anything beyond the second is already keyword-only.
+  - |
+    def make_user(name, email, *, admin=False, verified=False):
+        return name
+  # A trailing *args also keeps later arguments off the positional list.
+  - |
+    def log(level, message, *args):
+        return level
+  # Methods get one free slot for self.
+  - |
+    class User:
+        def rename(self, first, last):
+            return first
+  # ...and classmethods for cls.
+  - |
+    class User:
+        @classmethod
+        def build(cls, name, email):
+            return name
+invalid:
+  # Three positional parameters: the third should be keyword-only.
+  - |
+    def make_user(name, email, admin):
+        return name
+  # Defaults are still positional unless a `*` precedes them.
+  - |
+    def make_user(name, email, admin=False, verified=False):
+        return name
+  # self plus three positional parameters trips the method limit.
+  - |
+    class User:
+        def update(self, first, last, email):
+            return first
+  # async is no exception.
+  - |
+    async def fetch(client, url, retries):
+        return url

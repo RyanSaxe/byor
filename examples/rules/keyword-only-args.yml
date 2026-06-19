@@ -1,0 +1,59 @@
+# Demonstrates: positional counting with `nthChild`, plus a `self`/`cls`
+# exemption. A flat pattern cannot express "a third positional parameter, unless
+# a `*` already makes the rest keyword-only" — a metavariable would swallow the
+# `*` separator and miss signatures that have exactly three parameters. This rule
+# counts structurally instead:
+#
+#   1. `kind: parameters` — match the signature's parameter list.
+#   2. `nthChild: 3`      — a real parameter sits in the third slot. ast-grep
+#                           counts the bare `*`, `*args`, and `**kwargs` as their
+#                           own nodes, so an already keyword-only signature has a
+#                           separator in that slot, not a parameter, and is exempt.
+#   3. self/cls           — methods get one free slot: when the first parameter is
+#                           `self` or `cls`, the limit shifts to the fourth slot.
+id: keyword-only-args
+language: python
+severity: warning
+message: Arguments after the first two must be keyword-only. Add a bare `*` so callers pass them by name.
+rule:
+  kind: parameters
+  any:
+    # Functions and staticmethods: a real third parameter, not behind self/cls.
+    - all:
+        - has:
+            nthChild: 3
+            any:
+              - kind: identifier
+              - kind: typed_parameter
+              - kind: default_parameter
+              - kind: typed_default_parameter
+        - not:
+            has:
+              nthChild: 1
+              regex: "^(self|cls)$"
+    # Methods: self/cls takes the first slot, so the limit shifts to the fourth.
+    - all:
+        - has:
+            nthChild: 1
+            regex: "^(self|cls)$"
+        - has:
+            nthChild: 4
+            any:
+              - kind: identifier
+              - kind: typed_parameter
+              - kind: default_parameter
+              - kind: typed_default_parameter
+metadata:
+  byor:
+    rationale: >
+      Long positional argument lists make call sites unreadable: f(a, b, c, d)
+      hides what each value means. Forcing later arguments to be keyword-only
+      keeps calls self-documenting and lets you add or reorder parameters
+      without silently breaking callers.
+    agent_prompt: >
+      Insert a bare `*` after the second parameter so every argument beyond it is
+      keyword-only, for example def f(a, b, *, c, d). Update the call sites to
+      pass those arguments by name.
+    tags:
+      - python
+      - style
