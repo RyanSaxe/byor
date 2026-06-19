@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/byor_banner.png" alt="byor: Build Your Own Rules" width="100%">
+  <img src="https://raw.githubusercontent.com/RyanSaxe/byor/main/assets/byor_banner.png" alt="byor: Build Your Own Rules" width="100%">
 </p>
 
 <p align="center">
@@ -9,39 +9,53 @@
   <a href="LICENSE"><img src="https://img.shields.io/pypi/l/byor" alt="License"></a>
 </p>
 
-Write a custom lint rule once and it becomes a live diagnostic in your terminal,
-your editor, and your AI agent's feedback loop.
+Your AI agent keeps breaking rules you have already given it. You say arguments
+past the first couple should be keyword-only; it agrees, then writes
+`create_user(name, email, True, False, None)` in the very next file. The usual
+answer is another line in `AGENTS.md`, and another, until it is a wall of prose
+that bloats every session and gets followed only when the model feels like it.
+byor is the sheepdog for your flock of coding agents: you set the rules, let them
+run, and it reins in any that stray.
 
-The usual way to teach an agent your standards is a wall of prose in `AGENTS.md`
-or `CLAUDE.md` — which inflates every prompt, gets followed unevenly, and does
-nothing in your terminal or editor. byor makes the standard a rule instead:
-checked mechanically everywhere, and surfaced to the agent only when its own
-change trips it, scoped to the lines it touched.
+> **byor rules are executable checks, not Claude/Cursor-style prompt rules.**
+> Those are just more markdown; a byor rule is real code that runs against your
+> agent's edits.
 
-byor is a small CLI around [ast-grep](https://ast-grep.github.io), a fast
-structural search-and-lint tool. `ast-grep scan` lints from the terminal and
-`ast-grep lsp` shows diagnostics in your editor; byor arranges plain rule files
-and configuration so both work without setup, then adds the two things ast-grep
-leaves out: sharing rules across your repositories, and feeding their
-diagnostics back into AI coding agents.
+You rarely write one by hand. Describe the convention to your agent and byor's
+bundled skill drafts the check, confirms it with you, and saves it:
 
 ```yaml
-# .byor/rules/project/no-print.yml
-id: no-print
+# .byor/rules/project/keyword-only-args.yml
+id: keyword-only-args
 language: python
 severity: warning
-message: Use the logging module, not print, in library code.
+message: Arguments after the first two must be keyword-only. Add `*` so callers pass them by name.
 rule:
-  pattern: print($$$ARGS)
+  kind: parameters
+  any:
+    - all:  # a function whose third argument is still positional
+        - has: { nthChild: 3, any: [{kind: identifier}, {kind: typed_parameter}, {kind: default_parameter}, {kind: typed_default_parameter}] }
+        - not: { has: { nthChild: 1, regex: "^(self|cls)$" } }
+    - all:  # a method, where self/cls shifts the limit to the fourth slot
+        - has: { nthChild: 1, regex: "^(self|cls)$" }
+        - has: { nthChild: 4, any: [{kind: identifier}, {kind: typed_parameter}, {kind: default_parameter}, {kind: typed_default_parameter}] }
 metadata:
   byor:
     agent_prompt: >
-      Replace this print with a module-level logger,
-      logging.getLogger(__name__), at the appropriate level.
+      Put a bare `*` after the second parameter so the rest are keyword-only,
+      e.g. def f(a, b, *, c, d), and pass them by name at the call sites.
 ```
 
-`message` is what you read in the terminal and editor; `agent_prompt` is the
-directive byor hands your AI agent when it trips the rule.
+A rule like this is a structural [ast-grep](https://ast-grep.github.io) check,
+and byor puts it in three places:
+
+- **Terminal and editor** — `ast-grep scan` and `ast-grep lsp` show the `message`.
+- **Your AI agent** — a post-edit hook hands over the `agent_prompt`, scoped to
+  the lines it changed, so it fixes the violation before moving on.
+
+ast-grep rules are byor's built-in kind; it also runs any linter, type checker, or
+script you already use and folds their output into the same agent feedback. This
+rule and others live in [examples/](examples/), exercised in CI.
 
 ## Install
 
@@ -179,6 +193,16 @@ byor sync           Mirror global rules into the repo
 
 Every command takes `--help`, and repo-operating commands take `--repo PATH`
 (default: search upward from the current directory).
+
+## What's next
+
+Today byor catches strays with one mechanism: a deterministic post-edit hook.
+That already covers anything a rule, a linter, or a type checker can express.
+
+The harder strays are behavioral, not textual: an agent drifting off the plan you
+agreed on, stopping a loop early, editing files outside the scope you set.
+Teaching the sheepdog to herd those too is where byor is headed. If there is a
+rule you wish it could enforce, [open an issue](https://github.com/RyanSaxe/byor/issues).
 
 ## Documentation
 
