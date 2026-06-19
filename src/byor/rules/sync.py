@@ -21,7 +21,7 @@ from byor.config import (
 from byor.io.fsio import MANAGED_MARKER, write_marked_text, write_text_atomic
 from byor.io.paths import global_config_dir, resolve_repo_root, resolve_within
 from byor.rules.rules import Rule, check_id_conflicts, discover_rule_files, load_rules
-from byor.rules.skill import SKILL_MARKDOWN, global_skill_paths
+from byor.rules.skill import global_skill_dirs, skill_files
 from byor.scaffold.ignore import write_rule_visibility_file
 from byor.scaffold.sgconfig import ensure_home_sgconfig
 
@@ -178,14 +178,15 @@ def heal_repo(repo_root: Path, config_dir: Path) -> str | None:
 
 
 def refresh_skill_renders() -> None:
-    """Rewrite any byor-owned global skill render that drifted from the package.
+    """Rewrite any byor-owned global skill file that drifted from the package.
 
-    byor owns the skill, so running any command keeps the global render current
-    with the installed version; an unmarked render a user took over is left
+    byor owns the skill, so running any command keeps the global tree current
+    with the installed version; an unmarked file a user took over is left
     untouched.
     """
-    for path in global_skill_paths():
-        write_marked_text(path, SKILL_MARKDOWN, MANAGED_MARKER)
+    for base in global_skill_dirs():
+        for relpath, content in skill_files():
+            write_marked_text(base / relpath, content, MANAGED_MARKER)
 
 
 def summarize_changes(result: MirrorResult) -> str:

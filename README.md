@@ -46,20 +46,22 @@ directive byor hands your AI agent when it trips the rule.
 ## Install
 
 ```bash
-uv tool install byor    # or `uvx byor` to try without installing
-byor install            # set up the skill + your agents' hooks (once)
-byor init               # add byor to a repo
+uv tool install byor && byor install   # install the CLI, then set up the skill + agent hooks (once)
+byor init                              # optional — only for repo-scoped or shared rules (see below)
 ```
 
 byor bundles ast-grep, so Python 3.11+ is all you need to *run* it — the rules
 themselves work in any language ast-grep supports (TypeScript, Go, Rust, and
 more), not just Python. `byor install` registers your editor and agent
-integrations machine-wide; `byor init` adds a repository's rule directories and
-`sgconfig.yml`.
+integrations machine-wide. `byor init` is **optional**: run it only when you want
+rules or checks scoped to a repository, or shared with contributors — your
+personal global rules and checks already work in every repo without it.
 [docs/ai-agents.md](docs/ai-agents.md) covers what each step writes.
 
-You can also let your AI coding agent handle it: open it in the repo and ask it
-to set up byor.
+After that one-time bootstrap, let your AI coding agent handle the rest: open it
+in the repo and say **"set up byor"**. The skill verifies the install, runs
+`byor init` if you want repo or team rules, and offers to import the preferences
+you already wrote in your CLAUDE.md / AGENTS.md as enforced rules.
 
 ## Terminal and editor
 
@@ -102,13 +104,18 @@ Agents can both obey your rules and write new ones:
   do that") into an ast-grep rule: the agent drafts it, confirms once, and runs
   `byor add`. When a linter or type checker fits better, the skill offers that
   instead.
+- **Setup.** The same skill onboards you: say "set up byor" and it checks the
+  install, optionally inits the repo, and imports the mechanically checkable
+  preferences from your existing CLAUDE.md / AGENTS.md as rules — and can clean up
+  an existing repo on a throwaway branch so you start without a wall of warnings.
 
 `byor install` wires up the agents you pick (once, machine-wide); `byor hook`
 adds or drops one later.
 
 ```bash
 byor install --agents claude-code,codex
-byor hook install --agent copilot
+byor hook install --agent copilot       # add an agent later
+byor hook uninstall --agent copilot     # or remove one (--agent skill removes the skill)
 ```
 
 byor supports five harnesses:

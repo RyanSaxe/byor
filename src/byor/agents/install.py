@@ -24,7 +24,7 @@ from byor.agents.pi import PI_EXTENSION, PI_EXTENSION_RELPATH, PI_MARKER
 from byor.config import load_global_config, save_global_config
 from byor.io.fsio import MANAGED_MARKER, marked_text_status, write_marked_text
 from byor.io.paths import global_config_dir
-from byor.rules.skill import SKILL_MARKDOWN, global_skill_paths
+from byor.rules.skill import global_skill_dirs, skill_files
 
 # The stdin-hook harnesses: a set for membership, a map for Harness lookup.
 HOOK_HARNESSES: frozenset[str] = frozenset(HARNESS_CHOICES)
@@ -119,8 +119,10 @@ def uninstall_agent(agent: str) -> list[str]:
     """Remove one agent adapter; only marker-bearing files are deleted."""
     if agent == "skill":
         messages: list[str] = []
-        for path in global_skill_paths():
+        for path in _global_skill_file_paths():
             messages.extend(_remove_managed_path(path, _home_display(path)))
+        for base in global_skill_dirs():
+            _prune_empty_dirs(base)
         return messages
     plugin = PLUGIN_AGENTS.get(agent)
     if plugin is not None:
@@ -152,15 +154,35 @@ def agent_file_problems(agents: Sequence[str]) -> list[str]:
 
 
 def _install_skill() -> list[str]:
-    """Write the byor-owned skill to its global discovery locations.
+    """Write the byor-owned skill tree to its global discovery locations.
 
-    Both renders are byor-managed copies of the packaged skill; an unmarked file
-    a user placed at either path is left untouched, like any managed file.
+    Both trees are byor-managed copies of the packaged skill; an unmarked file a
+    user placed at any path is left untouched, like any managed file.
     """
     messages: list[str] = []
-    for path in global_skill_paths():
-        messages.extend(_write_managed_path(path, SKILL_MARKDOWN, _home_display(path)))
+    for base in global_skill_dirs():
+        for relpath, content in skill_files():
+            path = base / relpath
+            messages.extend(_write_managed_path(path, content, _home_display(path)))
     return messages
+
+
+def _global_skill_file_paths() -> list[Path]:
+    """Every absolute skill file path across both global skill directories."""
+    return [
+        base / relpath for base in global_skill_dirs() for relpath, _ in skill_files()
+    ]
+
+
+def _prune_empty_dirs(directory: Path) -> None:
+    """Remove `directory` and any empty subdirectories left after uninstall."""
+    if not directory.is_dir():
+        return
+    for child in sorted(directory.iterdir(), reverse=True):
+        if child.is_dir():
+            _prune_empty_dirs(child)
+    if not any(directory.iterdir()):
+        directory.rmdir()
 
 
 def _install_plugin(plugin: PluginAgent) -> list[str]:

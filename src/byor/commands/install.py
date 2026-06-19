@@ -44,6 +44,10 @@ def run_install(args: argparse.Namespace) -> int:
     for message in messages:
         print(message)
     print("byor is installed. Run `byor init` in a repo to add project rules.")
+    print(
+        'In your agent, say "set up byor" to import preferences from your '
+        "existing CLAUDE.md / AGENTS.md."
+    )
     return 0
 
 
