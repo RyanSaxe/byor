@@ -1,8 +1,8 @@
 # Set Up byor and Import Existing Preferences
 
-Follow this when the user wants to get started with byor, repair its install, or
-turn the preferences they already wrote in prose into enforced rules. Drafting
-each rule reuses the capture workflow in `SKILL.md` — do not restate it here.
+Onboarding confirms the install, optionally initializes the repo, and turns the
+preferences the user already wrote in prose into enforced rules. Draft any rule
+with the capture workflow in `SKILL.md`.
 
 ## 1. Confirm the install is healthy
 
@@ -56,8 +56,8 @@ Pull out the durable, mechanically checkable preferences. Classify each:
 
 ## 5. Confirm the batch in one question
 
-Setup can surface many candidates, so this is the one place you deviate from the
-capture skill's one-rule-one-question rule. Present a single table —
+Setup can surface many candidates, so confirm the whole batch with a single
+question rather than one question per rule. Present a single table —
 
 | preference | proposed tool | proposed scope |
 

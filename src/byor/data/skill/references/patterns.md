@@ -1,6 +1,6 @@
 # ast-grep Patterns and a Worked Example
 
-Read this while drafting a rule (step 1 of the capture workflow in `SKILL.md`).
+The syntax a rule's `rule.pattern` uses, plus a complete worked example.
 
 ## Pattern Primer
 
