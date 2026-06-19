@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/RyanSaxe/byor/main/assets/byor_banner.png" alt="byor: Build Your Own Rules" width="100%">
+  <img src="assets/byor_banner.png" alt="byor: Build Your Own Rules" width="100%">
 </p>
 
 <p align="center">
