@@ -1,6 +1,8 @@
 # ast-grep Patterns and a Worked Example
 
 The syntax a rule's `rule.pattern` uses, plus a complete worked example.
+Before drafting tags for a new rule, run `byor list --scope all --tags` and
+reuse fitting user-defined labels where possible.
 
 ## Pattern Primer
 

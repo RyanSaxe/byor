@@ -45,6 +45,16 @@ channel as rules. Only decline when nothing mechanical fits.
 
 ### 1. Draft the rule
 
+First inspect the existing tag vocabulary:
+
+```bash
+byor list --scope all --tags
+```
+
+Tags are user-defined labels for listing, profiles, and repo-local exclusions.
+Reuse existing tags when they fit the new rule. Create a new tag only when it
+expresses a genuinely new grouping the existing vocabulary does not cover.
+
 Write a complete ast-grep YAML rule with id, language, severity, message,
 `rule.pattern`, and `metadata.byor`:
 
@@ -67,8 +77,10 @@ metadata:
 ```
 
 `rationale` records why; `agent_prompt` tells the next AI exactly what to do
-when the rule fires. Write both for an AI reader. For ast-grep pattern syntax
-and a fully worked example, see **references/patterns.md**.
+when the rule fires. Write both for an AI reader. Tags help future agents and
+users apply profiles or repo-local exclusions without naming every rule one by
+one. For ast-grep pattern syntax and a fully worked example, see
+**references/patterns.md**.
 
 ### 2. Propose a scope
 

@@ -39,7 +39,7 @@ Optional `metadata.byor` fields, all ignored by ast-grep itself:
 | `rationale` | Why the rule exists, for humans reading the file |
 | `agent_prompt` | What `byor agent-check` tells an AI agent to do; falls back to `message` when absent |
 | `docs_url` | Link to fuller documentation |
-| `tags` | Free-form labels (default `[]`) |
+| `tags` | Free-form labels for listing, profiles, and exclusions (default `[]`) |
 
 ## Exceptions
 
@@ -182,13 +182,26 @@ exists, promote fails unless `--replace`.
 ```bash
 byor exclude RULE_ID
 byor include RULE_ID
+byor exclude --tag TAG
+byor include --tag TAG
 ```
 
 `exclude` adds the ID to `global.excluded_rule_ids` in `.byor/local.yml`
 (private, gitignored) and syncs, removing the generated copy. `include`
 removes the ID and syncs; if a project or local rule still owns the ID, the
 global rule stays skipped and `include` says so. These commands only affect
-global rules. See what is excluded with:
+global rules.
+
+Tag exclusions add entries under `global.excluded_tags` and skip any personal
+global rule with a matching `metadata.byor.tags` value. Tags are user-defined
+labels; byor does not reserve names or enforce a taxonomy. To see the tags
+already in use, run:
+
+```bash
+byor list --tags
+```
+
+See what is excluded with:
 
 ```bash
 byor list --scope all
@@ -198,6 +211,43 @@ byor list --scope all
 project  no-python-cast       .byor/rules/project/python/no-python-cast.yml
 skipped  no-one-line-wrapper  excluded in .byor/local.yml
 ```
+
+## Profiles
+
+Profiles are named templates in the global config. They apply repo-local
+exclusions, but they are not runtime modes: after a profile is applied, sync
+only reads `.byor/local.yml`.
+
+```yaml
+profiles:
+  existing:
+    description: Low-friction defaults for mature repositories.
+    rules:
+      excluded_tags:
+        - legacy-risk
+      excluded_rule_ids: []
+    checks:
+      excluded_tags:
+        - strict
+      excluded: []
+```
+
+Use a profile during init, set a default for non-interactive init, or apply one
+later:
+
+```bash
+byor init --profile existing
+byor profile apply existing
+```
+
+```yaml
+init:
+  profile: existing
+```
+
+The profile `rules` section maps onto `.byor/local.yml`'s `global` section.
+Those selectors affect personal global rules only; project and local rules stay
+owned by the repo.
 
 ## Another worked example
 

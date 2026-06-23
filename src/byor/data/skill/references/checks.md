@@ -56,7 +56,13 @@ checks:
   - name: no-banned-env
     extensions: [py]
     run: ~/.config/byor/scripts/no-banned-env.sh
+    tags:
+      - environment
 ```
 
-Verify it like a rule: `byor list` (or `byor doctor`) shows the effective check
-and its origin; then trip it on an example file to confirm it fires.
+Check tags are arbitrary user-defined labels, like rule tags. Use
+`byor list --tags` to inspect the existing vocabulary and reuse fitting tags;
+tags let profiles or `byor exclude --check-tag TAG` disable a group of checks in
+one repo. Verify it like a rule: `byor list` (or `byor doctor`) shows the
+effective check and its origin; then trip it on an example file to confirm it
+fires.
