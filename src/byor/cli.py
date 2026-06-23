@@ -166,8 +166,7 @@ def _add_list_arguments(command: argparse.ArgumentParser) -> None:
         action="store_true",
         help="List discovered rule and check tags instead of rules",
     )
-    command.add_argument("--tag", help="Only show rules with this tag")
-    command.add_argument("--check-tag", help="Only show checks with this tag")
+    command.add_argument("--tag", help="Only show rules and checks with this tag")
 
 
 def _add_add_arguments(command: argparse.ArgumentParser) -> None:

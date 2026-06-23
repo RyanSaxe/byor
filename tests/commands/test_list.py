@@ -130,7 +130,7 @@ def test_list_surfaces_effective_checks_with_origin_and_exclusions(
     assert "mypy" not in out  # excluded in local.yml
 
 
-def test_list_filters_rules_by_tag(
+def test_list_tag_filters_rules_and_checks_together(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home)
@@ -138,7 +138,12 @@ def test_list_filters_rules_by_tag(
     write_global_rule(home, "style.yml", "style", tags=["style"])
     save_global_config(
         home / "xdg" / "byor",
-        GlobalConfig(checks=[CheckDef("ty", ["py"], "ty", tags=["strict"])]),
+        GlobalConfig(
+            checks=[
+                CheckDef("ty", ["py"], "ty", tags=["strict"]),
+                CheckDef("ruff", ["py"], "ruff", tags=["format"]),
+            ]
+        ),
     )
     main(["sync", "--repo", str(repo)])
     capsys.readouterr()
@@ -146,34 +151,10 @@ def test_list_filters_rules_by_tag(
     assert main(["list", "--repo", str(repo), "--tag", "strict"]) == 0
 
     out = capsys.readouterr().out
-    assert "strict" in out
-    assert "style" not in out
-    assert "check/global" not in out
-
-
-def test_list_filters_checks_by_tag(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    repo = make_repo(home)
-    write_global_rule(home, "strict.yml", "strict", tags=["strict"])
-    config_dir = home / "xdg" / "byor"
-    save_global_config(
-        config_dir,
-        GlobalConfig(
-            checks=[
-                CheckDef("ruff", ["py"], "ruff", tags=["format"]),
-                CheckDef("ty", ["py"], "ty", tags=["strict"]),
-            ]
-        ),
-    )
-    capsys.readouterr()
-
-    assert main(["list", "--repo", str(repo), "--check-tag", "strict"]) == 0
-
-    out = capsys.readouterr().out
-    assert "ty" in out
-    assert "ruff" not in out
-    assert ".byor/rules" not in out
+    assert "strict" in out  # rule tagged strict
+    assert "ty" in out  # check tagged strict
+    assert "style" not in out  # rule with another tag
+    assert "ruff" not in out  # check with another tag
 
 
 def test_list_tags_summarizes_rule_and_check_tags(
