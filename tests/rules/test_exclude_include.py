@@ -4,6 +4,7 @@ import pytest
 from support import make_repo, mirror, write_global_rule, write_rule
 
 from byor.cli import main
+from byor.config import load_local_config
 
 
 def test_exclude_removes_copy_and_include_restores_it(
@@ -56,6 +57,60 @@ def test_exclude_is_idempotent(home: Path, capsys: pytest.CaptureFixture[str]) -
 
     assert "'no-cast' is already excluded" in capsys.readouterr().out
     assert (repo / ".byor" / "local.yml").read_text().count("no-cast") == 1
+
+
+def test_exclude_and_include_rule_tag(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    write_global_rule(home, "no-cast.yml", "no-cast", tags=["legacy-risk"])
+    main(["sync", "--repo", str(repo)])
+    capsys.readouterr()
+
+    assert main(["exclude", "--repo", str(repo), "--tag", "legacy-risk"]) == 0
+
+    assert not (mirror(repo) / "no-cast.yml").exists()
+    assert load_local_config(repo).excluded_rule_tags == ["legacy-risk"]
+    assert "Excluded rule tag 'legacy-risk'" in capsys.readouterr().out
+
+    assert main(["include", "--repo", str(repo), "--tag", "legacy-risk"]) == 0
+
+    assert (mirror(repo) / "no-cast.yml").exists()
+    assert load_local_config(repo).excluded_rule_tags == []
+    assert "Re-enabled rule tag 'legacy-risk'" in capsys.readouterr().out
+
+
+def test_exclude_and_include_check_selectors(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+
+    assert main(["exclude", "--repo", str(repo), "--check", "ty"]) == 0
+    assert main(["exclude", "--repo", str(repo), "--check-tag", "strict"]) == 0
+
+    local = load_local_config(repo)
+    assert local.excluded_checks == ["ty"]
+    assert local.excluded_check_tags == ["strict"]
+
+    assert main(["include", "--repo", str(repo), "--check", "ty"]) == 0
+    assert main(["include", "--repo", str(repo), "--check-tag", "strict"]) == 0
+
+    local = load_local_config(repo)
+    assert local.excluded_checks == []
+    assert local.excluded_check_tags == []
+    assert "Re-enabled check tag 'strict'" in capsys.readouterr().out
+
+
+def test_exclude_requires_exactly_one_selector(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+
+    assert main(["exclude", "--repo", str(repo)]) == 1
+    assert main(["exclude", "--repo", str(repo), "no-cast", "--tag", "legacy"]) == 1
+
+    captured = capsys.readouterr()
+    assert "choose exactly one" in captured.err
 
 
 def test_exclude_requires_an_initialized_repo(

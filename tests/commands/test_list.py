@@ -80,8 +80,8 @@ def test_json_lists_rules_and_skips(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home)
-    write_global_rule(home, "no-baz.yml", "no-baz")
-    write_global_rule(home, "no-cast.yml", "no-cast")
+    write_global_rule(home, "no-baz.yml", "no-baz", tags=["typing"])
+    write_global_rule(home, "no-cast.yml", "no-cast", tags=["typing"])
     write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
     capsys.readouterr()
 
@@ -92,9 +92,14 @@ def test_json_lists_rules_and_skips(
         "scope": "global",
         "id": "no-baz",
         "path": ".byor/rules/personal/global/no-baz.yml",
+        "tags": ["typing"],
     } in payload["rules"]
     assert payload["skipped"] == [
-        {"id": "no-cast", "reason": "overridden by project rule"}
+        {
+            "id": "no-cast",
+            "reason": "overridden by project rule",
+            "tags": ["typing"],
+        }
     ]
 
 
@@ -123,6 +128,65 @@ def test_list_surfaces_effective_checks_with_origin_and_exclusions(
     out = capsys.readouterr().out
     assert "check/repo  ruff  repo-ruff" in out
     assert "mypy" not in out  # excluded in local.yml
+
+
+def test_list_filters_rules_by_tag(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    write_global_rule(home, "strict.yml", "strict", tags=["strict"])
+    write_global_rule(home, "style.yml", "style", tags=["style"])
+    main(["sync", "--repo", str(repo)])
+    capsys.readouterr()
+
+    assert main(["list", "--repo", str(repo), "--tag", "strict"]) == 0
+
+    out = capsys.readouterr().out
+    assert "strict" in out
+    assert "style" not in out
+
+
+def test_list_filters_checks_by_tag(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    config_dir = home / "xdg" / "byor"
+    save_global_config(
+        config_dir,
+        GlobalConfig(
+            checks=[
+                CheckDef("ruff", ["py"], "ruff", tags=["format"]),
+                CheckDef("ty", ["py"], "ty", tags=["strict"]),
+            ]
+        ),
+    )
+    capsys.readouterr()
+
+    assert main(["list", "--repo", str(repo), "--check-tag", "strict"]) == 0
+
+    out = capsys.readouterr().out
+    assert "ty" in out
+    assert "ruff" not in out
+
+
+def test_list_tags_summarizes_rule_and_check_tags(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    write_global_rule(home, "strict.yml", "strict", tags=["strict"])
+    config_dir = home / "xdg" / "byor"
+    save_global_config(
+        config_dir,
+        GlobalConfig(checks=[CheckDef("ty", ["py"], "ty", tags=["strict"])]),
+    )
+    main(["sync", "--repo", str(repo)])
+    capsys.readouterr()
+
+    assert main(["list", "--repo", str(repo), "--tags"]) == 0
+
+    out = capsys.readouterr().out
+    assert "rule   strict  1  global:1" in out
+    assert "check  strict  1  global:1" in out
 
 
 def test_list_guides_the_user_when_there_are_no_rules(

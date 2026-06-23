@@ -3,12 +3,14 @@ import sys
 from pathlib import Path
 
 import pytest
-from support import git
+from support import git, write_global_rule
 
 from byor.cli import main
 from byor.config import (
     GlobalConfig,
     InitDefaults,
+    ProfileConfig,
+    load_local_config,
     load_repo_config,
     load_repo_registry,
     save_global_config,
@@ -70,6 +72,71 @@ def test_init_defaults_project_name_to_repo_dir(repo: Path) -> None:
     assert main(["init", "--repo", str(repo), "--non-interactive"]) == 0
 
     assert load_repo_config(repo).project_name == repo.name
+
+
+def test_init_applies_requested_profile(repo: Path) -> None:
+    save_global_config(
+        config_dir(repo),
+        GlobalConfig(
+            profiles={
+                "existing": ProfileConfig(
+                    excluded_rule_ids=["python.no-staticmethod"],
+                    excluded_rule_tags=["legacy-risk"],
+                    excluded_checks=["ty"],
+                    excluded_check_tags=["strict"],
+                )
+            }
+        ),
+    )
+    write_global_rule(repo.parent, "no-cast.yml", "no-cast", tags=["legacy-risk"])
+
+    assert (
+        main(
+            ["init", "--repo", str(repo), "--non-interactive", "--profile", "existing"]
+        )
+        == 0
+    )
+
+    local = load_local_config(repo)
+    assert local.excluded_rule_ids == ["python.no-staticmethod"]
+    assert local.excluded_rule_tags == ["legacy-risk"]
+    assert local.excluded_checks == ["ty"]
+    assert local.excluded_check_tags == ["strict"]
+    assert not (
+        repo / ".byor" / "rules" / "personal" / "global" / "no-cast.yml"
+    ).exists()
+
+
+def test_init_uses_global_profile_default(repo: Path) -> None:
+    save_global_config(
+        config_dir(repo),
+        GlobalConfig(
+            init=InitDefaults(profile="existing"),
+            profiles={
+                "existing": ProfileConfig(excluded_rule_tags=["legacy-risk"]),
+            },
+        ),
+    )
+
+    assert main(["init", "--repo", str(repo), "--non-interactive"]) == 0
+
+    assert load_local_config(repo).excluded_rule_tags == ["legacy-risk"]
+
+
+def test_init_no_profile_skips_global_profile_default(repo: Path) -> None:
+    save_global_config(
+        config_dir(repo),
+        GlobalConfig(
+            init=InitDefaults(profile="existing"),
+            profiles={
+                "existing": ProfileConfig(excluded_rule_tags=["legacy-risk"]),
+            },
+        ),
+    )
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--no-profile"]) == 0
+
+    assert load_local_config(repo).excluded_rule_tags == []
 
 
 def test_init_is_idempotent(repo: Path) -> None:

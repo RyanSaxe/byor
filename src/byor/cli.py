@@ -25,12 +25,13 @@ COMMANDS = {
     "promote": "Move a personal rule into shared project rules",
     "exclude": "Disable a global rule in this repository",
     "include": "Re-enable a previously excluded global rule",
+    "profile": "List and apply local exclusion profiles",
     "list": "Show rules and where they come from",
     "agent-check": "Run ast-grep on changed files and render agent feedback",
     "hook": "Install or uninstall AI agent integrations",
 }
 
-REPO_COMMANDS = frozenset(COMMANDS) - {"install", "hook"}
+REPO_COMMANDS = frozenset(COMMANDS) - {"install", "hook", "profile"}
 REPO_HELP = "Repository root (default: search upward from cwd)"
 
 
@@ -66,9 +67,9 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "promote":
             _add_promote_arguments(command)
         if name in ("exclude", "include"):
-            command.add_argument(
-                "rule_id", metavar="RULE_ID", help="ID of a global rule"
-            )
+            _add_exclusion_arguments(command)
+        if name == "profile":
+            _add_profile_arguments(command)
         if name == "agent-check":
             _add_agent_check_arguments(command)
         if name == "hook":
@@ -126,6 +127,16 @@ def _add_init_arguments(command: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Overwrite sgconfig.yml after saving a timestamped backup",
     )
+    profile = command.add_mutually_exclusive_group()
+    profile.add_argument(
+        "--profile",
+        help="Apply a configured profile before the initial sync",
+    )
+    profile.add_argument(
+        "--no-profile",
+        action="store_true",
+        help="Skip applying init.profile from global config",
+    )
 
 
 def _add_sync_arguments(command: argparse.ArgumentParser) -> None:
@@ -150,6 +161,13 @@ def _add_list_arguments(command: argparse.ArgumentParser) -> None:
     command.add_argument(
         "--json", action="store_true", help="Emit machine-readable JSON"
     )
+    command.add_argument(
+        "--tags",
+        action="store_true",
+        help="List discovered rule and check tags instead of rules",
+    )
+    command.add_argument("--tag", help="Only show rules with this tag")
+    command.add_argument("--check-tag", help="Only show checks with this tag")
 
 
 def _add_add_arguments(command: argparse.ArgumentParser) -> None:
@@ -223,6 +241,26 @@ def _add_promote_arguments(command: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_exclusion_arguments(command: argparse.ArgumentParser) -> None:
+    command.add_argument(
+        "rule_id",
+        nargs="?",
+        metavar="RULE_ID",
+        help="ID of a global rule",
+    )
+    command.add_argument("--tag", help="Global rule tag to exclude or include")
+    command.add_argument("--check", help="Extra check name to exclude or include")
+    command.add_argument("--check-tag", help="Extra check tag to exclude or include")
+
+
+def _add_profile_arguments(command: argparse.ArgumentParser) -> None:
+    actions = command.add_subparsers(dest="profile_action", required=True)
+    actions.add_parser("list", help="List configured profiles")
+    apply = actions.add_parser("apply", help="Apply a profile to this repository")
+    apply.add_argument("name", metavar="NAME", help="Profile name")
+    apply.add_argument("--repo", type=Path, help=REPO_HELP)
+
+
 def _add_agent_check_arguments(command: argparse.ArgumentParser) -> None:
     source = command.add_mutually_exclusive_group()
     source.add_argument(
@@ -275,7 +313,7 @@ def _add_doctor_arguments(command: argparse.ArgumentParser) -> None:
 # Commands whose body performs the heal itself, or must not self-heal: install
 # (the command that sets global state up), init (runs a full sync as a step),
 # and sync (whose --check variant must never write).
-SELF_SYNCING_COMMANDS = frozenset({"install", "init", "sync"})
+SELF_SYNCING_COMMANDS = frozenset({"install", "init", "sync", "profile"})
 
 
 def _is_hook_invocation(args: argparse.Namespace) -> bool:
@@ -337,6 +375,10 @@ def run(args: argparse.Namespace) -> int:
         from byor.rules.commands import run_promote
 
         return run_promote(args)
+    if args.command == "profile":
+        from byor.commands.profile import run_profile
+
+        return run_profile(args)
     if args.command == "exclude":
         from byor.rules.commands import run_exclude
 

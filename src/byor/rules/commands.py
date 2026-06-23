@@ -16,6 +16,7 @@ from ruamel.yaml.comments import CommentedMap
 
 from byor.commands.doctor import quick_doctor_problems
 from byor.config import (
+    LocalConfig,
     RepoPaths,
     load_local_config,
     load_repo_config,
@@ -200,12 +201,17 @@ def run_promote(args: argparse.Namespace) -> int:
 def run_exclude(args: argparse.Namespace) -> int:
     context = repo_context(args)
     local = load_local_config(context.repo_root)
-    if args.rule_id in local.excluded_rule_ids:
-        print(f"'{args.rule_id}' is already excluded")
+    selector = _selector(args)
+    values = _selector_values(local, selector)
+    if selector.value in values:
+        print(f"'{selector.value}' is already excluded")
     else:
-        local.excluded_rule_ids.append(args.rule_id)
+        values.append(selector.value)
         save_local_config(context.repo_root, local)
-        print(f"Excluded '{args.rule_id}' in .byor/local.yml")
+        if selector.kind == "rule-id":
+            print(f"Excluded '{selector.value}' in .byor/local.yml")
+        else:
+            print(f"Excluded {selector.label} '{selector.value}' in .byor/local.yml")
     _sync_and_report(context.repo_root, context.canonical)
     return 0
 
@@ -213,18 +219,60 @@ def run_exclude(args: argparse.Namespace) -> int:
 def run_include(args: argparse.Namespace) -> int:
     context = repo_context(args)
     local = load_local_config(context.repo_root)
-    if args.rule_id not in local.excluded_rule_ids:
-        print(f"'{args.rule_id}' is not excluded")
+    selector = _selector(args)
+    values = _selector_values(local, selector)
+    if selector.value not in values:
+        if selector.kind == "rule-id":
+            print(f"'{selector.value}' is not excluded")
+        else:
+            print(f"{selector.label} '{selector.value}' is not excluded")
     else:
-        local.excluded_rule_ids.remove(args.rule_id)
+        values.remove(selector.value)
         save_local_config(context.repo_root, local)
-        print(f"Re-enabled '{args.rule_id}'")
+        if selector.kind == "rule-id":
+            print(f"Re-enabled '{selector.value}'")
+        else:
+            print(f"Re-enabled {selector.label} '{selector.value}'")
     plan = _sync_and_report(context.repo_root, context.canonical)
     # A project or local rule may still own the ID: say so.
-    for rule_id, reason in plan.skipped:
-        if rule_id == args.rule_id:
-            print(f"'{rule_id}' is still skipped: {reason}")
+    if selector.kind == "rule-id":
+        for skipped in plan.skipped:
+            if skipped.id == selector.value:
+                print(f"'{skipped.id}' is still skipped: {skipped.reason}")
     return 0
+
+
+@dataclass(frozen=True)
+class ExclusionSelector:
+    kind: str
+    label: str
+    value: str
+
+
+def _selector(args: argparse.Namespace) -> ExclusionSelector:
+    raw = {
+        "rule-id": args.rule_id,
+        "rule tag": args.tag,
+        "check": args.check,
+        "check tag": args.check_tag,
+    }
+    selected = [(kind, value) for kind, value in raw.items() if value is not None]
+    if len(selected) != 1:
+        raise ByorError("choose exactly one of RULE_ID, --tag, --check, or --check-tag")
+    kind, value = selected[0]
+    return ExclusionSelector(kind=kind, label=kind, value=value)
+
+
+def _selector_values(local: LocalConfig, selector: ExclusionSelector) -> list[str]:
+    if selector.kind == "rule-id":
+        return local.excluded_rule_ids
+    if selector.kind == "rule tag":
+        return local.excluded_rule_tags
+    if selector.kind == "check":
+        return local.excluded_checks
+    if selector.kind == "check tag":
+        return local.excluded_check_tags
+    raise ByorError(f"unknown exclusion selector: {selector.kind}")
 
 
 def _append_exception_sentence(content: str) -> str:
