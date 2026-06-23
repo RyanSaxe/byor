@@ -256,9 +256,11 @@ def _add_exclusion_arguments(command: argparse.ArgumentParser) -> None:
 def _add_profile_arguments(command: argparse.ArgumentParser) -> None:
     actions = command.add_subparsers(dest="profile_action", required=True)
     actions.add_parser("list", help="List configured profiles")
-    apply = actions.add_parser("apply", help="Apply a profile to this repository")
-    apply.add_argument("name", metavar="NAME", help="Profile name")
-    apply.add_argument("--repo", type=Path, help=REPO_HELP)
+    add = actions.add_parser(
+        "add", help="Add a profile's exclusions to this repository"
+    )
+    add.add_argument("name", metavar="NAME", help="Profile name")
+    add.add_argument("--repo", type=Path, help=REPO_HELP)
 
 
 def _add_agent_check_arguments(command: argparse.ArgumentParser) -> None:

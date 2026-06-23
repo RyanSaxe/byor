@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from byor.commands.doctor import quick_doctor_problems
-from byor.commands.profile import apply_profile_to_local
+from byor.commands.profile import add_profile_to_local
 from byor.commands.prompts import prompt_choice
 from byor.config import (
     GlobalConfig,
@@ -87,8 +87,8 @@ def initialize_repo(
     ):
         messages.append("Registered repository for `byor sync --all`")
     if options.profile is not None:
-        apply_profile_to_local(repo_root, global_config, options.profile)
-        messages.append(f"Applied profile '{options.profile}' to .byor/local.yml")
+        add_profile_to_local(repo_root, global_config, options.profile)
+        messages.append(f"Added profile '{options.profile}' to .byor/local.yml")
     _, sync_result = sync_repo(repo_root, load_canonical_rules(config_dir))
     if sync_result.changed:
         messages.append(f"Synced {summarize_changes(sync_result)}")

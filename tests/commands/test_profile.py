@@ -32,7 +32,7 @@ def test_profile_list_shows_configured_profiles(
     assert "minimal" in out
 
 
-def test_profile_apply_replaces_local_selectors_and_syncs(
+def test_profile_add_applies_selectors_and_syncs(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home)
@@ -51,7 +51,7 @@ def test_profile_apply_replaces_local_selectors_and_syncs(
     main(["sync", "--repo", str(repo)])
     capsys.readouterr()
 
-    assert main(["profile", "apply", "existing", "--repo", str(repo)]) == 0
+    assert main(["profile", "add", "existing", "--repo", str(repo)]) == 0
 
     local = load_local_config(repo)
     assert local.excluded_rule_tags == ["legacy-risk"]
@@ -60,24 +60,45 @@ def test_profile_apply_replaces_local_selectors_and_syncs(
         repo / ".byor" / "rules" / "personal" / "global" / "no-cast.yml"
     ).exists()
     out = capsys.readouterr().out
-    assert "Applied profile 'existing' to .byor/local.yml" in out
+    assert "Added profile 'existing' to .byor/local.yml" in out
     assert "Synced 1 removed global rule" in out
 
 
-def test_profile_apply_reports_unknown_profile(
+def test_profile_add_preserves_existing_exclusions_and_is_idempotent(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    save_global_config(
+        home / "xdg" / "byor",
+        GlobalConfig(
+            profiles={"existing": ProfileConfig(excluded_rule_tags=["legacy-risk"])}
+        ),
+    )
+    main(["exclude", "--repo", str(repo), "--check", "mypy"])
+    capsys.readouterr()
+
+    assert main(["profile", "add", "existing", "--repo", str(repo)]) == 0
+    assert main(["profile", "add", "existing", "--repo", str(repo)]) == 0
+
+    local = load_local_config(repo)
+    assert local.excluded_checks == ["mypy"]  # manual exclusion survives
+    assert local.excluded_rule_tags == ["legacy-risk"]  # added once, not duplicated
+
+
+def test_profile_add_reports_unknown_profile(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home)
     capsys.readouterr()
 
-    assert main(["profile", "apply", "missing", "--repo", str(repo)]) == 1
+    assert main(["profile", "add", "missing", "--repo", str(repo)]) == 1
 
     captured = capsys.readouterr()
     assert "unknown profile 'missing'" in captured.err
     assert "Traceback" not in captured.err
 
 
-def test_profile_apply_requires_initialized_repo(
+def test_profile_add_requires_initialized_repo(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = home / "bare"
@@ -87,7 +108,7 @@ def test_profile_apply_requires_initialized_repo(
         GlobalConfig(profiles={"existing": ProfileConfig()}),
     )
 
-    assert main(["profile", "apply", "existing", "--repo", str(repo)]) == 1
+    assert main(["profile", "add", "existing", "--repo", str(repo)]) == 1
 
     captured = capsys.readouterr()
     assert "byor init" in captured.err

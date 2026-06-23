@@ -237,7 +237,7 @@ later:
 
 ```bash
 byor init --profile existing
-byor profile apply existing
+byor profile add existing
 ```
 
 ```yaml
@@ -248,6 +248,10 @@ init:
 The profile `rules` section maps onto `.byor/local.yml`'s `global` section.
 Those selectors affect personal global rules only; project and local rules stay
 owned by the repo.
+
+`byor profile add` merges the profile's selectors into any exclusions already in
+`.byor/local.yml`; it never clears existing entries, and re-adding a profile is
+a no-op. Remove individual selectors with `byor include`.
 
 ## Another worked example
 

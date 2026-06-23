@@ -112,7 +112,7 @@ listing, profile setup, and repo-local exclusions; it does not reserve any tag
 names. Use `byor list --tags` to see the vocabulary already present in a repo.
 
 Profiles are named templates in your global config that apply private
-repo-local exclusions at init time, or later with `byor profile apply`. They are
+repo-local exclusions at init time, or later with `byor profile add`. They are
 useful when a repo should opt out of broad groups of global rules or checks
 without deleting those personal standards everywhere:
 
