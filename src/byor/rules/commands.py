@@ -8,6 +8,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
@@ -202,7 +203,7 @@ def run_exclusion(args: argparse.Namespace) -> int:
     context = repo_context(args)
     local = load_local_config(context.repo_root)
     selector = _selector(args)
-    values = _selector_values(local, selector)
+    values = EXCLUSION_KINDS[selector.kind].values(local)
     exclude = args.command == "exclude"
     if exclude:
         if selector.value in values:
@@ -228,42 +229,48 @@ def run_exclusion(args: argparse.Namespace) -> int:
 
 
 @dataclass(frozen=True)
+class ExclusionKind:
+    arg: str
+    """argparse attribute that carries this selector's value."""
+    values: Callable[[LocalConfig], list[str]]
+    """The local-config exclusion list this selector reads and writes."""
+    subject: str
+    """Human label; empty renders the value alone, as for a rule ID."""
+
+
+EXCLUSION_KINDS: dict[str, ExclusionKind] = {
+    "rule-id": ExclusionKind("rule_id", lambda local: local.excluded_rule_ids, ""),
+    "rule tag": ExclusionKind(
+        "tag", lambda local: local.excluded_rule_tags, "rule tag"
+    ),
+    "check": ExclusionKind("check", lambda local: local.excluded_checks, "check"),
+    "check tag": ExclusionKind(
+        "check_tag", lambda local: local.excluded_check_tags, "check tag"
+    ),
+}
+
+
+@dataclass(frozen=True)
 class ExclusionSelector:
     kind: str
-    label: str
     value: str
 
 
 def _selector(args: argparse.Namespace) -> ExclusionSelector:
-    raw = {
-        "rule-id": args.rule_id,
-        "rule tag": args.tag,
-        "check": args.check,
-        "check tag": args.check_tag,
-    }
-    selected = [(kind, value) for kind, value in raw.items() if value is not None]
-    if len(selected) != 1:
+    chosen = [
+        (kind, value)
+        for kind, spec in EXCLUSION_KINDS.items()
+        if (value := getattr(args, spec.arg)) is not None
+    ]
+    if len(chosen) != 1:
         raise ByorError("choose exactly one of RULE_ID, --tag, --check, or --check-tag")
-    kind, value = selected[0]
-    return ExclusionSelector(kind=kind, label=kind, value=value)
-
-
-def _selector_values(local: LocalConfig, selector: ExclusionSelector) -> list[str]:
-    if selector.kind == "rule-id":
-        return local.excluded_rule_ids
-    if selector.kind == "rule tag":
-        return local.excluded_rule_tags
-    if selector.kind == "check":
-        return local.excluded_checks
-    if selector.kind == "check tag":
-        return local.excluded_check_tags
-    raise ByorError(f"unknown exclusion selector: {selector.kind}")
+    kind, value = chosen[0]
+    return ExclusionSelector(kind=kind, value=value)
 
 
 def _selector_subject(selector: ExclusionSelector) -> str:
-    if selector.kind == "rule-id":
-        return f"'{selector.value}'"
-    return f"{selector.label} '{selector.value}'"
+    subject = EXCLUSION_KINDS[selector.kind].subject
+    return f"{subject} '{selector.value}'" if subject else f"'{selector.value}'"
 
 
 def _append_exception_sentence(content: str) -> str:

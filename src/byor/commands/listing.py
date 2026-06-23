@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
@@ -196,7 +197,7 @@ def _tag_summaries(
     skipped: list[SkippedRule],
     checks: list[ListedCheck],
 ) -> list[TagSummary]:
-    counts: dict[tuple[str, str], dict[str, int]] = {}
+    counts: dict[tuple[str, str], Counter[str]] = {}
     for rule in rules:
         _count_tags(counts, "rule", rule.scope, rule.tags)
     for rule in skipped:
@@ -215,14 +216,13 @@ def _tag_summaries(
 
 
 def _count_tags(
-    counts: dict[tuple[str, str], dict[str, int]],
+    counts: dict[tuple[str, str], Counter[str]],
     kind: str,
     origin: str,
     tags: list[str],
 ) -> None:
     for tag in tags:
-        origins = counts.setdefault((kind, tag), {})
-        origins[origin] = origins.get(origin, 0) + 1
+        counts.setdefault((kind, tag), Counter())[origin] += 1
 
 
 def _origins(origins: dict[str, int]) -> str:
