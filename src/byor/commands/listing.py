@@ -187,8 +187,13 @@ def _filter_by_tags(
     if rule_tag is not None:
         rules = [rule for rule in rules if rule_tag in rule.tags]
         skipped = [rule for rule in skipped if rule_tag in rule.tags]
+        if check_tag is None:
+            checks = []
     if check_tag is not None:
         checks = [check for check in checks if check_tag in check.tags]
+        if rule_tag is None:
+            rules = []
+            skipped = []
     return rules, skipped, checks
 
 

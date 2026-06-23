@@ -379,14 +379,10 @@ def run(args: argparse.Namespace) -> int:
         from byor.commands.profile import run_profile
 
         return run_profile(args)
-    if args.command == "exclude":
-        from byor.rules.commands import run_exclude
+    if args.command in ("exclude", "include"):
+        from byor.rules.commands import run_exclusion
 
-        return run_exclude(args)
-    if args.command == "include":
-        from byor.rules.commands import run_include
-
-        return run_include(args)
+        return run_exclusion(args)
     if args.command == "agent-check":
         from byor.scan.agent_check import run_agent_check
 

@@ -198,44 +198,29 @@ def run_promote(args: argparse.Namespace) -> int:
     return 0
 
 
-def run_exclude(args: argparse.Namespace) -> int:
+def run_exclusion(args: argparse.Namespace) -> int:
     context = repo_context(args)
     local = load_local_config(context.repo_root)
     selector = _selector(args)
     values = _selector_values(local, selector)
-    if selector.value in values:
-        print(f"'{selector.value}' is already excluded")
+    exclude = args.command == "exclude"
+    if exclude:
+        if selector.value in values:
+            print(f"{_selector_subject(selector)} is already excluded")
+        else:
+            values.append(selector.value)
+            save_local_config(context.repo_root, local)
+            print(f"Excluded {_selector_subject(selector)} in .byor/local.yml")
     else:
-        values.append(selector.value)
-        save_local_config(context.repo_root, local)
-        if selector.kind == "rule-id":
-            print(f"Excluded '{selector.value}' in .byor/local.yml")
+        if selector.value not in values:
+            print(f"{_selector_subject(selector)} is not excluded")
         else:
-            print(f"Excluded {selector.label} '{selector.value}' in .byor/local.yml")
-    _sync_and_report(context.repo_root, context.canonical)
-    return 0
-
-
-def run_include(args: argparse.Namespace) -> int:
-    context = repo_context(args)
-    local = load_local_config(context.repo_root)
-    selector = _selector(args)
-    values = _selector_values(local, selector)
-    if selector.value not in values:
-        if selector.kind == "rule-id":
-            print(f"'{selector.value}' is not excluded")
-        else:
-            print(f"{selector.label} '{selector.value}' is not excluded")
-    else:
-        values.remove(selector.value)
-        save_local_config(context.repo_root, local)
-        if selector.kind == "rule-id":
-            print(f"Re-enabled '{selector.value}'")
-        else:
-            print(f"Re-enabled {selector.label} '{selector.value}'")
+            values.remove(selector.value)
+            save_local_config(context.repo_root, local)
+            print(f"Re-enabled {_selector_subject(selector)}")
     plan = _sync_and_report(context.repo_root, context.canonical)
     # A project or local rule may still own the ID: say so.
-    if selector.kind == "rule-id":
+    if not exclude and selector.kind == "rule-id":
         for skipped in plan.skipped:
             if skipped.id == selector.value:
                 print(f"'{skipped.id}' is still skipped: {skipped.reason}")
@@ -273,6 +258,12 @@ def _selector_values(local: LocalConfig, selector: ExclusionSelector) -> list[st
     if selector.kind == "check tag":
         return local.excluded_check_tags
     raise ByorError(f"unknown exclusion selector: {selector.kind}")
+
+
+def _selector_subject(selector: ExclusionSelector) -> str:
+    if selector.kind == "rule-id":
+        return f"'{selector.value}'"
+    return f"{selector.label} '{selector.value}'"
 
 
 def _append_exception_sentence(content: str) -> str:

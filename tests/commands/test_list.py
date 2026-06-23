@@ -136,6 +136,10 @@ def test_list_filters_rules_by_tag(
     repo = make_repo(home)
     write_global_rule(home, "strict.yml", "strict", tags=["strict"])
     write_global_rule(home, "style.yml", "style", tags=["style"])
+    save_global_config(
+        home / "xdg" / "byor",
+        GlobalConfig(checks=[CheckDef("ty", ["py"], "ty", tags=["strict"])]),
+    )
     main(["sync", "--repo", str(repo)])
     capsys.readouterr()
 
@@ -144,12 +148,14 @@ def test_list_filters_rules_by_tag(
     out = capsys.readouterr().out
     assert "strict" in out
     assert "style" not in out
+    assert "check/global" not in out
 
 
 def test_list_filters_checks_by_tag(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home)
+    write_global_rule(home, "strict.yml", "strict", tags=["strict"])
     config_dir = home / "xdg" / "byor"
     save_global_config(
         config_dir,
@@ -167,6 +173,7 @@ def test_list_filters_checks_by_tag(
     out = capsys.readouterr().out
     assert "ty" in out
     assert "ruff" not in out
+    assert ".byor/rules" not in out
 
 
 def test_list_tags_summarizes_rule_and_check_tags(
