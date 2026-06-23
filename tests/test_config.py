@@ -7,6 +7,7 @@ from byor.config import (
     GlobalConfig,
     InitDefaults,
     LocalConfig,
+    ProfileConfig,
     RepoConfig,
     global_rules_dir,
     load_global_config,
@@ -87,15 +88,22 @@ def test_local_config_defaults_when_file_absent(tmp_path: Path) -> None:
 
 
 def test_local_config_round_trips_excluded_checks(tmp_path: Path) -> None:
-    config = LocalConfig(excluded_checks=["ruff"])
+    config = LocalConfig(
+        excluded_checks=["ruff"],
+        excluded_check_tags=["strict"],
+    )
 
     save_local_config(tmp_path, config)
 
     assert load_local_config(tmp_path).excluded_checks == ["ruff"]
+    assert load_local_config(tmp_path).excluded_check_tags == ["strict"]
 
 
 def test_local_config_round_trips(tmp_path: Path) -> None:
-    config = LocalConfig(excluded_rule_ids=["no-python-cast"])
+    config = LocalConfig(
+        excluded_rule_ids=["no-python-cast"],
+        excluded_rule_tags=["legacy-risk"],
+    )
 
     save_local_config(tmp_path, config)
 
@@ -136,16 +144,43 @@ def test_global_config_round_trips(tmp_path: Path) -> None:
 def test_global_config_round_trips_checks_and_init_defaults(tmp_path: Path) -> None:
     config = GlobalConfig(
         agents=["claude-code", "skill"],
-        checks=[CheckDef("mypy", ["py"], "mypy")],
+        checks=[CheckDef("mypy", ["py"], "mypy", tags=["strict"])],
         init=InitDefaults(
             ignore_mode="local",
             git_hooks=True,
+            profile="existing",
         ),
+        profiles={
+            "existing": ProfileConfig(
+                description="Low-friction defaults.",
+                excluded_rule_ids=["python.no-staticmethod"],
+                excluded_rule_tags=["legacy-risk"],
+                excluded_checks=["ty"],
+                excluded_check_tags=["strict"],
+            )
+        },
     )
 
     save_global_config(tmp_path, config)
 
     assert load_global_config(tmp_path) == config
+
+
+def test_global_config_rejects_malformed_profiles(tmp_path: Path) -> None:
+    (tmp_path / "config.yml").write_text("version: 1\nprofiles:\n  existing: bad\n")
+
+    with pytest.raises(ConfigError, match="profile 'existing'"):
+        load_global_config(tmp_path)
+
+
+def test_global_config_rejects_malformed_profile_tags(tmp_path: Path) -> None:
+    (tmp_path / "config.yml").write_text(
+        "version: 1\nprofiles:\n  existing:\n    rules:\n"
+        "      excluded_tags: legacy-risk\n"
+    )
+
+    with pytest.raises(ConfigError, match="excluded_tags"):
+        load_global_config(tmp_path)
 
 
 def test_global_config_round_trips_output_concise(tmp_path: Path) -> None:

@@ -40,6 +40,7 @@ class CheckDef:
     name: str
     extensions: list[str]
     run: str
+    tags: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -60,7 +61,9 @@ class LocalConfig:
     """Untracked per-user repository config: .byor/local.yml."""
 
     excluded_rule_ids: list[str] = field(default_factory=list)
+    excluded_rule_tags: list[str] = field(default_factory=list)
     excluded_checks: list[str] = field(default_factory=list)
+    excluded_check_tags: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -73,6 +76,18 @@ class InitDefaults:
 
     ignore_mode: str | None = None
     git_hooks: bool | None = None
+    profile: str | None = None
+
+
+@dataclass(frozen=True)
+class ProfileConfig:
+    """A named local-exclusion template stored in global config."""
+
+    description: str | None = None
+    excluded_rule_ids: list[str] = field(default_factory=list)
+    excluded_rule_tags: list[str] = field(default_factory=list)
+    excluded_checks: list[str] = field(default_factory=list)
+    excluded_check_tags: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -93,6 +108,7 @@ class GlobalConfig:
     """The AI agents registered globally by `byor install` / `byor hook install`."""
     checks: list[CheckDef] = field(default_factory=list)
     init: InitDefaults = field(default_factory=InitDefaults)
+    profiles: dict[str, ProfileConfig] = field(default_factory=dict)
 
 
 def rule_dir_relpaths(paths: RepoPaths) -> list[str]:
@@ -181,7 +197,9 @@ def load_local_config(repo_root: Path) -> LocalConfig:
     checks = _section(data, "checks", path)
     return LocalConfig(
         excluded_rule_ids=_string_list(section, "excluded_rule_ids", path),
+        excluded_rule_tags=_string_list(section, "excluded_tags", path),
         excluded_checks=_string_list(checks, "excluded", path),
+        excluded_check_tags=_string_list(checks, "excluded_tags", path),
     )
 
 
@@ -190,9 +208,21 @@ def save_local_config(repo_root: Path, config: LocalConfig) -> None:
     data = _load_or_new(path)
     data["version"] = CONFIG_VERSION
     _update_section(
-        data, "global", {"excluded_rule_ids": list(config.excluded_rule_ids)}
+        data,
+        "global",
+        {
+            "excluded_rule_ids": list(config.excluded_rule_ids),
+            "excluded_tags": list(config.excluded_rule_tags),
+        },
     )
-    _update_section(data, "checks", {"excluded": list(config.excluded_checks)})
+    _update_section(
+        data,
+        "checks",
+        {
+            "excluded": list(config.excluded_checks),
+            "excluded_tags": list(config.excluded_check_tags),
+        },
+    )
     write_yaml_atomic(path, data)
 
 
@@ -220,7 +250,9 @@ def load_global_config(config_dir: Path) -> GlobalConfig:
         init=InitDefaults(
             ignore_mode=_optional_string(init, "ignore_mode", path),
             git_hooks=_optional_bool(init, "git_hooks", path),
+            profile=_optional_string(init, "profile", path),
         ),
+        profiles=_profile_configs(data, path),
     )
 
 
@@ -239,6 +271,7 @@ def save_global_config(config_dir: Path, config: GlobalConfig) -> None:
     _update_section(data, "ai", {"agents": list(config.agents)})
     _write_checks(data, config.checks)
     _write_init_defaults(data, config.init)
+    _write_profiles(data, config.profiles)
     write_yaml_atomic(path, data)
 
 
@@ -351,14 +384,22 @@ def _check_def(entry: object, path: Path) -> CheckDef:
         name=name,
         extensions=_string_list(entry, "extensions", path),
         run=run,
+        tags=_string_list(entry, "tags", path),
     )
 
 
 def _write_checks(data: CommentedMap, checks: list[CheckDef]) -> None:
-    data["checks"] = [
-        {"name": check.name, "extensions": list(check.extensions), "run": check.run}
-        for check in checks
-    ]
+    rendered = []
+    for check in checks:
+        entry: dict[str, str | list[str]] = {
+            "name": check.name,
+            "extensions": list(check.extensions),
+            "run": check.run,
+        }
+        if check.tags:
+            entry["tags"] = list(check.tags)
+        rendered.append(entry)
+    data["checks"] = rendered
 
 
 def _write_init_defaults(data: CommentedMap, init: InitDefaults) -> None:
@@ -367,8 +408,58 @@ def _write_init_defaults(data: CommentedMap, init: InitDefaults) -> None:
         values["ignore_mode"] = init.ignore_mode
     if init.git_hooks is not None:
         values["git_hooks"] = init.git_hooks
+    if init.profile is not None:
+        values["profile"] = init.profile
     if values:
         _update_section(data, "init", values)
+
+
+def _profile_configs(data: CommentedMap, path: Path) -> dict[str, ProfileConfig]:
+    value = data.get("profiles")
+    if value is None:
+        return {}
+    if not isinstance(value, CommentedMap):
+        raise ConfigError(f"{path}: expected 'profiles' to be a mapping")
+    profiles: dict[str, ProfileConfig] = {}
+    for name, entry in value.items():
+        if not isinstance(name, str):
+            raise ConfigError(f"{path}: expected profile names to be strings")
+        profiles[name] = _profile_config(name, entry, path)
+    return profiles
+
+
+def _profile_config(name: str, entry: object, path: Path) -> ProfileConfig:
+    if not isinstance(entry, CommentedMap):
+        raise ConfigError(f"{path}: expected profile '{name}' to be a mapping")
+    rules = _section(entry, "rules", path)
+    checks = _section(entry, "checks", path)
+    return ProfileConfig(
+        description=_optional_string(entry, "description", path),
+        excluded_rule_ids=_string_list(rules, "excluded_rule_ids", path),
+        excluded_rule_tags=_string_list(rules, "excluded_tags", path),
+        excluded_checks=_string_list(checks, "excluded", path),
+        excluded_check_tags=_string_list(checks, "excluded_tags", path),
+    )
+
+
+def _write_profiles(data: CommentedMap, profiles: dict[str, ProfileConfig]) -> None:
+    if not profiles:
+        return
+    rendered = CommentedMap()
+    for name, profile in profiles.items():
+        entry = CommentedMap()
+        if profile.description is not None:
+            entry["description"] = profile.description
+        entry["rules"] = {
+            "excluded_tags": list(profile.excluded_rule_tags),
+            "excluded_rule_ids": list(profile.excluded_rule_ids),
+        }
+        entry["checks"] = {
+            "excluded_tags": list(profile.excluded_check_tags),
+            "excluded": list(profile.excluded_checks),
+        }
+        rendered[name] = entry
+    data["profiles"] = rendered
 
 
 def _optional_bool(section: CommentedMap, key: str, path: Path) -> bool | None:

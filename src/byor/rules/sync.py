@@ -29,14 +29,21 @@ STALE_EXIT_CODE = 3
 
 
 @dataclass
+class SkippedRule:
+    id: str
+    reason: str
+    tags: list[str]
+
+
+@dataclass
 class SyncPlan:
     """What the personal/global mirror should contain, and what was skipped."""
 
     desired: dict[str, str]
     """Relative path below the global rules root -> rule file content."""
 
-    skipped: list[tuple[str, str]]
-    """(rule ID, human-readable reason), in canonical discovery order."""
+    skipped: list[SkippedRule]
+    """Skipped canonical global rules, in canonical discovery order."""
 
 
 @dataclass
@@ -66,6 +73,7 @@ def compute_sync_plan(
     project: list[Rule],
     local: list[Rule],
     excluded_rule_ids: Iterable[str],
+    excluded_tags: Iterable[str],
     canonical: CanonicalRules,
 ) -> SyncPlan:
     """Validate the loaded rules and decide the mirror contents.
@@ -78,14 +86,15 @@ def compute_sync_plan(
     project_ids = {rule.id for rule in project}
     local_ids = {rule.id for rule in local}
     excluded = set(excluded_rule_ids)
+    excluded_tag_set = set(excluded_tags)
     desired: dict[str, str] = {}
-    skipped: list[tuple[str, str]] = []
+    skipped: list[SkippedRule] = []
     for rule in canonical.rules:
-        reason = _skip_reason(rule.id, project_ids, local_ids, excluded)
+        reason = _skip_reason(rule, project_ids, local_ids, excluded, excluded_tag_set)
         if reason is None:
             desired[rule.path.relative_to(canonical.root).as_posix()] = rule.content
         else:
-            skipped.append((rule.id, reason))
+            skipped.append(SkippedRule(rule.id, reason, list(rule.tags)))
     return SyncPlan(desired=desired, skipped=skipped)
 
 
@@ -124,10 +133,12 @@ def mirror_global_rules(mirror_dir: Path, desired: dict[str, str]) -> MirrorResu
 def repo_sync_plan(repo_root: Path, canonical: CanonicalRules) -> tuple[SyncPlan, Path]:
     """One repository's sync plan plus its mirror directory."""
     paths = load_repo_config(repo_root).paths
+    local_config = load_local_config(repo_root)
     plan = compute_sync_plan(
         load_rules(repo_root / paths.project_rules),
         load_rules(repo_root / paths.personal_local_rules),
-        load_local_config(repo_root).excluded_rule_ids,
+        local_config.excluded_rule_ids,
+        local_config.excluded_rule_tags,
         canonical,
     )
     return plan, resolve_within(repo_root, repo_root / paths.personal_global_rules)
@@ -251,8 +262,8 @@ def _sync_and_report(repo_root: Path, canonical: CanonicalRules) -> None:
     print(f"Synced {_count(len(plan.desired), 'global rule')} into {repo_root}")
     if plan.skipped:
         print(f"Skipped {_count(len(plan.skipped), 'global rule')}:")
-        for rule_id, reason in plan.skipped:
-            print(f"  {rule_id}: {reason}")
+        for skipped in plan.skipped:
+            print(f"  {skipped.id}: {skipped.reason}")
 
 
 def _report_staleness(repo_root: Path, canonical: CanonicalRules) -> int:
@@ -265,18 +276,22 @@ def _report_staleness(repo_root: Path, canonical: CanonicalRules) -> int:
 
 
 def _skip_reason(
-    rule_id: str,
+    rule: Rule,
     project_ids: set[str],
     local_ids: set[str],
     excluded: set[str],
+    excluded_tags: set[str],
 ) -> str | None:
     """Why a canonical global rule is not mirrored; overrides trump exclusion."""
-    if rule_id in project_ids:
+    if rule.id in project_ids:
         return "overridden by project rule"
-    if rule_id in local_ids:
+    if rule.id in local_ids:
         return "overridden by local rule"
-    if rule_id in excluded:
+    if rule.id in excluded:
         return "excluded in .byor/local.yml"
+    for tag in rule.tags:
+        if tag in excluded_tags:
+            return f"excluded by tag '{tag}' in .byor/local.yml"
     return None
 
 
