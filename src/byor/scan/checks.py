@@ -69,6 +69,7 @@ def effective_checks(
     already claims are dropped. Excluded names are removed from the result.
     """
     excluded = set(local_config.excluded_checks)
+    excluded_tags = set(local_config.excluded_check_tags)
     repo_names = {check.name for check in repo_config.checks}
     merged = list(repo_config.checks) + [
         check for check in global_config.checks if check.name not in repo_names
@@ -77,7 +78,7 @@ def effective_checks(
     return [
         EffectiveCheck(definition=check, origin=origins.get(check.name, "global"))
         for check in merged
-        if check.name not in excluded
+        if check.name not in excluded and not excluded_tags.intersection(check.tags)
     ]
 
 

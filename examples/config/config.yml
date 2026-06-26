@@ -23,10 +23,28 @@ checks:
     extensions:
       - py
     run: ~/.config/byor/scripts/ruff.sh
+    tags:
+      - format
   - name: ty
     extensions:
       - py
     run: uvx ty check --output-format concise
+    tags:
+      - strict
+
+# Profiles are named templates for repo-local exclusions. Tag names are yours;
+# these are only examples.
+profiles:
+  existing:
+    description: Low-friction defaults for mature repositories.
+    rules:
+      excluded_tags:
+        - legacy-risk
+      excluded_rule_ids: []
+    checks:
+      excluded_tags:
+        - strict
+      excluded: []
 
 # The agents byor installs hooks for. `byor install --agents ...` writes these;
 # the post-edit hook in each runs `byor agent-check` after edits.

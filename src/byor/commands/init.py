@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from byor.commands.doctor import quick_doctor_problems
+from byor.commands.profile import add_profile_to_local
 from byor.commands.prompts import prompt_choice
 from byor.config import (
     GlobalConfig,
@@ -48,6 +49,7 @@ class InitOptions:
     git_hooks: bool
     register: bool
     replace_sgconfig: bool
+    profile: str | None
 
 
 def run_init(args: argparse.Namespace) -> int:
@@ -84,6 +86,9 @@ def initialize_repo(
         repo_root, repo_registry_path(config_dir, global_config)
     ):
         messages.append("Registered repository for `byor sync --all`")
+    if options.profile is not None:
+        add_profile_to_local(repo_root, global_config, options.profile)
+        messages.append(f"Added profile '{options.profile}' to .byor/local.yml")
     _, sync_result = sync_repo(repo_root, load_canonical_rules(config_dir))
     if sync_result.changed:
         messages.append(f"Synced {summarize_changes(sync_result)}")
@@ -152,6 +157,7 @@ def _options_from_args(args: argparse.Namespace, defaults: InitDefaults) -> Init
         git_hooks=git_hooks,
         register=not args.no_register,
         replace_sgconfig=args.replace_sgconfig,
+        profile=_resolve_profile(args, defaults),
     )
 
 
@@ -163,6 +169,14 @@ def _resolve_ignore_mode(default: str | None, interactive: bool) -> IgnoreMode:
 def _resolve_git_hooks(default: bool | None, interactive: bool) -> bool:
     fallback = default if default is not None else False
     return _prompt_git_hooks(fallback) if interactive else fallback
+
+
+def _resolve_profile(args: argparse.Namespace, defaults: InitDefaults) -> str | None:
+    if args.no_profile:
+        return None
+    if args.profile is not None:
+        return args.profile
+    return defaults.profile
 
 
 def _prompt_ignore_mode(default: IgnoreMode) -> IgnoreMode:

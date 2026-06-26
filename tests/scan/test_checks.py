@@ -43,6 +43,20 @@ def test_local_exclusion_disables_a_check_by_name() -> None:
     assert _names(effective) == ["ruff"]
 
 
+def test_local_exclusion_disables_a_check_by_tag() -> None:
+    repo = RepoConfig(
+        checks=[
+            CheckDef("ruff", ["py"], "run", tags=["format"]),
+            CheckDef("ty", ["py"], "run", tags=["strict"]),
+        ]
+    )
+    local = LocalConfig(excluded_check_tags=["strict"])
+
+    effective = effective_checks(repo, GlobalConfig(), local)
+
+    assert _names(effective) == ["ruff"]
+
+
 def test_extensionless_check_runs_when_no_extensions_listed(tmp_path: Path) -> None:
     run = shlex.join([sys.executable, "-c", "pass"])
     check = EffectiveCheck(CheckDef("anyfile", [], run), origin="repo")

@@ -79,15 +79,26 @@ def global_agents() -> list[str]:
     return load_global_config(global_config_dir()).agents
 
 
-def write_rule(path: Path, rule_id: str, message: str = "Avoid this.") -> Path:
+def write_rule(
+    path: Path,
+    rule_id: str,
+    message: str = "Avoid this.",
+    tags: list[str] | None = None,
+) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(RULE_TEMPLATE.format(rule_id=rule_id, message=message))
+    content = RULE_TEMPLATE.format(rule_id=rule_id, message=message)
+    if tags:
+        content += "metadata:\n  byor:\n    tags:\n"
+        content += "".join(f"      - {tag}\n" for tag in tags)
+    path.write_text(content)
     return path
 
 
-def write_global_rule(home: Path, relpath: str, rule_id: str) -> Path:
+def write_global_rule(
+    home: Path, relpath: str, rule_id: str, tags: list[str] | None = None
+) -> Path:
     path = home / "xdg" / "byor" / "rules" / relpath
-    return write_rule(path, rule_id)
+    return write_rule(path, rule_id, tags=tags)
 
 
 def mirror(repo: Path) -> Path:

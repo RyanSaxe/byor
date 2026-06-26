@@ -8,6 +8,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
@@ -16,6 +17,7 @@ from ruamel.yaml.comments import CommentedMap
 
 from byor.commands.doctor import quick_doctor_problems
 from byor.config import (
+    LocalConfig,
     RepoPaths,
     load_local_config,
     load_repo_config,
@@ -197,34 +199,78 @@ def run_promote(args: argparse.Namespace) -> int:
     return 0
 
 
-def run_exclude(args: argparse.Namespace) -> int:
+def run_exclusion(args: argparse.Namespace) -> int:
     context = repo_context(args)
     local = load_local_config(context.repo_root)
-    if args.rule_id in local.excluded_rule_ids:
-        print(f"'{args.rule_id}' is already excluded")
+    selector = _selector(args)
+    values = EXCLUSION_KINDS[selector.kind].values(local)
+    exclude = args.command == "exclude"
+    if exclude:
+        if selector.value in values:
+            print(f"{_selector_subject(selector)} is already excluded")
+        else:
+            values.append(selector.value)
+            save_local_config(context.repo_root, local)
+            print(f"Excluded {_selector_subject(selector)} in .byor/local.yml")
     else:
-        local.excluded_rule_ids.append(args.rule_id)
-        save_local_config(context.repo_root, local)
-        print(f"Excluded '{args.rule_id}' in .byor/local.yml")
-    _sync_and_report(context.repo_root, context.canonical)
-    return 0
-
-
-def run_include(args: argparse.Namespace) -> int:
-    context = repo_context(args)
-    local = load_local_config(context.repo_root)
-    if args.rule_id not in local.excluded_rule_ids:
-        print(f"'{args.rule_id}' is not excluded")
-    else:
-        local.excluded_rule_ids.remove(args.rule_id)
-        save_local_config(context.repo_root, local)
-        print(f"Re-enabled '{args.rule_id}'")
+        if selector.value not in values:
+            print(f"{_selector_subject(selector)} is not excluded")
+        else:
+            values.remove(selector.value)
+            save_local_config(context.repo_root, local)
+            print(f"Re-enabled {_selector_subject(selector)}")
     plan = _sync_and_report(context.repo_root, context.canonical)
     # A project or local rule may still own the ID: say so.
-    for rule_id, reason in plan.skipped:
-        if rule_id == args.rule_id:
-            print(f"'{rule_id}' is still skipped: {reason}")
+    if not exclude and selector.kind == "rule-id":
+        for skipped in plan.skipped:
+            if skipped.id == selector.value:
+                print(f"'{skipped.id}' is still skipped: {skipped.reason}")
     return 0
+
+
+@dataclass(frozen=True)
+class ExclusionKind:
+    arg: str
+    """argparse attribute that carries this selector's value."""
+    values: Callable[[LocalConfig], list[str]]
+    """The local-config exclusion list this selector reads and writes."""
+    subject: str
+    """Human label; empty renders the value alone, as for a rule ID."""
+
+
+EXCLUSION_KINDS: dict[str, ExclusionKind] = {
+    "rule-id": ExclusionKind("rule_id", lambda local: local.excluded_rule_ids, ""),
+    "rule tag": ExclusionKind(
+        "tag", lambda local: local.excluded_rule_tags, "rule tag"
+    ),
+    "check": ExclusionKind("check", lambda local: local.excluded_checks, "check"),
+    "check tag": ExclusionKind(
+        "check_tag", lambda local: local.excluded_check_tags, "check tag"
+    ),
+}
+
+
+@dataclass(frozen=True)
+class ExclusionSelector:
+    kind: str
+    value: str
+
+
+def _selector(args: argparse.Namespace) -> ExclusionSelector:
+    chosen = [
+        (kind, value)
+        for kind, spec in EXCLUSION_KINDS.items()
+        if (value := getattr(args, spec.arg)) is not None
+    ]
+    if len(chosen) != 1:
+        raise ByorError("choose exactly one of RULE_ID, --tag, --check, or --check-tag")
+    kind, value = chosen[0]
+    return ExclusionSelector(kind=kind, value=value)
+
+
+def _selector_subject(selector: ExclusionSelector) -> str:
+    subject = EXCLUSION_KINDS[selector.kind].subject
+    return f"{subject} '{selector.value}'" if subject else f"'{selector.value}'"
 
 
 def _append_exception_sentence(content: str) -> str:

@@ -58,6 +58,10 @@ class Rule:
     severity: str | None = None
     byor: ByorMetadata = field(default_factory=ByorMetadata)
 
+    @property
+    def tags(self) -> list[str]:
+        return self.byor.tags
+
 
 def discover_rule_files(rules_dir: Path) -> list[Path]:
     """All .yml/.yaml files below rules_dir, recursive, sorted. Missing dir is empty."""

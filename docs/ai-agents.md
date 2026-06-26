@@ -119,6 +119,7 @@ checks:
   - name: ruff
     extensions: [py]
     run: uv run ruff check --output-format concise
+    tags: [format]
 ```
 
 `run` is shlex-split into argv and invoked directly (never through a shell);
@@ -131,12 +132,24 @@ Anything multi-step (autofix, then format, then report the rest) belongs in a
 script the check points at; byor expands a leading `~`/`~/` in the command so
 that script can live under `~/.config/byor` and resolve in every repo (see
 [Check scripts](#check-scripts)). Checks merge by `name` with the repo config
-winning over the global one, and `.byor/local.yml` disables them per repo:
+winning over the global one, and `.byor/local.yml` disables them per repo by
+name or by tag:
 
 ```yaml
 checks:
   excluded:
     - ruff
+  excluded_tags:
+    - strict
+```
+
+Check tags are arbitrary user-defined labels, just like rule tags. They are
+useful for profile templates and for disabling a group of checks in one repo:
+
+```bash
+byor exclude --check-tag strict
+byor include --check-tag strict
+byor exclude --check ruff
 ```
 
 A check that exits nonzero has its raw stdout and stderr appended under a

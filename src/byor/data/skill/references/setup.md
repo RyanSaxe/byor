@@ -31,8 +31,18 @@ adds them; re-running it is safe and idempotent.
 shared with a team — global/personal rules work everywhere without it. Ask once
 whether the user wants repo-scoped or team-shared rules; if not, skip init.
 
+If profiles are configured, offer to initialize with one. Profiles are
+user-defined templates that write repo-local rule/check exclusions; they are
+not runtime modes. List them before asking:
+
+```bash
+byor profile list
+```
+
 ```bash
 byor init
+# or
+byor init --profile <name>
 ```
 
 ## 3. Discover existing preferences
@@ -57,6 +67,11 @@ mechanism that fits (see "Choose the mechanism" in `SKILL.md`):
 - **byor check script** — bespoke logic over the file; see `references/checks.md`
 - **not checkable** — naming taste, architecture: leave it in prose, do not force
   a check
+
+When drafting rule tags, inspect the existing vocabulary with
+`byor list --scope all --tags`, reuse fitting tags, and create new tags only for
+new groupings. Tags are arbitrary user-defined labels; examples in docs are not
+reserved names.
 
 ## 5. Confirm the batch in one question
 

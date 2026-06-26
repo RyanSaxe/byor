@@ -104,6 +104,24 @@ def test_excluded_rule_is_skipped_and_its_copy_removed(
     assert "  no-cast: excluded in .byor/local.yml" in out
 
 
+def test_rule_with_excluded_tag_is_skipped_and_its_copy_removed(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    write_global_rule(home, "no-cast.yml", "no-cast", tags=["legacy-risk"])
+    main(sync_args(repo))
+
+    (repo / ".byor" / "local.yml").write_text(
+        "version: 1\nglobal:\n  excluded_tags:\n    - legacy-risk\n"
+    )
+    capsys.readouterr()
+    assert main(sync_args(repo)) == 0
+
+    assert not (mirror(repo) / "no-cast.yml").exists()
+    out = capsys.readouterr().out
+    assert "  no-cast: excluded by tag 'legacy-risk' in .byor/local.yml" in out
+
+
 def test_project_rule_with_same_id_suppresses_global_copy(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -163,6 +181,23 @@ def test_sync_check_reports_staleness_without_writing(
     main(sync_args(repo))
     assert main(sync_args(repo, "--check")) == 0
     assert f"Sync is fresh in {repo}" in capsys.readouterr().out
+
+
+def test_sync_check_reports_staleness_after_excluding_a_tag(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    write_global_rule(home, "no-cast.yml", "no-cast", tags=["legacy-risk"])
+    main(sync_args(repo))
+
+    (repo / ".byor" / "local.yml").write_text(
+        "version: 1\nglobal:\n  excluded_tags:\n    - legacy-risk\n"
+    )
+    capsys.readouterr()
+
+    assert main(sync_args(repo, "--check")) == 3
+    assert (mirror(repo) / "no-cast.yml").exists()
+    assert f"Sync is stale in {repo}" in capsys.readouterr().out
 
 
 def test_init_syncs_existing_global_rules(

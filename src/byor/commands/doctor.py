@@ -253,8 +253,13 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, config_dir: Path) -> list[Ch
         return [Check("rules_valid", False, str(error))]
     checks = [Check("rules_valid", True, "all rule files parse with required fields")]
     try:
+        local_config = load_local_config(repo_root)
         plan = compute_sync_plan(
-            project, local, load_local_config(repo_root).excluded_rule_ids, canonical
+            project,
+            local,
+            local_config.excluded_rule_ids,
+            local_config.excluded_rule_tags,
+            canonical,
         )
     except DuplicateRuleId as error:
         checks.append(Check("rule_ids_unique", False, str(error)))

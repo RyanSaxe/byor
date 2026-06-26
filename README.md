@@ -107,6 +107,27 @@ policy or a local experiment takes precedence. See [docs/rules.md](docs/rules.md
 for the rule workflow and [docs/sync-model.md](docs/sync-model.md) for how byor
 copies global rules into each repo.
 
+Tags in `metadata.byor.tags` are arbitrary labels you own. byor uses them for
+listing, profile setup, and repo-local exclusions; it does not reserve any tag
+names. Use `byor list --tags` to see the vocabulary already present in a repo.
+
+Profiles are named templates in your global config that apply private
+repo-local exclusions at init time, or later with `byor profile add`. They are
+useful when a repo should opt out of broad groups of global rules or checks
+without deleting those personal standards everywhere:
+
+```yaml
+profiles:
+  existing:
+    description: Low-friction defaults for mature repositories.
+    rules:
+      excluded_tags:
+        - legacy-risk
+    checks:
+      excluded_tags:
+        - strict
+```
+
 ## With AI coding agents
 
 Agents can both obey your rules and write new ones:
@@ -170,6 +191,7 @@ byor install        Register byor's AI integrations (machine-wide)
 byor init           Initialize byor in a repository
 byor hook           Add or remove an agent integration
 byor doctor         Check that everything is wired up
+byor profile        List or apply configured profiles
 ```
 
 **Rules.** Your agent runs these as it captures and manages rules for you.

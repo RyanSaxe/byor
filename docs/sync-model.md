@@ -37,7 +37,9 @@ A global rule is *not* copied when:
 - a project rule owns its ID (`overridden by project rule`),
 - a local rule owns its ID (`overridden by local rule`), or
 - it is listed in `.byor/local.yml` `excluded_rule_ids`
-  (`excluded in .byor/local.yml`).
+  (`excluded in .byor/local.yml`), or
+- one of its `metadata.byor.tags` entries is listed in `.byor/local.yml`
+  `excluded_tags` (`excluded by tag '<tag>' in .byor/local.yml`).
 
 There is no state file: staleness and provenance are derived by comparing the
 mirror's contents against what sync would produce.
@@ -87,6 +89,12 @@ project rule later and the global rule returns naturally on the next sync.
 `.byor/local.yml` and the generated copy is removed on the same sync.
 `include` removes the entry and the copy comes back — unless a project or
 local rule still owns the ID, in which case it stays skipped.
+
+**A tag is excluded.** `byor exclude --tag TAG` records the tag in
+`.byor/local.yml`, and every personal global rule carrying that tag is removed
+from the generated copy on the same sync. `include --tag TAG` removes the tag
+selector and those global rules come back unless another skip reason still
+applies.
 
 **A fresh clone, before byor is installed.** Tracked `.gitkeep` and
 `.ignore` files keep the rule directories present and ast-grep-visible, so
