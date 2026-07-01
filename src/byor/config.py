@@ -58,6 +58,8 @@ class RepoConfig:
     project_name: str | None = None
     paths: RepoPaths = field(default_factory=RepoPaths)
     checks: list[CheckDef] = field(default_factory=list)
+    gate: bool = False
+    """Whether byor keeps a byor-free pre-commit + CI gate regenerated for this repo."""
 
 
 @dataclass
@@ -82,6 +84,7 @@ class InitDefaults:
 
     private: bool | None = None
     git_hooks: bool | None = None
+    gate: bool | None = None
     profile: str | None = None
 
 
@@ -190,6 +193,7 @@ def load_repo_config(repo_root: Path) -> RepoConfig:
             ),
         ),
         checks=_check_defs(data, path),
+        gate=_bool(data, "gate", False, path),
     )
 
 
@@ -210,6 +214,8 @@ def save_repo_config(repo_root: Path, config: RepoConfig) -> None:
         },
     )
     _write_checks(data, config.checks)
+    if config.gate:
+        data["gate"] = True
     write_yaml_atomic(path, data)
 
 
@@ -280,6 +286,7 @@ def load_global_config(config_dir: Path) -> GlobalConfig:
         init=InitDefaults(
             private=_optional_bool(init, "private", path),
             git_hooks=_optional_bool(init, "git_hooks", path),
+            gate=_optional_bool(init, "gate", path),
             profile=_optional_string(init, "profile", path),
         ),
         profiles=_profile_configs(data, path),
@@ -444,6 +451,8 @@ def _write_init_defaults(data: CommentedMap, init: InitDefaults) -> None:
         values["private"] = init.private
     if init.git_hooks is not None:
         values["git_hooks"] = init.git_hooks
+    if init.gate is not None:
+        values["gate"] = init.gate
     if init.profile is not None:
         values["profile"] = init.profile
     if values:

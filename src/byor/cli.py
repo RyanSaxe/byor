@@ -11,6 +11,7 @@ from pathlib import Path
 from byor.agents.harness import HARNESS_CHOICES
 from byor.agents.install import AGENT_CHOICES, run_hook
 from byor.commands.doctor import run_doctor
+from byor.commands.gate import heal_gate
 from byor.commands.init import run_init
 from byor.commands.install import run_install
 from byor.commands.listing import run_list
@@ -129,6 +130,12 @@ def _add_init_arguments(command: argparse.ArgumentParser) -> None:
         action=argparse.BooleanOptionalAction,
         default=None,
         help="Install post-merge/post-checkout shims that run `byor sync`",
+    )
+    command.add_argument(
+        "--gate",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Distribute a blocking gate (pre-commit + CI) enforcing these rules",
     )
     command.add_argument(
         "--non-interactive",
@@ -383,33 +390,34 @@ _HANDLERS = {
 def run(args: argparse.Namespace) -> int:
     if args.command not in SELF_SYNCING_COMMANDS and not _is_hook_invocation(args):
         try:
-            heal_message = _self_heal_preamble(args)
+            heal_messages = _self_heal_preamble(args)
         except ByorError:
             # Doctor's job is reporting problems (e.g. a rule file that does
             # not parse stops sync); its own checks render them as FAIL rows.
             if args.command != "doctor":
                 raise
-            heal_message = None
-        if heal_message is not None:
+            heal_messages = []
+        for message in heal_messages:
             # stderr keeps stdout clean for JSON-emitting commands.
-            print(heal_message, file=sys.stderr)
+            print(message, file=sys.stderr)
     handler = _HANDLERS.get(args.command)
     if handler is None:
         raise ByorError(f"'{args.command}' is not implemented yet")
     return handler(args)
 
 
-def _self_heal_preamble(args: argparse.Namespace) -> str | None:
-    """Heal machine-level state always, and a stale repo's mirror when in one.
+def _self_heal_preamble(args: argparse.Namespace) -> list[str]:
+    """Heal machine-level state always, plus a stale repo's mirror and gate.
 
-    Returns the one-line repo heal summary (None when nothing changed) so doctor
-    can report what was healed; the global heal is silent. Uninitialized repos
-    heal silently.
+    Returns the repo heal lines (empty when nothing changed) so doctor can report
+    what was healed; the global heal is silent. Uninitialized repos heal silently.
     """
-
     config_dir = global_config_dir()
     heal_global(config_dir)
-    return heal_repo(resolve_repo_root(explicit=args.repo), config_dir)
+    repo_root = resolve_repo_root(explicit=args.repo)
+    mirror_line = heal_repo(repo_root, config_dir)
+    messages = [mirror_line] if mirror_line is not None else []
+    return messages + heal_gate(repo_root)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

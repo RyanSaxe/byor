@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from byor.commands.doctor import quick_doctor_problems
+from byor.commands.gate import install_gate
 from byor.commands.profile import add_profile_to_local
 from byor.commands.prompts import prompt_choice
 from byor.config import (
@@ -47,6 +48,7 @@ class InitOptions:
 
     private: bool
     git_hooks: bool
+    gate: bool
     register: bool
     replace_sgconfig: bool
     profile: str | None
@@ -98,6 +100,8 @@ def initialize_repo(
     _, sync_result = sync_repo(repo_root, load_canonical_rules(config_dir))
     if sync_result.changed:
         messages.append(f"Synced {summarize_changes(sync_result)}")
+    if options.gate:
+        messages.extend(install_gate(repo_root, config_dir, options.private))
     # Run doctor --quick, surfacing only the problems it finds.
     messages.extend(quick_doctor_problems(repo_root, config_dir))
     return messages
@@ -167,9 +171,14 @@ def _options_from_args(args: argparse.Namespace, defaults: InitDefaults) -> Init
         git_hooks: bool = args.git_hooks
     else:
         git_hooks = _resolve_git_hooks(defaults.git_hooks, interactive)
+    if args.gate is not None:
+        gate: bool = args.gate
+    else:
+        gate = _resolve_gate(defaults.gate, interactive)
     return InitOptions(
         private=private,
         git_hooks=git_hooks,
+        gate=gate,
         register=not args.no_register,
         replace_sgconfig=args.replace_sgconfig,
         profile=_resolve_profile(args, defaults),
@@ -179,6 +188,11 @@ def _options_from_args(args: argparse.Namespace, defaults: InitDefaults) -> Init
 def _resolve_private(default: bool | None, interactive: bool) -> bool:
     fallback = default if default is not None else False
     return _prompt_private(fallback) if interactive else fallback
+
+
+def _resolve_gate(default: bool | None, interactive: bool) -> bool:
+    fallback = default if default is not None else False
+    return _prompt_gate(fallback) if interactive else fallback
 
 
 def _resolve_git_hooks(default: bool | None, interactive: bool) -> bool:
@@ -198,6 +212,15 @@ def _prompt_private(default: bool) -> bool:
     choice = prompt_choice(
         "Make this byor setup private (hide everything from git, don't commit)?",
         ("no, share it with the team", "yes, keep it to myself"),
+        default=1 if default else 0,
+    )
+    return choice == 1
+
+
+def _prompt_gate(default: bool) -> bool:
+    choice = prompt_choice(
+        "Install a blocking gate (pre-commit + CI) that enforces these rules?",
+        ("no", "yes"),
         default=1 if default else 0,
     )
     return choice == 1
