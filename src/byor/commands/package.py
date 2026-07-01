@@ -20,7 +20,7 @@ from byor.config import (
 )
 from byor.errors import ConfigError
 from byor.io.paths import global_config_dir, resolve_repo_root
-from byor.rules.sync import load_canonical_rules, summarize_changes, sync_repo
+from byor.rules.sync import load_canonical_rules, sync_repo
 
 
 def run_package(args: argparse.Namespace) -> int:
@@ -36,7 +36,7 @@ def run_package(args: argparse.Namespace) -> int:
         print(f"Installed package '{args.name}' in .byor/local.yml")
         _, result = sync_repo(repo_root, load_canonical_rules(config_dir))
         if result.changed:
-            print(f"Synced {summarize_changes(result)} into {repo_root}")
+            print(f"Synced package '{args.name}' into {repo_root}")
         return 0
     raise ConfigError(f"unknown package action: {args.package_action}")
 
