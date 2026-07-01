@@ -186,8 +186,8 @@ Project rules are committed files that work with `ast-grep`, so CI doesn't need
 `--error` so warnings fail the build (a plain scan exits 0 on warnings):
 
 ```yaml
-- run: npm install -g @ast-grep/cli
-- run: ast-grep scan --error
+- uses: astral-sh/setup-uv@v6
+- run: uvx --from ast-grep-cli ast-grep scan --error
 ```
 
 `byor init --gate` generates this workflow and a matching `.pre-commit-config.yaml`

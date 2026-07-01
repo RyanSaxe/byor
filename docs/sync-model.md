@@ -119,8 +119,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: npm install -g @ast-grep/cli
-      - run: ast-grep scan --error
+      - uses: astral-sh/setup-uv@v6
+      - run: uvx --from ast-grep-cli ast-grep scan --error
 ```
 
 ## The team gate
@@ -130,11 +130,12 @@ jobs:
 everything** — every effective global and package rule into `.byor/rules/project/`,
 every global and package check into `.byor/config.yml`, and any check that runs
 a `~/` script into a committed copy under `.byor/scripts/` with the command
-repointed. The emitted artifacts then run `ast-grep scan --error` and each check
-directly, so the whole gate enforces with **no byor and no `~/.config/byor`** —
-just ast-grep and the check commands. pre-commit passes each check its staged
-matching files (via a `files:` filter from `extensions`); CI runs each check
-whole-repo, mirroring byor's two scan modes.
+repointed. The emitted artifacts then run
+`uvx --from ast-grep-cli ast-grep scan --error` and each check directly, so the
+whole gate enforces with **no byor and no `~/.config/byor`** — just uv, ast-grep,
+and the check commands. pre-commit passes each check its staged matching files
+(via a `files:` filter from `extensions`); CI runs each check whole-repo,
+mirroring byor's two scan modes.
 
 The artifacts are byor-owned build products, like the rule mirror. A committed
 `gate: true` in `.byor/config.yml` marks the repo, and any byor command

@@ -125,8 +125,10 @@ checks:
 `run` is shlex-split into argv and invoked directly (never through a shell);
 the in-scope files whose extension is listed in `extensions` are appended as
 trailing arguments (an empty `extensions` matches every in-scope file), so **a
-check command must accept a list of file paths**. The command runs without a
-shell — that is what keeps a committed check string from being a
+check command must accept a list of file paths**. When no file paths are
+provided, the command must treat that as a whole-repo scan while respecting
+normal ignored-file rules; generated CI gates intentionally run checks that way.
+The command runs without a shell — that is what keeps a committed check string from being a
 shell-injection vector — so there is no `&&`, pipe, redirection, or alias.
 Anything multi-step (autofix, then format, then report the rest) belongs in a
 script the check points at; byor expands a leading `~`/`~/` in the command so
@@ -177,13 +179,21 @@ to fix, so byor still surfaces the note:
 
 ```sh
 #!/usr/bin/env zsh
-# byor appends the in-scope files as arguments.
-[[ $# -eq 0 ]] && exit 0
+# byor appends in-scope files as arguments; no args means whole repo.
 export NO_COLOR=1   # the agent reads this output; keep it plain text
 
-fixed=$(uvx ruff check --fix-only --show-fixes "$@" 2>/dev/null)   # apply + summarize
-uvx ruff format "$@" >/dev/null 2>&1
-remaining=$(uvx ruff check --quiet --output-format concise "$@" 2>/dev/null)
+files=("$@")
+if (( ${#files[@]} == 0 )); then
+  files=()
+  while IFS= read -r file; do
+    files+=("$file")
+  done < <(git ls-files -co --exclude-standard -- '*.py' '*.pyi')
+fi
+(( ${#files[@]} == 0 )) && exit 0
+
+fixed=$(uvx ruff check --fix-only --show-fixes "${files[@]}" 2>/dev/null)   # apply + summarize
+uvx ruff format "${files[@]}" >/dev/null 2>&1
+remaining=$(uvx ruff check --quiet --output-format concise "${files[@]}" 2>/dev/null)
 
 [[ -z "$fixed$remaining" ]] && exit 0   # already clean: stay silent
 [[ -n "$fixed" ]] && print -r -- "autofixed by ruff (no action needed):"$'\n'"$fixed"
@@ -191,9 +201,10 @@ remaining=$(uvx ruff check --quiet --output-format concise "$@" 2>/dev/null)
 exit 2
 ```
 
-A check script must accept the trailing file-path arguments, exit nonzero when
-it changed a file or one still violates, and keep its output concise and plain
-(it lands in the agent's context verbatim). Put it where it is callable and matches the policy's scope:
+A check script must accept the trailing file-path arguments, scan the whole repo
+when no paths are supplied, exit nonzero when it changed a file or one still
+violates, and keep its output concise and plain (it lands in the agent's context
+verbatim). Put it where it is callable and matches the policy's scope:
 a personal standard near the global config (`~/.config/byor/scripts/`,
 referenced with `~/`); a repo policy committed in the repo
 (`.byor/scripts/`, referenced by its repo-relative path, which already
