@@ -233,6 +233,27 @@ def test_doctor_flags_a_missing_opencode_plugin(home: Path, capsys: pytest.Captu
     assert not plugin.exists()
 
 
+def test_doctor_reports_a_malformed_agent_config_as_a_failing_check(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = repo_with_agents(home, "claude-code")
+    settings = home / ".claude" / "settings.json"
+    settings.write_text("{not json")
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
+
+    captured = capsys.readouterr()
+    assert "FAIL  agent_files" in captured.out
+    assert ".claude/settings.json is not valid JSON" in captured.out
+    assert "fix the JSON by hand" in captured.out
+    # The parse error is a check row, not an escaped top-level `byor:` error.
+    assert "byor:" not in captured.err
+    assert "Traceback" not in captured.err
+    # Doctor is read-only: the malformed file is left for the user to fix.
+    assert settings.read_text() == "{not json"
+
+
 def test_doctor_flags_a_drifted_skill_render(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = repo_with_agents(home, "skill")
     skill = home / ".claude" / "skills" / "byor" / "SKILL.md"

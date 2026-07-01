@@ -393,13 +393,18 @@ def _extra_checks_check(
 def _agent_files_check(global_config: GlobalConfig) -> Check:
     if not global_config.agents:
         return Check(id="agent_files", ok=True, message="no AI agents configured")
-    problems = agent_file_problems(global_config.agents)
+    problems: list[str] = []
+    for agent in global_config.agents:
+        # A malformed harness config is itself a finding: report it per agent so
+        # one broken file cannot crash doctor or hide the other agents' health.
+        try:
+            agent_problems = agent_file_problems([agent])
+        except ConfigError as error:
+            problems.append(f"{error}; fix the JSON by hand")
+            continue
+        problems.extend(f"{problem}; run `byor install`" for problem in agent_problems)
     if problems:
-        return Check(
-            id="agent_files",
-            ok=False,
-            message=f"{'; '.join(problems)}; run `byor install`",
-        )
+        return Check(id="agent_files", ok=False, message="; ".join(problems))
     agents = ", ".join(global_config.agents)
     return Check(
         id="agent_files",
