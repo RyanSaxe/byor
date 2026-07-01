@@ -2,7 +2,13 @@ import json
 from pathlib import Path
 
 import pytest
-from support import make_repo, write_global_rule, write_rule
+from support import (
+    install_package,
+    make_repo,
+    write_global_rule,
+    write_package_rule,
+    write_rule,
+)
 
 from byor.cli import main
 from byor.config import (
@@ -202,3 +208,36 @@ def test_list_fails_cleanly_outside_an_initialized_repo(
     captured = capsys.readouterr()
     assert "byor init" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_effective_listing_includes_installed_package_rules(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_package_rule(home, "python-strict", "no-cast.yml", "pkg-no-cast")
+    repo = make_repo(home)
+    install_package(repo, "python-strict")
+    assert main(["sync", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    out = capsys.readouterr().out
+    assert "package  pkg-no-cast" in out
+    assert "personal/packages/python-strict/no-cast.yml" in out
+
+
+def test_scope_package_shows_only_package_rules(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_package_rule(home, "python-strict", "no-cast.yml", "pkg-no-cast")
+    repo = make_repo(home)
+    write_rule(repo / ".byor" / "rules" / "project" / "no-foo.yml", "no-foo")
+    install_package(repo, "python-strict")
+    assert main(["sync", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+
+    assert main(["list", "--repo", str(repo), "--scope", "package"]) == 0
+
+    out = capsys.readouterr().out
+    assert "pkg-no-cast" in out
+    assert "no-foo" not in out
