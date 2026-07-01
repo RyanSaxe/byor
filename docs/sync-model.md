@@ -174,3 +174,20 @@ Git never reads these files, so the personal rules stay out of `git status`.
 Sync restores the mirror's `.ignore` if it goes missing (the mirror is wholly
 byor-owned), and `byor doctor` flags either directory when its `.ignore`
 no longer keeps the rules visible.
+
+## Private setups
+
+By default the personal-file ignore block goes in `.gitignore`, so every
+teammate's clone ignores stray personal byor files too — the config, project
+rules, and `sgconfig.yml` stay tracked and shared.
+
+`byor init --private` is for using byor on a repo the team has not adopted it
+for. Instead of `.gitignore` it writes an all-encompassing block to
+`.git/info/exclude` — `.byor/` and `sgconfig.yml` — so nothing byor creates is
+tracked and `git status` stays clean. Because the project rule directory is now
+git-ignored too, init writes the `.ignore` visibility file into *every* rule
+directory (not just the personal ones), keeping all rules loadable by ast-grep.
+
+`.git/info/exclude` only affects untracked files, so if `sgconfig.yml` is
+already committed (the team uses ast-grep independently), byor's edits to it
+still show in `git status`; init warns when it detects this.

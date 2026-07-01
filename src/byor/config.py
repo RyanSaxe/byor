@@ -80,7 +80,7 @@ class InitDefaults:
     explicit init flag always wins over both.
     """
 
-    ignore_mode: str | None = None
+    private: bool | None = None
     git_hooks: bool | None = None
     profile: str | None = None
 
@@ -278,7 +278,7 @@ def load_global_config(config_dir: Path) -> GlobalConfig:
         agents=_string_list(ai, "agents", path),
         checks=_check_defs(data, path),
         init=InitDefaults(
-            ignore_mode=_optional_string(init, "ignore_mode", path),
+            private=_optional_bool(init, "private", path),
             git_hooks=_optional_bool(init, "git_hooks", path),
             profile=_optional_string(init, "profile", path),
         ),
@@ -440,8 +440,8 @@ def _write_checks(data: CommentedMap, checks: list[CheckDef]) -> None:
 
 def _write_init_defaults(data: CommentedMap, init: InitDefaults) -> None:
     values: dict[str, SectionValue] = {}
-    if init.ignore_mode is not None:
-        values["ignore_mode"] = init.ignore_mode
+    if init.private is not None:
+        values["private"] = init.private
     if init.git_hooks is not None:
         values["git_hooks"] = init.git_hooks
     if init.profile is not None:

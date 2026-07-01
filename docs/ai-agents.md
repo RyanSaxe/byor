@@ -231,7 +231,7 @@ the global default.
 
 ```yaml
 init:
-  ignore_mode: local
+  private: true
   git_hooks: true
 ```
 

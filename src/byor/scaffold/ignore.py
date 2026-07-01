@@ -10,7 +10,6 @@ each personal rule directory un-ignores the rules for ast-grep alone.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
 
 from byor.errors import ConfigError
 from byor.io.fsio import (
@@ -21,8 +20,7 @@ from byor.io.fsio import (
 )
 from byor.io.gitio import git_output
 
-IgnoreMode = Literal["project", "local"]
-
+# The always-ignored personal state, written to .gitignore in a shared setup.
 # `**` so nested rules (e.g. personal/global/python/no-cast.yml) are ignored too.
 IGNORED_PATTERNS = (
     ".byor/local.yml",
@@ -32,6 +30,13 @@ IGNORED_PATTERNS = (
     ".byor/rules/personal/global/**/*.yaml",
     ".byor/rules/personal/packages/**/*.yml",
     ".byor/rules/personal/packages/**/*.yaml",
+)
+
+# Private setup: hide byor's entire footprint via .git/info/exclude, so a repo
+# can carry byor for one contributor without committing anything.
+PRIVATE_IGNORED_PATTERNS = (
+    ".byor/",
+    "sgconfig.yml",
 )
 
 BLOCK_BEGIN = f"# >>> {MANAGED_NOTICE} >>>"
@@ -72,8 +77,9 @@ def rule_visibility_ok(rules_dir: Path) -> bool:
     return all(pattern in lines for pattern in VISIBILITY_PATTERNS)
 
 
-def ignore_file(repo_root: Path, mode: IgnoreMode) -> Path:
-    if mode == "project":
+def ignore_file(repo_root: Path, private: bool) -> Path:
+    """The gitignore target: shared setups use .gitignore, private ones exclude."""
+    if not private:
         return repo_root / ".gitignore"
     # --git-path resolves worktrees, whose `.git` is a file, not a directory.
     output = git_output(repo_root, "rev-parse", "--git-path", "info/exclude")
@@ -82,26 +88,27 @@ def ignore_file(repo_root: Path, mode: IgnoreMode) -> Path:
     return (repo_root / output).resolve()
 
 
-def write_ignore_block(repo_root: Path, mode: IgnoreMode) -> bool:
+def write_ignore_block(repo_root: Path, private: bool) -> bool:
     """Write the BYOR ignore block, replacing any previous one.
 
-    Idempotent; returns True only when the file changed.
+    A shared setup ignores only the always-personal state, in .gitignore. A
+    private setup hides byor's whole footprint via .git/info/exclude so nothing
+    byor creates is tracked. Idempotent; returns True only when the file changed.
     """
-    if mode == "local" and not (repo_root / ".git").exists():
-        raise ConfigError(
-            f"{repo_root} has no .git directory; cannot use the local ignore mode"
-        )
-    path = ignore_file(repo_root, mode)
+    if private and not (repo_root / ".git").exists():
+        raise ConfigError(f"{repo_root} has no .git directory; cannot use private mode")
+    patterns = PRIVATE_IGNORED_PATTERNS if private else IGNORED_PATTERNS
+    path = ignore_file(repo_root, private)
     current = path.read_text(encoding="utf-8") if path.is_file() else ""
-    updated = _with_block(current)
+    updated = _with_block(current, patterns)
     if updated == current:
         return False
     write_text_atomic(path, updated)
     return True
 
 
-def _with_block(content: str) -> str:
-    block = "\n".join((BLOCK_BEGIN, *IGNORED_PATTERNS, BLOCK_END)) + "\n"
+def _with_block(content: str, patterns: tuple[str, ...]) -> str:
+    block = "\n".join((BLOCK_BEGIN, *patterns, BLOCK_END)) + "\n"
     lines = content.splitlines(keepends=True)
     begin = _marker_index(lines, BLOCK_BEGIN, start=0)
     if begin is None:

@@ -41,12 +41,10 @@ def scan(repo: Path) -> str:
     return result.stdout
 
 
-@pytest.mark.parametrize("ignore_mode", ["project", "local"])
-def test_synced_global_rule_is_seen_by_ast_grep_scan(
-    home: Path, ignore_mode: str
-) -> None:
+@pytest.mark.parametrize("private", [False, True])
+def test_synced_global_rule_is_seen_by_ast_grep_scan(home: Path, private: bool) -> None:
     write_global_rule(home, "python/no-python-cast.yml", "no-python-cast")
-    repo = git_repo(home, "--ignore-mode", ignore_mode)
+    repo = git_repo(home, *(["--private"] if private else []))
     (repo / "app.py").write_text(VIOLATION)
 
     assert "no-python-cast" in scan(repo)
