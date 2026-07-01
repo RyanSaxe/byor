@@ -56,7 +56,9 @@ byor: synced 2 updated global rules
 
 The exceptions: `byor sync` itself (its body is the sync),
 `byor sync --check`, which reports without writing and exits 3 when stale,
-and `byor init`, which runs a full sync as one of its steps.
+`byor init`, which runs a full sync as one of its steps, and `byor doctor`,
+which is read-only — it reports staleness and the command that fixes it
+instead of repairing anything itself.
 
 ```bash
 byor sync           # mirror this repo
@@ -69,6 +71,7 @@ byor sync --check   # report; exit 3 when stale
 skipping paths that no longer exist.
 
 The mental model: running byor *anything* makes this repo correct;
+`byor doctor` tells you what is wrong without touching it;
 `byor sync --all` makes every repo correct.
 
 ## What happens when...
