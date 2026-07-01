@@ -33,7 +33,12 @@ from byor.errors import (
 from byor.io.paths import global_config_dir, home_sgconfig_path, resolve_repo_root
 from byor.io.yamlio import load_yaml_mapping
 from byor.rules.rules import load_rules
-from byor.rules.sync import compute_sync_plan, load_canonical_rules, mirror_contents
+from byor.rules.sync import (
+    compute_sync_plan,
+    load_canonical_rules,
+    mirror_contents,
+    repo_packages_plan,
+)
 from byor.scaffold.ignore import rule_visibility_ok
 from byor.scan.astgrep import ast_grep_version, resolve_ast_grep
 from byor.scan.checks import effective_checks
@@ -229,7 +234,11 @@ def _rule_visibility_check(repo_root: Path, paths: RepoPaths) -> Check:
     """Personal rules are git-ignored; without the .ignore negation files,
     ast-grep's gitignore-respecting rule discovery would never load them.
     """
-    personal_dirs = (paths.personal_local_rules, paths.personal_global_rules)
+    personal_dirs = (
+        paths.personal_local_rules,
+        paths.personal_global_rules,
+        paths.personal_packages_rules,
+    )
     broken = [d for d in personal_dirs if not rule_visibility_ok(repo_root / d)]
     if broken:
         return Check(
@@ -265,11 +274,16 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, config_dir: Path) -> list[Ch
         checks.append(Check("rule_ids_unique", False, str(error)))
         return checks
     checks.append(Check("rule_ids_unique", True, "effective rule IDs are unique"))
-    if mirror_contents(repo_root / paths.personal_global_rules) != plan.desired:
-        message = "global rule copies are stale; run `byor sync`"
+    packages_plan, packages_dir = repo_packages_plan(repo_root, canonical)
+    global_stale = (
+        mirror_contents(repo_root / paths.personal_global_rules) != plan.desired
+    )
+    packages_stale = mirror_contents(packages_dir) != packages_plan.desired
+    if global_stale or packages_stale:
+        message = "rule copies are stale; run `byor sync`"
         checks.append(Check("sync_fresh", False, message))
     else:
-        checks.append(Check("sync_fresh", True, "global rule copies are in sync"))
+        checks.append(Check("sync_fresh", True, "rule copies are in sync"))
     return checks
 
 
