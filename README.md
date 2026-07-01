@@ -128,6 +128,14 @@ profiles:
         - strict
 ```
 
+Packages are the opposite of a global rule: a named bundle of rules (and
+optional checks) under `~/.config/byor/packages/` that a repo **opts into**
+rather than getting everywhere automatically. `byor package add <name>` installs
+one for you in a repo (personally, like a `local` rule — not committed); promote
+its rules or checks with `byor promote` to share them with the team. Reach for a
+package when a rule set is reusable but too situational to force on every repo.
+See [docs/rules.md](docs/rules.md).
+
 ## With AI coding agents
 
 Agents can both obey your rules and write new ones:
@@ -182,6 +190,11 @@ Project rules are committed files that work with `ast-grep`, so CI doesn't need
 - run: ast-grep scan --error
 ```
 
+`byor init --gate` generates this workflow and a matching `.pre-commit-config.yaml`
+for you — promoting your effective rules and checks into committed config first,
+so the gate stays byor-free but also covers your checks. See
+[docs/sync-model.md](docs/sync-model.md).
+
 ## Commands
 
 **Setup.** You run these once to get going.
@@ -204,7 +217,7 @@ byor add            Create a rule in a scope
 byor list           Show rules and where they come from
 byor edit           Open a rule in $EDITOR
 byor remove         Delete a rule
-byor promote        Move a personal rule into shared project rules
+byor promote        Move a personal/package rule or a check into shared config
 byor exclude        Disable a global rule in this repository
 byor include        Re-enable an excluded global rule
 ```

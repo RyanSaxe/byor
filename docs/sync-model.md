@@ -138,10 +138,11 @@ whole-repo, mirroring byor's two scan modes.
 
 The artifacts are byor-owned build products, like the rule mirror. A committed
 `gate: true` in `.byor/config.yml` marks the repo, and any byor command
-regenerates the CI workflow and byor's block of the pre-commit config from the
-current committed rules and checks. So the maintainer adds a rule or check with
-byor as usual and the gate refreshes itself; teammates only ever run it, and
-need nothing byor. A pre-existing, user-owned `.pre-commit-config.yaml` is never
+regenerates the CI workflow and the pre-commit config it owns from the current
+committed rules and checks. So the maintainer adds a rule or check with byor as
+usual and the gate refreshes itself; teammates only ever run it, and need
+nothing byor. byor owns each file by its marker header (the whole file, not a
+block within it): a pre-existing, unmarked `.pre-commit-config.yaml` is never
 overwritten — byor prints the block to paste in instead.
 
 Under `--private` the gate commits nothing: byor installs a local
@@ -182,10 +183,10 @@ Shim safety rules:
 ## Git-ignored, yet visible to ast-grep
 
 `init` gitignores personal rule files with the patterns
-`.byor/rules/personal/{local,global}/**/*.yml` (and `.yaml`): local rules
-are private and the global mirror is generated, so neither belongs in the
-team's history. But ast-grep's rule discovery respects gitignore, which would
-hide those very files from `ast-grep scan`/LSP inside a git repository.
+`.byor/rules/personal/{local,global,packages}/**/*.yml` (and `.yaml`): local
+rules are private and the global and package mirrors are generated, so none
+belong in the team's history. But ast-grep's rule discovery respects gitignore,
+which would hide those very files from `ast-grep scan`/LSP inside a git repository.
 
 ast-grep also reads `.ignore` files, which git does not. `init` therefore
 writes a tracked `.ignore` file into each personal rule directory whose
@@ -197,8 +198,8 @@ negations un-ignore the rules for ast-grep alone:
 ```
 
 Git never reads these files, so the personal rules stay out of `git status`.
-Sync restores the mirror's `.ignore` if it goes missing (the mirror is wholly
-byor-owned), and `byor doctor` flags either directory when its `.ignore`
+Sync restores a mirror's `.ignore` if it goes missing (the mirrors are wholly
+byor-owned), and `byor doctor` flags any personal directory whose `.ignore`
 no longer keeps the rules visible.
 
 ## Private setups

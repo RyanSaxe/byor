@@ -5,6 +5,7 @@ version: 1
 
 paths:
   rules: rules # global rules live in ~/.config/byor/rules/
+  packages: packages # opt-in rule/check bundles; `byor package add <name>`
   repos: repos.yml # repos byor syncs global rules into
 
 ast_grep:

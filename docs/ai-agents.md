@@ -233,6 +233,7 @@ the global default.
 init:
   private: true
   git_hooks: true
+  gate: true
 ```
 
 ## Per-agent status
