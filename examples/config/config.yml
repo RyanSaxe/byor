@@ -17,8 +17,9 @@ output:
 
 # `checks` run alongside ast-grep rules. Each runs on files matching its
 # extensions; byor appends the in-scope paths as arguments and feeds any
-# nonzero-exit output back to the agent. A check can be a one-liner or a script
-# (see scripts/ruff.sh for the autofix-then-report pattern).
+# nonzero-exit output back to the agent. When no paths are passed, the command
+# should scan the whole repo while respecting ignored files. A check can be a
+# one-liner or a script (see scripts/ruff.sh for the autofix-then-report pattern).
 checks:
   - name: ruff
     extensions:

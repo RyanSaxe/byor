@@ -41,4 +41,5 @@ into the same loop and feeding their output to AI agents.
   agent list.
 - [`config/scripts/ruff.sh`](config/scripts/ruff.sh) — a `check` script that
   autofixes what is safe, tells the agent exactly what changed, then reports
-  only the issues it could not fix.
+  only the issues it could not fix. It accepts explicit file arguments for hook
+  mode, and scans non-ignored repo Python files when no files are passed.
