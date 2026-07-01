@@ -5,6 +5,8 @@ intent at module scope helps the dogfooding contract distinguish purposeful cove
 implementation checks.
 """
 
+import importlib.metadata
+
 import pytest
 
 from byor import __version__
@@ -25,6 +27,12 @@ def test_version_prints_package_version(capsys: pytest.CaptureFixture[str]) -> N
 
     assert excinfo.value.code == 0
     assert capsys.readouterr().out.strip() == f"byor {__version__}"
+
+
+def test_dunder_version_matches_installed_metadata() -> None:
+    # __version__ is hardcoded in byor/__init__.py; this guards it against
+    # drifting from the version pyproject.toml actually publishes.
+    assert __version__ == importlib.metadata.version("byor")
 
 
 def test_unknown_command_exits_nonzero() -> None:

@@ -42,6 +42,8 @@ def test_gate_promotes_rules_and_checks_and_writes_portable_artifacts(
     assert r"files: \.(py)$" in precommit
 
     workflow = (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
+    # Push runs are limited to the default branch so PR branches are not gated twice.
+    assert "on:\n  pull_request:\n  push:\n    branches: [main]\n" in workflow
     assert "astral-sh/setup-uv@v6" in workflow
     assert "uvx --from ast-grep-cli ast-grep scan --error" in workflow
     assert "npm install" not in workflow

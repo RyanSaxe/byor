@@ -37,6 +37,9 @@ __all__ = (
 )
 
 DIAGNOSTICS_EXIT_CODE = 2
+# A deliberate catch-all: the hook path fails open because a crashed check must
+# never block an agent's edit, so any exception a scan raises is swallowed
+# (with a stderr breadcrumb) rather than enumerated.
 FAIL_OPEN_ERRORS = (Exception,)
 
 Scope = Literal["edit", "diff", "file"]

@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from byor.io.fsio import MANAGED_NOTICE, write_marked_text
+from byor.scaffold.precommit import AST_GREP_ENTRY
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -21,7 +22,6 @@ __all__ = ("write_ci_workflow",)
 WORKFLOW_RELPATH = ".github/workflows/byor-gate.yml"
 
 GATE_MARKER = f"# {MANAGED_NOTICE}"
-AST_GREP_ENTRY = "uvx --from ast-grep-cli ast-grep scan --error"
 
 
 def write_ci_workflow(repo_root: Path, checks: list[CheckDef]) -> list[str]:
@@ -43,7 +43,12 @@ def _workflow_yaml(checks: list[CheckDef]) -> str:
     return (
         f"{GATE_MARKER}\n"
         "name: byor gate\n"
-        "on: [push, pull_request]\n"
+        # Push runs are limited to the default branch so a PR branch is not
+        # gated twice (once by push, once by pull_request).
+        "on:\n"
+        "  pull_request:\n"
+        "  push:\n"
+        "    branches: [main]\n"
         "jobs:\n"
         "  byor:\n"
         "    runs-on: ubuntu-latest\n"
