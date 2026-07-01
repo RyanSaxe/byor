@@ -161,7 +161,8 @@ global copy return on that same sync.
 ## Promotion
 
 ```bash
-byor promote RULE_ID --from local|global [--to project] [--replace]
+byor promote RULE_ID --from local|global|package [--to project] [--replace]
+byor promote --check NAME
 ```
 
 - `--from local` copies the local rule into project rules and removes the
@@ -172,6 +173,14 @@ byor promote RULE_ID --from local|global [--to project] [--replace]
   never removes the canonical original. Sync then skips the global copy
   because the project owns the ID; deleting the project rule later lets the
   global rule return naturally. `excluded_rule_ids` is not touched.
+- `--from package` copies an installed package's rule into project rules and
+  leaves the package source alone, exactly like `--from global`. Sync then
+  skips the package copy because the project owns the ID.
+- `--check NAME` copies a global or installed-package check into
+  `.byor/config.yml` `checks:`, making it a tracked repo check. The check
+  merge lets a repo check win by name, so the copied check runs exactly once
+  in byor, in CI, and in a pre-commit hook. Promoting a name that is already
+  a repo check fails.
 
 The rule's relative path below its scope root is preserved
 (`local/python/x.yml` → `project/python/x.yml`). If the destination file
@@ -252,6 +261,48 @@ owned by the repo.
 `byor profile add` merges the profile's selectors into any exclusions already in
 `.byor/local.yml`; it never clears existing entries, and re-adding a profile is
 a no-op. Remove individual selectors with `byor include`.
+
+## Packages
+
+Where a profile subtracts, a package adds. A package is a named bundle under the
+global config's `packages/` directory that a repo opts into. Unlike the personal
+global rules, a package is not in root ast-grep, so its rules apply only where
+they are installed.
+
+```text
+~/.config/byor/packages/
+  python-strict/
+    no-cast.yml          # a rule, same format as any other
+    checks.yml           # optional: checks this package contributes
+```
+
+A `checks.yml` is a `checks:` list in the same shape as the repo and global
+configs:
+
+```yaml
+checks:
+  - name: ruff-strict
+    extensions: [py]
+    run: uv run ruff check --select ALL
+```
+
+Install and list packages the way you apply profiles:
+
+```bash
+byor package list
+byor package add python-strict
+```
+
+`byor package add` records the opt-in in `.byor/local.yml` (private, gitignored)
+and syncs. The package's rules mirror into `.byor/rules/personal/packages/`,
+git-ignored but visible to ast-grep, and its checks apply at a tier between repo
+and global checks (repo wins over package wins over global, by name). Excluding a
+package rule or check works through the usual `byor exclude`.
+
+To share a package's rules or checks with the team, promote them into tracked
+config: `byor promote RULE_ID --from package` and `byor promote --check NAME`.
+Editing the package under `~/.config/byor/packages/` and re-syncing upgrades an
+installed package's rules, just as editing a global rule does.
 
 ## Another worked example
 
