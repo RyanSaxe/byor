@@ -45,6 +45,10 @@ byor init
 byor init --profile <name>
 ```
 
+Apply one to an already-initialized repo with `byor profile add <name>`. For
+authoring a profile, or one-off `byor exclude` toggles, see
+`references/profiles.md`.
+
 ## 3. Discover existing preferences
 
 Read the user's instruction files directly — no need to ask first (a harness may

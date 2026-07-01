@@ -53,7 +53,9 @@ byor list --scope all --tags
 
 Tags are user-defined labels for listing, profiles, and repo-local exclusions.
 Reuse existing tags when they fit the new rule. Create a new tag only when it
-expresses a genuinely new grouping the existing vocabulary does not cover.
+expresses a genuinely new grouping the existing vocabulary does not cover. Tag
+by the groupings a user would toggle together, so one selector can exclude the
+whole group later — see **references/profiles.md**.
 
 Write a complete ast-grep YAML rule with id, language, severity, message,
 `rule.pattern`, and `metadata.byor`:
@@ -87,6 +89,11 @@ one. For ast-grep pattern syntax and a fully worked example, see
 - `project` — team policy voiced about this codebase (committed, shared)
 - `global` — a personal preference that transcends this repository
 - `local` — an experiment, private to this checkout
+
+If the preference is really a *reusable bundle* other repos should opt into one
+at a time — not a single rule for this repo, and not something to force on every
+repo — that is a **package**, authored differently. See
+**references/packages.md**.
 
 Show the user the drafted rule and your recommended scope.
 
@@ -128,4 +135,6 @@ it in the harness's instruction file instead (CLAUDE.md, AGENTS.md, or
 
 - **references/patterns.md** — ast-grep pattern primer and a worked example.
 - **references/checks.md** — pick the right tool, or author a check script.
+- **references/packages.md** — author a reusable, opt-in bundle of rules/checks.
+- **references/profiles.md** — tune which rules apply: exclusions and profiles.
 - **references/setup.md** — set up byor and import existing preferences.

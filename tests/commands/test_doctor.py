@@ -4,7 +4,14 @@ import sys
 from pathlib import Path
 
 import pytest
-from support import install_agents, make_repo, repo_with_agents, write_rule
+from support import (
+    install_agents,
+    install_package,
+    make_repo,
+    repo_with_agents,
+    write_package_rule,
+    write_rule,
+)
 
 from byor.cli import main
 from byor.commands.doctor import collect_checks
@@ -241,3 +248,30 @@ def test_doctor_flags_a_missing_opencode_plugin(
     assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
 
     assert "~/.config/opencode/plugin/byor.ts is missing" in capsys.readouterr().out
+
+
+def test_doctor_flags_a_missing_packages_visibility_file(home: Path) -> None:
+    write_package_rule(home, "pkg", "no-cast.yml", "pkg-no-cast")
+    repo = make_repo(home)
+    install_package(repo, "pkg")
+    assert main(["sync", "--repo", str(repo)]) == 0
+    (repo / ".byor" / "rules" / "personal" / "packages" / ".ignore").unlink()
+
+    checks = collect_checks(repo, home / "xdg" / "byor", quick=False)
+
+    failed = {check.id for check in checks if not check.ok}
+    assert "rules_visible" in failed
+
+
+def test_doctor_flags_a_stale_packages_mirror(home: Path) -> None:
+    write_package_rule(home, "pkg", "no-cast.yml", "pkg-no-cast")
+    repo = make_repo(home)
+    install_package(repo, "pkg")
+    assert main(["sync", "--repo", str(repo)]) == 0
+    mirror = repo / ".byor" / "rules" / "personal" / "packages" / "pkg" / "no-cast.yml"
+    mirror.unlink()  # mirror now diverges from the package source
+
+    checks = collect_checks(repo, home / "xdg" / "byor", quick=False)
+
+    failed = {check.id for check in checks if not check.ok}
+    assert "sync_fresh" in failed

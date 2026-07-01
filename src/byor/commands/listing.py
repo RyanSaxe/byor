@@ -16,7 +16,7 @@ from byor.rules.rules import load_rules
 from byor.rules.sync import SkippedRule, load_canonical_rules, repo_sync_plan
 from byor.scan.checks import load_effective_checks
 
-ListScope = Literal["project", "local", "global", "effective", "all"]
+ListScope = Literal["project", "local", "global", "package", "effective", "all"]
 
 
 @dataclass
@@ -71,19 +71,23 @@ def run_list(args: argparse.Namespace) -> int:
 
 
 def collect_rules(repo_root: Path, scope: ListScope) -> list[ListedRule]:
-    """Rules in display order: project, then local, then synced global copies.
+    """Rules in display order: project, local, synced global, then package copies.
 
-    The `global` rows are the mirrored copies ast-grep actually reads; after
-    the self-heal preamble they match the canonical rules minus skips.
+    The `global` and `package` rows are the mirrored copies ast-grep actually
+    reads; after the self-heal preamble they match their canonical sources minus
+    skips.
     """
     paths = load_repo_config(repo_root).paths
     directories = {
         "project": paths.project_rules,
         "local": paths.personal_local_rules,
         "global": paths.personal_global_rules,
+        "package": paths.personal_packages_rules,
     }
     wanted = (
-        ("project", "local", "global") if scope in ("effective", "all") else (scope,)
+        ("project", "local", "global", "package")
+        if scope in ("effective", "all")
+        else (scope,)
     )
     return [
         ListedRule(
