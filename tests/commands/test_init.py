@@ -199,23 +199,18 @@ def test_replace_sgconfig_backs_up_then_overwrites(repo: Path) -> None:
     assert ".byor/rules/project" in (repo / "sgconfig.yml").read_text()
 
 
-def test_local_ignore_mode_uses_git_info_exclude(repo: Path) -> None:
+def test_private_hides_everything_via_git_info_exclude(repo: Path) -> None:
     git(repo, "init", "--quiet")
 
-    args = [
-        "init",
-        "--repo",
-        str(repo),
-        "--non-interactive",
-        "--ignore-mode",
-        "local",
-    ]
+    args = ["init", "--repo", str(repo), "--non-interactive", "--private"]
     assert main(args) == 0
     assert main(args) == 0
 
     exclude = (repo / ".git" / "info" / "exclude").read_text()
-    assert exclude.count(".byor/local.yml") == 1
+    assert exclude.count(".byor/") == 1
+    assert "sgconfig.yml" in exclude
     assert not (repo / ".gitignore").exists()
+    assert git(repo, "status", "--porcelain") == ""
 
 
 def test_no_register_creates_empty_registry(repo: Path) -> None:
@@ -254,18 +249,18 @@ def test_init_ends_with_quick_doctor_surfacing_problems(
     assert f"Initialized BYOR in {repo}" in out
 
 
-def test_interactive_prompts_drive_ignore_mode_and_git_hooks(
+def test_interactive_prompts_drive_private_and_git_hooks(
     repo: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     git(repo, "init", "--quiet")
-    # init no longer installs agents; answers: ignore -> local, git hooks -> yes.
+    # Answers: private -> yes, git hooks -> yes.
     monkeypatch.setattr(sys, "stdin", io.StringIO("2\n2\n"))
 
     assert main(["init", "--repo", str(repo)]) == 0
 
-    assert (repo / ".git" / "info" / "exclude").is_file()
+    assert ".byor/" in (repo / ".git" / "info" / "exclude").read_text()
     out = capsys.readouterr().out
     assert "Installed .git/hooks/post-merge" in out
     assert (repo / ".git" / "hooks" / "post-checkout").is_file()
@@ -278,7 +273,7 @@ def seed_init_defaults(repo: Path, defaults: InitDefaults) -> None:
 
 def test_non_interactive_honors_global_init_defaults(repo: Path) -> None:
     git(repo, "init", "--quiet")
-    seed_init_defaults(repo, InitDefaults(ignore_mode="local", git_hooks=True))
+    seed_init_defaults(repo, InitDefaults(private=True, git_hooks=True))
 
     assert main(["init", "--repo", str(repo), "--non-interactive"]) == 0
 
@@ -287,36 +282,25 @@ def test_non_interactive_honors_global_init_defaults(repo: Path) -> None:
 
 
 def test_explicit_flag_overrides_global_init_default(repo: Path) -> None:
-    seed_init_defaults(repo, InitDefaults(ignore_mode="local"))
+    git(repo, "init", "--quiet")
+    seed_init_defaults(repo, InitDefaults(private=True))
 
-    assert (
-        main(
-            [
-                "init",
-                "--repo",
-                str(repo),
-                "--non-interactive",
-                "--ignore-mode",
-                "project",
-            ]
-        )
-        == 0
-    )
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--no-private"]) == 0
 
     assert (repo / ".gitignore").is_file()
-    assert not (repo / ".git" / "info" / "exclude").exists()
+    assert ".byor/" not in (repo / ".git" / "info" / "exclude").read_text()
 
 
 def test_global_default_seeds_interactive_prompt(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     git(repo, "init", "--quiet")
-    seed_init_defaults(repo, InitDefaults(ignore_mode="local"))
+    seed_init_defaults(repo, InitDefaults(private=True))
     # Empty answers accept each prompt's default; the global default makes the
-    # ignore-mode prompt default to local rather than project.
+    # private prompt default to yes rather than no.
     monkeypatch.setattr(sys, "stdin", io.StringIO("\n\n\n"))
 
     assert main(["init", "--repo", str(repo)]) == 0
 
-    assert (repo / ".git" / "info" / "exclude").is_file()
+    assert ".byor/" in (repo / ".git" / "info" / "exclude").read_text()
     assert not (repo / ".gitignore").exists()
