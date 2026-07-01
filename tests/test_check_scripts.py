@@ -77,3 +77,82 @@ def test_check_script_no_args_respects_gitignore(
 
     assert completed.returncode == 0
     assert expected not in completed.stdout
+
+
+RUFF_SCRIPT_COMMAND = (sys.executable, str(SCRIPTS_DIR / "ruff.py"))
+
+
+def _ruff_workspace(tmp_path: Path, *, content: str) -> Path:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    # An empty ruff.toml pins config discovery to the workspace so the
+    # user-level fallback config cannot change what these tests observe.
+    (workspace / "ruff.toml").write_text("")
+    (workspace / "code.py").write_text(content)
+    return workspace
+
+
+def test_ruff_script_passes_clean_file(tmp_path: Path) -> None:
+    workspace = _ruff_workspace(tmp_path, content="x = 1\n")
+
+    completed = subprocess.run(
+        RUFF_SCRIPT_COMMAND,
+        cwd=workspace,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+
+
+def test_ruff_script_reports_unfixable_violation(tmp_path: Path) -> None:
+    workspace = _ruff_workspace(tmp_path, content="print(undefined_name)\n")
+
+    completed = subprocess.run(
+        RUFF_SCRIPT_COMMAND,
+        cwd=workspace,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 2
+    assert "Remaining ruff issues to fix:" in completed.stdout
+    assert "F821" in completed.stdout
+
+
+def test_ruff_script_autofixes_but_still_exits_nonzero(tmp_path: Path) -> None:
+    # CI runs this check in a throwaway workspace, so an autofix must still
+    # fail the gate; the report explains why the file changed.
+    workspace = _ruff_workspace(tmp_path, content="x = 1;\n")
+
+    completed = subprocess.run(
+        RUFF_SCRIPT_COMMAND,
+        cwd=workspace,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 2
+    assert "Autofixed by ruff (no action needed):" in completed.stdout
+    assert (workspace / "code.py").read_text() == "x = 1\n"
+
+
+def test_ruff_script_fails_loudly_when_ruff_cannot_run(tmp_path: Path) -> None:
+    workspace = _ruff_workspace(tmp_path, content="x = 1\n")
+    (workspace / "ruff.toml").write_text("[[[ broken\n")
+
+    completed = subprocess.run(
+        RUFF_SCRIPT_COMMAND,
+        cwd=workspace,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 2
+    assert "ruff failed to run" in completed.stdout
+    assert "ruff.toml" in completed.stdout
