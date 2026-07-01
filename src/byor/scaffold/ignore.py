@@ -28,6 +28,8 @@ IGNORED_PATTERNS = (
     ".byor/rules/personal/local/**/*.yaml",
     ".byor/rules/personal/global/**/*.yml",
     ".byor/rules/personal/global/**/*.yaml",
+    ".byor/rules/personal/packages/**/*.yml",
+    ".byor/rules/personal/packages/**/*.yaml",
 )
 
 # Private setup: hide byor's entire footprint via .git/info/exclude, so a repo

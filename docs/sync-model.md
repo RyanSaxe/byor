@@ -96,6 +96,13 @@ from the generated copy on the same sync. `include --tag TAG` removes the tag
 selector and those global rules come back unless another skip reason still
 applies.
 
+**A package is installed.** `byor package add NAME` records the opt-in in
+`.byor/local.yml` and syncs. The package's rules mirror into
+`.byor/rules/personal/packages/NAME/` — a second generated copy alongside the
+global mirror, kept correct by the same self-heal — and its checks apply. A
+package rule an owned scope already provides (project, local, or a kept global
+rule) is skipped, and two installed packages claiming one ID is a hard error.
+
 **A fresh clone, before byor is installed.** Tracked `.gitkeep` and
 `.ignore` files keep the rule directories present and ast-grep-visible, so
 `ast-grep scan` works with project rules immediately. Personal rules appear

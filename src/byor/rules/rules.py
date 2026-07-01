@@ -157,18 +157,18 @@ def check_id_conflicts(
     DuplicateRuleId. Project or local IDs matching global IDs are overrides,
     not errors: sync skips the global copy.
     """
-    _require_unique_ids(project, "project rules")
-    _require_unique_ids(local, "local personal rules")
-    _require_unique_ids(canonical_global, "canonical global rules")
+    require_unique_ids(project, "project rules")
+    require_unique_ids(local, "local personal rules")
+    require_unique_ids(canonical_global, "canonical global rules")
     # Each scope is unique on its own, so any duplicate here is cross-scope.
-    _require_unique_ids(
+    require_unique_ids(
         project + local,
         "project and local personal rules combined",
         hint="A local variation of a project rule requires a different ID.",
     )
 
 
-def _require_unique_ids(rules: list[Rule], where: str, hint: str | None = None) -> None:
+def require_unique_ids(rules: list[Rule], where: str, hint: str | None = None) -> None:
     paths_by_id: dict[str, list[Path]] = {}
     for rule in rules:
         paths_by_id.setdefault(rule.id, []).append(rule.path)

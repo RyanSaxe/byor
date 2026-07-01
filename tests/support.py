@@ -6,6 +6,14 @@ import sys
 from pathlib import Path
 
 from byor.cli import main
+from byor.config import (
+    CheckDef,
+    load_global_config,
+    load_local_config,
+    save_global_config,
+    save_local_config,
+)
+from byor.io.paths import global_config_dir
 
 RULE_TEMPLATE = (
     "id: {rule_id}\n"
@@ -73,9 +81,6 @@ def repo_with_agents(home: Path, *agents: str) -> Path:
 
 def global_agents() -> list[str]:
     """The AI agents recorded in the global config (XDG-isolated in tests)."""
-    from byor.config import load_global_config
-    from byor.io.paths import global_config_dir
-
     return load_global_config(global_config_dir()).agents
 
 
@@ -101,9 +106,69 @@ def write_global_rule(
     return write_rule(path, rule_id, tags=tags)
 
 
+def write_package_rule(
+    home: Path,
+    package: str,
+    relpath: str,
+    rule_id: str,
+    tags: list[str] | None = None,
+) -> Path:
+    path = home / "xdg" / "byor" / "packages" / package / relpath
+    return write_rule(path, rule_id, tags=tags)
+
+
+def install_package(repo: Path, name: str) -> None:
+    """Opt `repo` into a global package by recording it in local config."""
+    local = load_local_config(repo)
+    local.packages.append(name)
+    save_local_config(repo, local)
+
+
+def write_global_check(
+    name: str, run: str, extensions: tuple[str, ...] = ("py",)
+) -> None:
+    """Append a check to the global config (the personal, machine-wide checks)."""
+    config_dir = global_config_dir()
+    config = load_global_config(config_dir)
+    config.checks.append(CheckDef(name=name, extensions=list(extensions), run=run))
+    save_global_config(config_dir, config)
+
+
+def write_package_check(
+    home: Path,
+    package: str,
+    name: str,
+    run: str,
+    extensions: tuple[str, ...] = ("py",),
+) -> Path:
+    """Write a one-check checks.yml into a global package bundle."""
+    path = home / "xdg" / "byor" / "packages" / package / "checks.yml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "checks:\n"
+        f"  - name: {name}\n"
+        f"    extensions: [{', '.join(extensions)}]\n"
+        f"    run: {run}\n"
+    )
+    return path
+
+
+def uninstall_package(repo: Path, name: str) -> None:
+    """Drop a repo's opt-in to a global package."""
+    local = load_local_config(repo)
+    if name in local.packages:
+        local.packages.remove(name)
+        save_local_config(repo, local)
+
+
 def mirror(repo: Path) -> Path:
     """The generated copy of global rules that ast-grep reads in this repo."""
     return repo / ".byor" / "rules" / "personal" / "global"
+
+
+def package_mirror(repo: Path) -> Path:
+    """The generated copy of installed-package rules ast-grep reads in this repo."""
+    return repo / ".byor" / "rules" / "personal" / "packages"
 
 
 def make_editor(directory: Path, content: str) -> str:

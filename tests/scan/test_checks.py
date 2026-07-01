@@ -32,6 +32,33 @@ def test_repo_check_wins_over_global_check_of_the_same_name() -> None:
     assert by_name["mypy"].origin == "global"
 
 
+def test_package_check_sits_between_repo_and_global_by_precedence() -> None:
+    repo = RepoConfig(checks=[CheckDef("ruff", ["py"], "repo-run")])
+    global_config = GlobalConfig(checks=[CheckDef("mypy", ["py"], "global-run")])
+    package_checks = [
+        ("package:web", CheckDef("ruff", ["py"], "pkg-run")),
+        ("package:web", CheckDef("eslint", ["js"], "pkg-run")),
+    ]
+
+    effective = effective_checks(repo, global_config, LocalConfig(), package_checks)
+
+    by_name = {check.name: check for check in effective}
+    assert _names(effective) == ["ruff", "eslint", "mypy"]
+    # repo wins the name it shares with the package; the package keeps eslint.
+    assert by_name["ruff"].origin == "repo"
+    assert by_name["ruff"].definition.run == "repo-run"
+    assert by_name["eslint"].origin == "package:web"
+
+
+def test_local_exclusion_disables_a_package_check() -> None:
+    package_checks = [("package:web", CheckDef("eslint", ["js"], "run"))]
+    local = LocalConfig(excluded_checks=["eslint"])
+
+    effective = effective_checks(RepoConfig(), GlobalConfig(), local, package_checks)
+
+    assert _names(effective) == []
+
+
 def test_local_exclusion_disables_a_check_by_name() -> None:
     repo = RepoConfig(
         checks=[CheckDef("ruff", ["py"], "run"), CheckDef("eslint", ["js"], "run")]

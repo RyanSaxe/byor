@@ -48,7 +48,8 @@ dev = [
 ]
 
 [tool.ruff.lint]
-extend-select = ["I", "UP", "B", "SIM"]
+# PLC0415 bans imports inside functions: keep every dependency at module top.
+extend-select = ["I", "UP", "B", "SIM", "PLC0415"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

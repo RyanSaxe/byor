@@ -192,6 +192,7 @@ byor init           Initialize byor in a repository
 byor hook           Add or remove an agent integration
 byor doctor         Check that everything is wired up
 byor profile        List or apply configured profiles
+byor package        List or install opt-in rule/check packages
 ```
 
 **Rules.** Your agent runs these as it captures and manages rules for you.

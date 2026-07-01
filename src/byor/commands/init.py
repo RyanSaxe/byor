@@ -136,6 +136,7 @@ def _ensure_repo_layout(repo_root: Path, private: bool) -> RepoConfig:
     visible_dirs = [
         config.paths.personal_local_rules,
         config.paths.personal_global_rules,
+        config.paths.personal_packages_rules,
     ]
     if private:
         visible_dirs.append(config.paths.project_rules)

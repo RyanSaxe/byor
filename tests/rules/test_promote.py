@@ -1,9 +1,19 @@
 from pathlib import Path
 
 import pytest
-from support import make_repo, mirror, write_global_rule, write_rule
+from support import (
+    install_package,
+    make_repo,
+    mirror,
+    write_global_check,
+    write_global_rule,
+    write_package_check,
+    write_package_rule,
+    write_rule,
+)
 
 from byor.cli import main
+from byor.config import load_repo_config
 
 
 def test_promote_local_moves_the_rule_preserving_its_relative_path(
@@ -121,3 +131,64 @@ def test_promote_unknown_rule_id_fails_cleanly(
     captured = capsys.readouterr()
     assert "No rule with ID 'missing' found in global rules." in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_promote_package_rule_copies_it_into_project_and_keeps_the_source(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = write_package_rule(home, "python-strict", "python/no-cast.yml", "pkg-cast")
+    repo = make_repo(home)
+    install_package(repo, "python-strict")
+    capsys.readouterr()
+
+    assert main(["promote", "--repo", str(repo), "pkg-cast", "--from", "package"]) == 0
+
+    destination = repo / ".byor" / "rules" / "project" / "python" / "no-cast.yml"
+    assert destination.is_file()
+    assert source.is_file()
+    # The package copy is dropped from the mirror: project now owns the ID.
+    assert not (
+        repo / ".byor" / "rules" / "personal" / "packages" / "python-strict"
+    ).exists()
+    assert "Promoted 'pkg-cast'" in capsys.readouterr().out
+
+
+def test_promote_check_vendors_a_package_check_into_repo_config(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_package_check(home, "python-strict", "pkg-ruff", "ruff-check")
+    repo = make_repo(home)
+    install_package(repo, "python-strict")
+    capsys.readouterr()
+
+    assert main(["promote", "--repo", str(repo), "--check", "pkg-ruff"]) == 0
+
+    repo_checks = load_repo_config(repo).checks
+    assert [check.name for check in repo_checks] == ["pkg-ruff"]
+    assert "Promoted check 'pkg-ruff'" in capsys.readouterr().out
+
+
+def test_promote_check_vendors_a_global_check_into_repo_config(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_global_check("global-ruff", "ruff-check")
+    repo = make_repo(home)
+    capsys.readouterr()
+
+    assert main(["promote", "--repo", str(repo), "--check", "global-ruff"]) == 0
+
+    assert [check.name for check in load_repo_config(repo).checks] == ["global-ruff"]
+
+
+def test_promote_check_that_is_already_a_repo_check_fails(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_package_check(home, "python-strict", "pkg-ruff", "ruff-check")
+    repo = make_repo(home)
+    install_package(repo, "python-strict")
+    assert main(["promote", "--repo", str(repo), "--check", "pkg-ruff"]) == 0
+    capsys.readouterr()
+
+    assert main(["promote", "--repo", str(repo), "--check", "pkg-ruff"]) != 0
+
+    assert "already a repo check" in capsys.readouterr().err
