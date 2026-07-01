@@ -10,8 +10,11 @@ preference is not a single rule for *this* repo, but a reusable set that only
 Compare against the three `byor add` scopes:
 
 - `project` / `local` — this repo only. Not reusable elsewhere.
-- `global` — every repo you touch, automatically. No opt-in.
-- **package** — reusable *and* opt-in: repos choose it, one at a time.
+- `global` — applies in every repo by default; a repo opts *out* of specific
+  rules or tags (`byor exclude`, or a profile), never in. Prefer this for a
+  genuine personal standard — the opt-out escape hatch means it is not a
+  commitment to enforce it everywhere no matter what.
+- **package** — the inverse of global: applies nowhere until a repo opts *in*.
 
 So a package fits phrasing like "a strict-Python rule set I can turn on per
 project", "our React conventions for the repos that use React", or any group of

@@ -21,6 +21,7 @@ REFERENCES = (
     "references/patterns.md",
     "references/checks.md",
     "references/packages.md",
+    "references/profiles.md",
     "references/setup.md",
 )
 
@@ -109,6 +110,15 @@ def test_packages_reference_teaches_authoring_a_package(home: Path) -> None:
     assert "byor package add" in packages
     assert "~/.config/byor/packages/" in packages
     assert "byor promote --check" in packages
+
+
+def test_profiles_reference_teaches_exclusions_and_profiles(home: Path) -> None:
+    install_agents(home)
+    profiles = (agents_dir(home) / "references/profiles.md").read_text()
+
+    assert "byor exclude" in profiles
+    assert "byor profile add" in profiles
+    assert "excluded_tags" in profiles
 
 
 def test_setup_reference_teaches_onboarding(home: Path) -> None:
