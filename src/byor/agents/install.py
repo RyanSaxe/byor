@@ -136,17 +136,20 @@ def uninstall_agent(agent: str) -> list[str]:
 
 
 def agent_file_problems(agents: Sequence[str]) -> list[str]:
-    """Integration problems for doctor's agent_files check.
+    """Integration problems for doctor's agent_files check, without writing.
 
-    Plugin files (OpenCode, Pi) are byor-managed; the other harnesses'
-    integration is their global hook config, verified by checking a byor hook is
-    present. The skill renders are not checked here — self-heal keeps them current
-    on every byor command, so there is no drift for doctor to report.
+    Plugin files (OpenCode, Pi) and the skill renders are byor-managed marked
+    files, compared against what install would write; the other harnesses'
+    integration is their global hook config, verified by checking a byor hook
+    is present. Marked-file drift is usually short-lived — self-heal rewrites
+    it on most byor commands — but doctor still reports whatever is on disk.
     """
     problems: list[str] = []
     for agent in agents:
-        if (plugin := PLUGIN_AGENTS.get(agent)) is not None:
-            problems.extend(_plugin_problems(plugin))
+        if agent == "skill":
+            problems.extend(_skill_problems())
+        elif (plugin := PLUGIN_AGENTS.get(agent)) is not None:
+            problems.extend(_marked_file_problems(_plugin_path(plugin), plugin.content, marker=plugin.marker))
         elif (harness := HARNESS_BY_NAME.get(agent)) is not None:
             problem = hook_problem(harness)
             if problem is not None:
@@ -191,10 +194,18 @@ def _plugin_path(plugin: PluginAgent) -> Path:
     return Path.home() / plugin.relpath
 
 
-def _plugin_problems(plugin: PluginAgent) -> list[str]:
-    path = _plugin_path(plugin)
+def _skill_problems() -> list[str]:
+    return [
+        problem
+        for base in global_skill_dirs()
+        for relpath, content in skill_files()
+        for problem in _marked_file_problems(base / relpath, content, marker=MANAGED_MARKER)
+    ]
+
+
+def _marked_file_problems(path: Path, content: str, *, marker: str) -> list[str]:
     display = _home_display(path)
-    status = marked_text_status(path, plugin.content, marker=plugin.marker)
+    status = marked_text_status(path, content, marker=marker)
     if status == "missing":
         return [f"{display} is missing"]
     if status == "drifted":

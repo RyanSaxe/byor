@@ -16,7 +16,10 @@ if TYPE_CHECKING:
 
     from byor.config import CheckDef
 
-__all__ = ("write_precommit_config",)
+__all__ = (
+    "precommit_config_text",
+    "write_precommit_config",
+)
 
 CONFIG_RELPATH = ".pre-commit-config.yaml"
 
@@ -24,9 +27,12 @@ GATE_MARKER = f"# {MANAGED_NOTICE}"
 AST_GREP_ENTRY = "uvx --from ast-grep-cli ast-grep scan --error"
 
 
+def precommit_config_text(checks: list[CheckDef]) -> str:
+    return f"{GATE_MARKER}\nrepos:\n{_local_repo_block(checks)}"
+
+
 def write_precommit_config(repo_root: Path, checks: list[CheckDef]) -> list[str]:
-    content = f"{GATE_MARKER}\nrepos:\n{_local_repo_block(checks)}"
-    result = write_marked_text(repo_root / CONFIG_RELPATH, content, marker=GATE_MARKER)
+    result = write_marked_text(repo_root / CONFIG_RELPATH, precommit_config_text(checks), marker=GATE_MARKER)
     if result == "unmarked":
         return [
             f"{CONFIG_RELPATH} already exists; add this to its `repos:` list:",

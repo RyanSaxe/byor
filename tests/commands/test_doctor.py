@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 from support import (
+    git,
     install_agents,
     install_package,
     make_repo,
@@ -230,6 +231,47 @@ def test_doctor_flags_a_missing_opencode_plugin(home: Path, capsys: pytest.Captu
     assert "run `byor install`" in out
     # Doctor is read-only: reporting the problem must not rewrite the plugin.
     assert not plugin.exists()
+
+
+def test_doctor_flags_a_drifted_skill_render(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = repo_with_agents(home, "skill")
+    skill = home / ".claude" / "skills" / "byor" / "SKILL.md"
+    edited = skill.read_text() + "\nlocal note\n"  # marker kept: managed but drifted
+    skill.write_text(edited)
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  agent_files" in out
+    assert "~/.claude/skills/byor/SKILL.md is out of date" in out
+    assert "run `byor install`" in out
+    # Doctor is read-only: the drifted render stays as the user left it.
+    assert skill.read_text() == edited
+
+
+def test_doctor_flags_stale_gate_files(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = home / "gated"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+    capsys.readouterr()
+    assert main(["doctor", "--repo", str(repo)]) == 0
+    assert "ok    gate_files" in capsys.readouterr().out
+
+    config = load_repo_config(repo)
+    config.checks.append(CheckDef("ruff", ["py"], "uv run ruff check"))
+    save_repo_config(repo, config)
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  gate_files" in out
+    assert "run `byor init --gate`" in out
+    # Doctor is read-only: the gate artifacts still lack the new check.
+    assert "ruff" not in (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
+    assert "ruff" not in (repo / ".pre-commit-config.yaml").read_text()
 
 
 def test_doctor_flags_a_missing_packages_visibility_file(home: Path) -> None:
