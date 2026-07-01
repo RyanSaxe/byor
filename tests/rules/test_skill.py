@@ -17,7 +17,12 @@ SKILL_NAME_PATTERN = r"[a-z0-9]+(-[a-z0-9]+)*"
 MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024
 
-REFERENCES = ("references/patterns.md", "references/checks.md", "references/setup.md")
+REFERENCES = (
+    "references/patterns.md",
+    "references/checks.md",
+    "references/packages.md",
+    "references/setup.md",
+)
 
 
 def agents_dir(home: Path) -> Path:
@@ -95,6 +100,15 @@ def test_checks_reference_teaches_authoring_a_check_script(home: Path) -> None:
     assert "Author a check script" in checks
     assert "without a shell" in checks
     assert "trailing path arguments" in checks
+
+
+def test_packages_reference_teaches_authoring_a_package(home: Path) -> None:
+    install_agents(home)
+    packages = (agents_dir(home) / "references/packages.md").read_text()
+
+    assert "byor package add" in packages
+    assert "~/.config/byor/packages/" in packages
+    assert "byor promote --check" in packages
 
 
 def test_setup_reference_teaches_onboarding(home: Path) -> None:
