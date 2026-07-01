@@ -233,13 +233,20 @@ def _add_rule_lookup_arguments(command: argparse.ArgumentParser, action: str) ->
 
 
 def _add_promote_arguments(command: argparse.ArgumentParser) -> None:
-    command.add_argument("rule_id", metavar="RULE_ID", help="ID of the rule to promote")
+    target = command.add_mutually_exclusive_group(required=True)
+    target.add_argument(
+        "rule_id", nargs="?", metavar="RULE_ID", help="ID of the rule to promote"
+    )
+    target.add_argument(
+        "--check",
+        metavar="NAME",
+        help="Promote a global or package check into tracked .byor/config.yml",
+    )
     command.add_argument(
         "--from",
         dest="from_scope",
-        choices=("local", "global"),
-        required=True,
-        help="Scope the rule currently lives in",
+        choices=("local", "global", "package"),
+        help="Scope the rule currently lives in (required when promoting a rule)",
     )
     command.add_argument(
         "--to",

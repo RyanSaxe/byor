@@ -7,8 +7,10 @@ from pathlib import Path
 
 from byor.cli import main
 from byor.config import (
+    CheckDef,
     load_global_config,
     load_local_config,
+    save_global_config,
     save_local_config,
 )
 from byor.io.paths import global_config_dir
@@ -120,6 +122,16 @@ def install_package(repo: Path, name: str) -> None:
     local = load_local_config(repo)
     local.packages.append(name)
     save_local_config(repo, local)
+
+
+def write_global_check(
+    name: str, run: str, extensions: tuple[str, ...] = ("py",)
+) -> None:
+    """Append a check to the global config (the personal, machine-wide checks)."""
+    config_dir = global_config_dir()
+    config = load_global_config(config_dir)
+    config.checks.append(CheckDef(name=name, extensions=list(extensions), run=run))
+    save_global_config(config_dir, config)
 
 
 def write_package_check(
