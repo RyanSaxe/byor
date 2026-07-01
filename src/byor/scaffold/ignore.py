@@ -30,6 +30,8 @@ IGNORED_PATTERNS = (
     ".byor/rules/personal/local/**/*.yaml",
     ".byor/rules/personal/global/**/*.yml",
     ".byor/rules/personal/global/**/*.yaml",
+    ".byor/rules/personal/packages/**/*.yml",
+    ".byor/rules/personal/packages/**/*.yaml",
 )
 
 BLOCK_BEGIN = f"# >>> {MANAGED_NOTICE} >>>"

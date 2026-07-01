@@ -125,6 +125,7 @@ def _ensure_repo_layout(repo_root: Path) -> RepoConfig:
     for personal_dir in (
         config.paths.personal_local_rules,
         config.paths.personal_global_rules,
+        config.paths.personal_packages_rules,
     ):
         write_rule_visibility_file(repo_root / personal_dir)
     return config

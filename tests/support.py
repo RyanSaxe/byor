@@ -101,9 +101,34 @@ def write_global_rule(
     return write_rule(path, rule_id, tags=tags)
 
 
+def write_package_rule(
+    home: Path,
+    package: str,
+    relpath: str,
+    rule_id: str,
+    tags: list[str] | None = None,
+) -> Path:
+    path = home / "xdg" / "byor" / "packages" / package / relpath
+    return write_rule(path, rule_id, tags=tags)
+
+
+def install_package(repo: Path, name: str) -> None:
+    """Opt `repo` into a global package by recording it in local config."""
+    from byor.config import load_local_config, save_local_config
+
+    local = load_local_config(repo)
+    local.packages.append(name)
+    save_local_config(repo, local)
+
+
 def mirror(repo: Path) -> Path:
     """The generated copy of global rules that ast-grep reads in this repo."""
     return repo / ".byor" / "rules" / "personal" / "global"
+
+
+def package_mirror(repo: Path) -> Path:
+    """The generated copy of installed-package rules ast-grep reads in this repo."""
+    return repo / ".byor" / "rules" / "personal" / "packages"
 
 
 def make_editor(directory: Path, content: str) -> str:
