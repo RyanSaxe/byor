@@ -156,7 +156,12 @@ def hook_problem(harness: Harness) -> str | None:
     entries = _entries(_load_config(path, relpath), spec, relpath=relpath)
     if _byor_entry(spec) in entries:
         return None
-    if any(_contains_byor_command(entry) for entry in entries):
+    # An entry the user mixed their own commands into is user-owned: install_hook
+    # leaves it alone, so doctor must treat it as healthy rather than demand a
+    # reinstall that would never change anything.
+    if any(_contains_byor_command(entry) and not _is_byor_entry(entry) for entry in entries):
+        return None
+    if any(_is_byor_entry(entry) for entry in entries):
         return f"the {harness} hook is out of date"
     return f"the {harness} hook is not installed"
 

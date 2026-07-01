@@ -93,6 +93,26 @@ def test_stale_bare_byor_entry_is_not_current(isolated_home: Path) -> None:
     assert hook_installed("codex")
 
 
+def test_user_entry_mixing_in_the_byor_command_is_healthy(isolated_home: Path) -> None:
+    # install_hook deliberately leaves a user-edited entry alone, so doctor must
+    # not report it as out of date — that FAIL could never be fixed.
+    spec = HOOK_SPECS["claude-code"]
+    path = config_path(isolated_home, "claude-code")
+    path.parent.mkdir(parents=True)
+    mixed: dict[str, object] = {
+        "matcher": "Write|Edit",
+        "hooks": [
+            {"type": "command", "command": "my-own-formatter"},
+            {"type": "command", "command": f"{BYOR_COMMAND_SIGNATURE} claude-code >&2"},
+        ],
+    }
+    path.write_text(json.dumps(_config_with_entry(spec.key_path, mixed)))
+
+    assert hook_problem("claude-code") is None
+    assert hook_installed("claude-code")
+    assert install_hook("claude-code") == []
+
+
 @pytest.mark.parametrize("harness", SHARED_HARNESSES)
 def test_uninstall_removes_only_the_byor_entry(harness: Harness, isolated_home: Path) -> None:
     spec = HOOK_SPECS[harness]
