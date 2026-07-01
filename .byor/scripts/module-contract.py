@@ -6,10 +6,12 @@
 """Require module API and script runtime contracts.
 
 Every Python file needs a one-sentence summary line, then at least one
-substantial explanatory paragraph. Package modules also need a static `__all__`
-tuple for public functions and classes, while standalone scripts need an
-explicit Python runtime contract from either their repository or PEP 723
-metadata.
+substantial explanatory paragraph. The paragraph must be specific to its
+module; boilerplate repeated across files satisfies the word count while
+defeating the contract, so the finding messages spell out what counts.
+Package modules also need a static `__all__` tuple for public functions and
+classes, while standalone scripts need an explicit Python runtime contract
+from either their repository or PEP 723 metadata.
 """
 
 from __future__ import annotations
@@ -43,6 +45,12 @@ else:
 MIN_DETAIL_SENTENCES = 2
 MIN_DETAIL_WORDS = 25
 MIN_DOCSTRING_LINES = 3
+DETAIL_ADVICE = (
+    "the paragraph must say something true and specific about this module "
+    "(why it exists, constraints, gotchas) — not restate the summary; expand "
+    "existing prose instead of replacing it, and never paste one generic "
+    "paragraph across files"
+)
 PYTHON_SUFFIXES = frozenset({".py", ".pyi"})
 EXCLUDED_WALK_DIRS = frozenset({".git", ".venv", "venv", "node_modules", "__pycache__", ".tox", "dist", "build"})
 # Sentence heuristic: an ender counts only before whitespace plus a
@@ -313,7 +321,7 @@ def _docstring_findings(path: Path, module: ast.Module) -> list[_Finding]:
             _Finding(
                 path,
                 1,
-                "module docstring required: one-sentence summary plus substantial detail paragraph",
+                f"module docstring required: one-sentence summary plus substantial detail paragraph; {DETAIL_ADVICE}",
             )
         ]
     findings: list[_Finding] = []
@@ -338,7 +346,7 @@ def _docstring_findings(path: Path, module: ast.Module) -> list[_Finding]:
         findings.append(_Finding(path, line, "summary must be followed by a blank line"))
     detail = _first_detail_paragraph(lines)
     if detail is None:
-        findings.append(_Finding(path, line, "module docstring needs a substantial detail paragraph"))
+        findings.append(_Finding(path, line, f"module docstring needs a substantial detail paragraph; {DETAIL_ADVICE}"))
     elif (
         len(WORD.findall(detail)) < MIN_DETAIL_WORDS
         or len(SENTENCE_END.findall(ABBREVIATION.sub("", detail))) < MIN_DETAIL_SENTENCES
@@ -348,7 +356,7 @@ def _docstring_findings(path: Path, module: ast.Module) -> list[_Finding]:
                 path,
                 line,
                 "first detail paragraph must be substantial: at least "
-                f"{MIN_DETAIL_WORDS} words and {MIN_DETAIL_SENTENCES} sentences",
+                f"{MIN_DETAIL_WORDS} words and {MIN_DETAIL_SENTENCES} sentences; {DETAIL_ADVICE}",
             )
         )
     if any(part.strip() == "Exports:" for part in lines):

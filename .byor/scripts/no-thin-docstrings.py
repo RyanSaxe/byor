@@ -27,7 +27,8 @@ MAX_THIN_LINES = 3
 THIN_DOCSTRING_ADVICE = (
     "delete it if the signature and body are enough, or expand it into "
     "full public/complexity docs with arguments, behavior, edge cases, "
-    "and examples where useful"
+    "and examples where useful; when expanding, build on what it already "
+    "says — never swap real information for generic filler"
 )
 
 DOC_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
