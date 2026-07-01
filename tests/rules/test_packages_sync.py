@@ -7,6 +7,7 @@ from support import (
     install_package,
     make_repo,
     package_mirror,
+    uninstall_package,
     write_package_rule,
     write_rule,
 )
@@ -41,11 +42,7 @@ def test_removing_a_package_unmirrors_its_rules(home: Path) -> None:
     install_package(repo, "python-strict")
     assert main(["sync", "--repo", str(repo)]) == 0
 
-    from byor.config import load_local_config, save_local_config
-
-    local = load_local_config(repo)
-    local.packages.clear()
-    save_local_config(repo, local)
+    uninstall_package(repo, "python-strict")
     assert main(["sync", "--repo", str(repo)]) == 0
 
     assert not (package_mirror(repo) / "python-strict" / "no-cast.yml").exists()

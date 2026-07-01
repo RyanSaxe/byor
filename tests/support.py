@@ -6,6 +6,12 @@ import sys
 from pathlib import Path
 
 from byor.cli import main
+from byor.config import (
+    load_global_config,
+    load_local_config,
+    save_local_config,
+)
+from byor.io.paths import global_config_dir
 
 RULE_TEMPLATE = (
     "id: {rule_id}\n"
@@ -73,9 +79,6 @@ def repo_with_agents(home: Path, *agents: str) -> Path:
 
 def global_agents() -> list[str]:
     """The AI agents recorded in the global config (XDG-isolated in tests)."""
-    from byor.config import load_global_config
-    from byor.io.paths import global_config_dir
-
     return load_global_config(global_config_dir()).agents
 
 
@@ -114,11 +117,17 @@ def write_package_rule(
 
 def install_package(repo: Path, name: str) -> None:
     """Opt `repo` into a global package by recording it in local config."""
-    from byor.config import load_local_config, save_local_config
-
     local = load_local_config(repo)
     local.packages.append(name)
     save_local_config(repo, local)
+
+
+def uninstall_package(repo: Path, name: str) -> None:
+    """Drop a repo's opt-in to a global package."""
+    local = load_local_config(repo)
+    if name in local.packages:
+        local.packages.remove(name)
+        save_local_config(repo, local)
 
 
 def mirror(repo: Path) -> Path:
