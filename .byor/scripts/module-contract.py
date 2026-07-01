@@ -44,7 +44,13 @@ MIN_DETAIL_SENTENCES = 2
 MIN_DETAIL_WORDS = 25
 MIN_DOCSTRING_LINES = 3
 PYTHON_SUFFIXES = frozenset({".py", ".pyi"})
-SENTENCE_END = re.compile(r"[.!?]")
+EXCLUDED_WALK_DIRS = frozenset({".git", ".venv", "venv", "node_modules", "__pycache__", ".tox", "dist", "build"})
+# Sentence heuristic: an ender counts only before whitespace plus a
+# non-lowercase character or at the end of the text, so "Python 3.10" and
+# "e.g. tuples" do not count; stripping abbreviations first also keeps
+# "e.g. Python" from counting.
+ABBREVIATION = re.compile(r"\b(?:e\.g\.|i\.e\.|vs\.|cf\.)", re.IGNORECASE)
+SENTENCE_END = re.compile(r"[.!?](?=\s+[^a-z\s]|$)")
 WORD = re.compile(r"[A-Za-z0-9_']+")
 DEFINITION_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 SEQUENCE_TARGET_NODES = (ast.Tuple, ast.List)
@@ -113,7 +119,9 @@ def _walk_python_files(root: Path) -> list[Path]:
     return [
         path
         for path in root.rglob("*")
-        if path.suffix in PYTHON_SUFFIXES and path.is_file() and ".git" not in path.parts
+        if path.suffix in PYTHON_SUFFIXES
+        and path.is_file()
+        and not EXCLUDED_WALK_DIRS.intersection(path.relative_to(root).parts)
     ]
 
 
@@ -187,10 +195,10 @@ def _is_standalone_script(path: Path) -> bool:
 
 
 def _script_contract_findings(path: Path, source: str) -> list[_Finding]:
+    if _has_pep723_requires_python(source):
+        return []
     repo_root = _git_root(path)
     if repo_root is None:
-        if _has_pep723_requires_python(source):
-            return []
         return [
             _Finding(
                 path,
@@ -206,9 +214,10 @@ def _script_contract_findings(path: Path, source: str) -> list[_Finding]:
             _Finding(
                 path,
                 1,
-                "standalone script does not need __all__, but the git repo root "
-                "needs pyproject.toml with [project].requires-python so agents "
-                "know the Python runtime",
+                "standalone script does not need __all__, but it needs a runtime "
+                "contract: add PEP 723 metadata with requires-python, or give "
+                "the git repo root a pyproject.toml with "
+                "[project].requires-python",
             )
         ]
     if _pyproject_has_requires_python(pyproject):
@@ -311,14 +320,26 @@ def _docstring_findings(path: Path, module: ast.Module) -> list[_Finding]:
     summary = lines[0].strip()
     if not summary.endswith("."):
         findings.append(_Finding(path, line, "summary sentence must end with a period"))
-    if len(SENTENCE_END.findall(summary)) != 1:
+    if len(SENTENCE_END.findall(ABBREVIATION.sub("", summary))) != 1:
         findings.append(_Finding(path, line, "summary must be a single sentence"))
+    if len(lines) == 1:
+        findings.append(
+            _Finding(
+                path,
+                line,
+                "module docstring needs a blank line after the summary, then a substantial detail paragraph",
+            )
+        )
+        return findings
     if len(lines) < MIN_DOCSTRING_LINES or lines[1].strip():
         findings.append(_Finding(path, line, "summary must be followed by a blank line"))
     detail = _first_detail_paragraph(lines)
     if detail is None:
         findings.append(_Finding(path, line, "module docstring needs a substantial detail paragraph"))
-    elif len(WORD.findall(detail)) < MIN_DETAIL_WORDS or len(SENTENCE_END.findall(detail)) < MIN_DETAIL_SENTENCES:
+    elif (
+        len(WORD.findall(detail)) < MIN_DETAIL_WORDS
+        or len(SENTENCE_END.findall(ABBREVIATION.sub("", detail))) < MIN_DETAIL_SENTENCES
+    ):
         findings.append(
             _Finding(
                 path,
@@ -407,9 +428,27 @@ def _public_top_level_definitions(module: ast.Module) -> set[str]:
     return names
 
 
+def _statements_with_conditional_blocks(body: list[ast.stmt]) -> list[ast.stmt]:
+    statements: list[ast.stmt] = []
+    for statement in body:
+        statements.append(statement)
+        for block in _conditional_blocks(statement):
+            statements.extend(_statements_with_conditional_blocks(block))
+    return statements
+
+
+def _conditional_blocks(statement: ast.stmt) -> tuple[list[ast.stmt], ...]:
+    if isinstance(statement, ast.Try):
+        handler_bodies = tuple(handler.body for handler in statement.handlers)
+        return (statement.body, *handler_bodies, statement.orelse, statement.finalbody)
+    if isinstance(statement, ast.If):
+        return (statement.body, statement.orelse)
+    return ()
+
+
 def _top_level_names(module: ast.Module) -> set[str]:
     names: set[str] = set()
-    for statement in module.body:
+    for statement in _statements_with_conditional_blocks(module.body):
         if isinstance(statement, DEFINITION_NODES):
             names.add(statement.name)
         elif isinstance(statement, ast.Import):
@@ -450,7 +489,7 @@ def _add_public(names: set[str], name: str) -> None:
 
 
 def _mutates_all(module: ast.Module) -> bool:
-    for statement in module.body:
+    for statement in _statements_with_conditional_blocks(module.body):
         if isinstance(statement, ast.AugAssign) and _is_all_target(statement.target):
             return True
         if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):

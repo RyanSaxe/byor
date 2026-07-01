@@ -79,7 +79,127 @@ def test_check_script_no_args_respects_gitignore(
     assert expected not in completed.stdout
 
 
+MODULE_CONTRACT_COMMAND = (sys.executable, str(SCRIPTS_DIR / "module-contract.py"))
 RUFF_SCRIPT_COMMAND = (sys.executable, str(SCRIPTS_DIR / "ruff.py"))
+GOOD_MODULE_DOCSTRING = (
+    '"""Serve as a fixture module for the module contract tests.\n'
+    "\n"
+    "The detail paragraph documents enough words and sentences to satisfy the\n"
+    "module contract check. It exists only so each test can exercise one rule\n"
+    "at a time without unrelated findings.\n"
+    '"""\n'
+)
+FIXTURE_PYPROJECT = '[project]\nname = "fixture"\nrequires-python = ">=3.10"\n'
+
+
+def test_module_contract_accepts_pep723_script_inside_repo_without_pyproject(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    pep723_header = '# /// script\n# requires-python = ">=3.10"\n# ///\n'
+    (repo / "script.py").write_text(pep723_header + GOOD_MODULE_DOCSTRING)
+
+    completed = subprocess.run(
+        MODULE_CONTRACT_COMMAND,
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+
+
+def test_module_contract_accepts_try_except_import_fallback_in_all(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    package = repo / "pkg"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    module = package / "module.py"
+    module.write_text(
+        GOOD_MODULE_DOCSTRING
+        + "\ntry:\n    import tomllib\nexcept ImportError:\n    import tomli as tomllib\n\n"
+        + '__all__ = ("tomllib",)\n'
+    )
+
+    completed = subprocess.run(
+        (*MODULE_CONTRACT_COMMAND, str(module)),
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+
+
+def test_module_contract_reports_all_missing_public_definition(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    package = repo / "pkg"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    module = package / "module.py"
+    module.write_text(GOOD_MODULE_DOCSTRING + "\n__all__ = ()\n\n\ndef exported() -> int:\n    return 1\n")
+
+    completed = subprocess.run(
+        (*MODULE_CONTRACT_COMMAND, str(module)),
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    assert "__all__ is missing public definitions" in completed.stdout
+    assert "exported" in completed.stdout
+
+
+def test_module_contract_summary_abbreviation_is_one_sentence(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    (repo / "pyproject.toml").write_text(FIXTURE_PYPROJECT)
+    module = repo / "module.py"
+    summary = '"""Handle repo scans, e.g. git repositories and plain directories.\n'
+    module.write_text(summary + GOOD_MODULE_DOCSTRING.split("\n", maxsplit=1)[1])
+
+    completed = subprocess.run(
+        (*MODULE_CONTRACT_COMMAND, str(module)),
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+
+
+def test_module_contract_single_line_docstring_is_one_finding(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    (repo / "pyproject.toml").write_text(FIXTURE_PYPROJECT)
+    module = repo / "module.py"
+    module.write_text('"""Too short."""\n')
+
+    completed = subprocess.run(
+        (*MODULE_CONTRACT_COMMAND, str(module)),
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    assert "blank line after the summary" in completed.stdout
+    assert len(completed.stdout.splitlines()) == 1
 
 
 def _ruff_workspace(tmp_path: Path, *, content: str) -> Path:

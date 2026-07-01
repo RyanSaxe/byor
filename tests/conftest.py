@@ -1,7 +1,7 @@
 """Shared fixtures: an isolated home and a clean git environment.
 
-Reusable helper functions live in ``support.py`` (imported directly via the ``pythonpath =
-["tests"]`` setting); this file holds only pytest fixtures, which are auto-discovered across every
+Reusable helper functions live in ``support.py``, imported directly via the ``pythonpath =
+["tests"]`` setting. This file holds only pytest fixtures, which are auto-discovered across every
 test subdirectory.
 """
 
