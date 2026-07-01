@@ -60,7 +60,10 @@ def test_gate_self_heals_when_a_check_is_added_later(home: Path) -> None:
 def test_gate_vendors_a_home_script_check_into_the_repo(
     home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("HOME", str(home))  # so `~/` expands into the sandbox
+    # Redirect `~` into the sandbox on both POSIX (HOME) and Windows (USERPROFILE),
+    # since os.path.expanduser reads different vars per platform.
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     (home / "fix.sh").write_text("#!/bin/sh\necho hi\n")
     write_global_check("fixer", "~/fix.sh")
     repo = gate_repo(home)
