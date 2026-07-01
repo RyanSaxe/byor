@@ -122,6 +122,25 @@ def install_package(repo: Path, name: str) -> None:
     save_local_config(repo, local)
 
 
+def write_package_check(
+    home: Path,
+    package: str,
+    name: str,
+    run: str,
+    extensions: tuple[str, ...] = ("py",),
+) -> Path:
+    """Write a one-check checks.yml into a global package bundle."""
+    path = home / "xdg" / "byor" / "packages" / package / "checks.yml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "checks:\n"
+        f"  - name: {name}\n"
+        f"    extensions: [{', '.join(extensions)}]\n"
+        f"    run: {run}\n"
+    )
+    return path
+
+
 def uninstall_package(repo: Path, name: str) -> None:
     """Drop a repo's opt-in to a global package."""
     local = load_local_config(repo)

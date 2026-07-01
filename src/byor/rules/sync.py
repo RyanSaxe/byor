@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from byor.config import (
+    PACKAGE_CHECKS_FILE,
     LocalConfig,
     global_packages_dir,
     global_rules_dir,
@@ -26,6 +27,7 @@ from byor.rules.rules import (
     Rule,
     check_id_conflicts,
     discover_rule_files,
+    load_rule,
     load_rules,
     require_unique_ids,
 )
@@ -104,9 +106,18 @@ def load_installed_packages(
         InstalledPackage(
             name=name,
             root=canonical.packages_root / name,
-            rules=load_rules(canonical.packages_root / name),
+            rules=_load_package_rules(canonical.packages_root / name),
         )
         for name in names
+    ]
+
+
+def _load_package_rules(root: Path) -> list[Rule]:
+    """A package's rules: every rule file except the reserved checks manifest."""
+    return [
+        load_rule(path)
+        for path in discover_rule_files(root)
+        if not (path.parent == root and path.name == PACKAGE_CHECKS_FILE)
     ]
 
 

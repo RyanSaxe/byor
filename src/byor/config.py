@@ -13,6 +13,9 @@ from byor.io.yamlio import load_yaml_mapping, write_yaml_atomic
 
 CONFIG_VERSION = 1
 
+# A package's checks manifest; reserved at the package root, never a rule file.
+PACKAGE_CHECKS_FILE = "checks.yml"
+
 # The value types a managed config section may hold, written back in place.
 SectionValue = str | None | bool | int | list[str]
 
@@ -144,6 +147,16 @@ def global_rules_dir(config_dir: Path, config: GlobalConfig) -> Path:
 def global_packages_dir(config_dir: Path, config: GlobalConfig) -> Path:
     """Where opt-in package bundles live; each subdirectory is one package."""
     return config_dir / config.packages_path
+
+
+def load_package_checks(
+    config_dir: Path, config: GlobalConfig, name: str
+) -> list[CheckDef]:
+    """The checks a package declares in its checks.yml; empty when it has none."""
+    path = global_packages_dir(config_dir, config) / name / PACKAGE_CHECKS_FILE
+    if not path.is_file():
+        return []
+    return _check_defs(load_yaml_mapping(path), path)
 
 
 def repo_registry_path(config_dir: Path, config: GlobalConfig) -> Path:
