@@ -20,7 +20,7 @@ from support import (
     write_rule,
 )
 
-from byor.agents.opencode import OPENCODE_PLUGIN, OPENCODE_PLUGIN_RELPATH
+from byor.agents.opencode import OPENCODE_PLUGIN_RELPATH
 from byor.cli import main
 from byor.commands.doctor import collect_checks
 from byor.config import (
@@ -217,16 +217,19 @@ def test_doctor_flags_registered_repos_whose_path_is_gone(home: Path, capsys: py
     assert f"{gone} no longer exists" in capsys.readouterr().out
 
 
-def test_doctor_self_heals_a_missing_opencode_plugin(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_doctor_flags_a_missing_opencode_plugin(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = repo_with_agents(home, "opencode")
     plugin = home / OPENCODE_PLUGIN_RELPATH
     plugin.unlink()
     capsys.readouterr()
 
-    assert main(["doctor", "--repo", str(repo), "--quick"]) == 0
+    assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
 
-    assert plugin.read_text() == OPENCODE_PLUGIN
-    assert "~/.config/opencode/plugin/byor.ts is missing" not in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "~/.config/opencode/plugin/byor.ts is missing" in out
+    assert "run `byor install`" in out
+    # Doctor is read-only: reporting the problem must not rewrite the plugin.
+    assert not plugin.exists()
 
 
 def test_doctor_flags_a_missing_packages_visibility_file(home: Path) -> None:

@@ -99,36 +99,41 @@ def test_codex_install_prints_the_trust_step(capsys: pytest.CaptureFixture[str])
     assert "/hooks" in capsys.readouterr().out
 
 
-def test_doctor_self_heals_a_recorded_harness_whose_hook_was_removed(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_doctor_flags_a_recorded_harness_whose_hook_was_removed(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     install_agents("codex")
     hook = home / ".codex" / "hooks.json"
     hook.unlink()
     capsys.readouterr()
 
-    assert main(["doctor", "--repo", str(repo), "--quick"]) == 0
+    assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
 
-    assert "agent_files" in capsys.readouterr().out
-    assert hook.is_file()
+    out = capsys.readouterr().out
+    assert "FAIL  agent_files" in out
+    assert "the codex hook is not installed" in out
+    assert "run `byor install`" in out
+    # Doctor is read-only: reporting the problem must not reinstall the hook.
+    assert not hook.exists()
 
 
-def test_doctor_self_heals_a_recorded_harness_with_a_stale_matcher(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_doctor_flags_a_recorded_harness_with_a_stale_matcher(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     install_agents("codex")
     hook = home / ".codex" / "hooks.json"
     data = json.loads(hook.read_text())
     data["hooks"]["PostToolUse"][0]["matcher"] = "Edit|Write"
-    hook.write_text(json.dumps(data))
+    stale = json.dumps(data)
+    hook.write_text(stale)
     capsys.readouterr()
 
-    assert main(["doctor", "--repo", str(repo), "--quick"]) == 0
+    assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
 
-    healed = json.loads(hook.read_text())
-    assert healed["hooks"]["PostToolUse"][0]["matcher"] == "apply_patch|Edit|Write"
+    out = capsys.readouterr().out
+    assert "FAIL  agent_files" in out
+    assert "the codex hook is out of date" in out
+    assert "run `byor install`" in out
+    # Doctor is read-only: the stale hook stays exactly as it was.
+    assert hook.read_text() == stale
 
 
 def test_hook_uninstall_removes_the_hook_and_record(home: Path) -> None:
