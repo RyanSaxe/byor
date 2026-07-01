@@ -1,2 +1,2 @@
-#!/usr/bin/env zsh
+#!/usr/bin/env sh
 exec ".byor/scripts/ruff.py" "$@"
