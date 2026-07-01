@@ -126,7 +126,10 @@ def _walk_python_files(root: Path) -> list[Path]:
 
 
 def _check(path: Path) -> list[_Finding]:
-    source = path.read_text(encoding="utf-8")
+    try:
+        source = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return [_Finding(path, 1, "file is not valid UTF-8; fix the encoding")]
     try:
         module = ast.parse(source, filename=str(path))
     except SyntaxError:

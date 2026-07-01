@@ -1,2 +1,2 @@
 #!/usr/bin/env sh
-exec ".byor/scripts/ruff.py" "$@"
+exec "$(dirname "$0")/ruff.py" "$@"

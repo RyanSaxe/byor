@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 PYTHON_SUFFIXES = frozenset({".py", ".pyi"})
+EXCLUDED_WALK_DIRS = frozenset({".git", ".venv", "venv", "node_modules", "__pycache__", ".tox", "dist", "build"})
 
 
 @dataclass(frozen=True)
@@ -37,7 +38,7 @@ class _SuppressionPattern:
 class _Finding:
     path: Path
     line: int
-    name: str
+    message: str
 
 
 PATTERNS = [
@@ -62,7 +63,7 @@ PATTERNS = [
 def main(argv: list[str]) -> int:
     findings = [finding for path in _python_files(argv) for finding in _scan(path)]
     for finding in findings:
-        sys.stdout.write(f"{finding.path}:{finding.line}: {finding.name} suppression comment is not allowed\n")
+        sys.stdout.write(f"{finding.path}:{finding.line}: {finding.message}\n")
     return 1 if findings else 0
 
 
@@ -123,16 +124,22 @@ def _walk_python_files(root: Path) -> list[Path]:
     return [
         path
         for path in root.rglob("*")
-        if path.suffix in PYTHON_SUFFIXES and path.is_file() and ".git" not in path.parts
+        if path.suffix in PYTHON_SUFFIXES
+        and path.is_file()
+        and not EXCLUDED_WALK_DIRS.intersection(path.relative_to(root).parts)
     ]
 
 
 def _scan(path: Path) -> list[_Finding]:
+    try:
+        source = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return [_Finding(path, 1, "file is not valid UTF-8; fix the encoding")]
     findings: list[_Finding] = []
-    for line_number, comment in _comments(path.read_text(encoding="utf-8")):
+    for line_number, comment in _comments(source):
         for pattern in PATTERNS:
             if pattern.regex.search(comment):
-                findings.append(_Finding(path, line_number, pattern.name))
+                findings.append(_Finding(path, line_number, f"{pattern.name} suppression comment is not allowed"))
                 break
     return findings
 

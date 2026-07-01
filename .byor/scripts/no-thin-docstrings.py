@@ -22,7 +22,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 PYTHON_SUFFIXES = frozenset({".py", ".pyi"})
+EXCLUDED_WALK_DIRS = frozenset({".git", ".venv", "venv", "node_modules", "__pycache__", ".tox", "dist", "build"})
 MAX_THIN_LINES = 3
+THIN_DOCSTRING_ADVICE = (
+    "delete it if the signature and body are enough, or expand it into "
+    "full public/complexity docs with arguments, behavior, edge cases, "
+    "and examples where useful"
+)
 
 DOC_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 
@@ -31,18 +37,13 @@ DOC_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 class _Finding:
     path: Path
     line: int
-    label: str
+    message: str
 
 
 def main(argv: list[str]) -> int:
     findings = [finding for path in _python_files(argv) for finding in _check(path)]
     for finding in findings:
-        sys.stdout.write(
-            f"{finding.path}:{finding.line}: thin docstring on {finding.label}; "
-            "delete it if the signature and body are enough, or expand it into "
-            "full public/complexity docs with arguments, behavior, edge cases, "
-            "and examples where useful\n"
-        )
+        sys.stdout.write(f"{finding.path}:{finding.line}: {finding.message}\n")
     return 1 if findings else 0
 
 
@@ -103,12 +104,17 @@ def _walk_python_files(root: Path) -> list[Path]:
     return [
         path
         for path in root.rglob("*")
-        if path.suffix in PYTHON_SUFFIXES and path.is_file() and ".git" not in path.parts
+        if path.suffix in PYTHON_SUFFIXES
+        and path.is_file()
+        and not EXCLUDED_WALK_DIRS.intersection(path.relative_to(root).parts)
     ]
 
 
 def _check(path: Path) -> list[_Finding]:
-    source = path.read_text(encoding="utf-8")
+    try:
+        source = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return [_Finding(path, 1, "file is not valid UTF-8; fix the encoding")]
     try:
         module = ast.parse(source, filename=str(path))
     except SyntaxError:
@@ -121,7 +127,8 @@ def _check(path: Path) -> list[_Finding]:
         if docstring is None:
             continue
         if len(_meaningful_lines(docstring)) <= MAX_THIN_LINES:
-            findings.append(_Finding(path, _docstring_line(node), _label(node)))
+            message = f"thin docstring on {_label(node)}; {THIN_DOCSTRING_ADVICE}"
+            findings.append(_Finding(path, _docstring_line(node), message))
     return findings
 
 

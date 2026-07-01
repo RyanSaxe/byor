@@ -79,6 +79,33 @@ def test_check_script_no_args_respects_gitignore(
     assert expected not in completed.stdout
 
 
+@pytest.mark.parametrize(("script_name", "expected", "bad_content"), SCRIPT_CASES)
+def test_check_script_reports_non_utf8_file_and_keeps_scanning(
+    tmp_path: Path,
+    *,
+    script_name: str,
+    expected: str,
+    bad_content: str,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    (repo / "latin.py").write_bytes('x = "café"\n'.encode("latin-1"))
+    (repo / "bad.py").write_text(bad_content)
+
+    completed = subprocess.run(
+        (sys.executable, str(SCRIPTS_DIR / script_name)),
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    assert "latin.py:1: file is not valid UTF-8" in completed.stdout
+    assert expected in completed.stdout
+
+
 NO_SUPPRESSION_COMMAND = (sys.executable, str(SCRIPTS_DIR / "no-suppression-comments.py"))
 MODULE_CONTRACT_COMMAND = (sys.executable, str(SCRIPTS_DIR / "module-contract.py"))
 
@@ -277,7 +304,7 @@ def test_ruff_script_reports_unfixable_violation(tmp_path: Path) -> None:
         text=True,
     )
 
-    assert completed.returncode == 2
+    assert completed.returncode == 1
     assert "Remaining ruff issues to fix:" in completed.stdout
     assert "F821" in completed.stdout
 
@@ -295,7 +322,7 @@ def test_ruff_script_autofixes_but_still_exits_nonzero(tmp_path: Path) -> None:
         text=True,
     )
 
-    assert completed.returncode == 2
+    assert completed.returncode == 1
     assert "Autofixed by ruff (no action needed):" in completed.stdout
     assert (workspace / "code.py").read_text() == "x = 1\n"
 

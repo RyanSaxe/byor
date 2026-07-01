@@ -93,6 +93,8 @@ class _RuffDiagnostic:
 
 
 def main(argv: Sequence[str]) -> int:
+    # Findings (including autofixes) exit 1 like the other check scripts;
+    # 2 is reserved for a ruff invocation that could not run at all.
     try:
         report = _run_all_passes(list(argv) if argv else ["."])
     except _RuffInvocationError as error:
@@ -101,7 +103,7 @@ def main(argv: Sequence[str]) -> int:
     if not report:
         return 0
     sys.stdout.write(report)
-    return 2
+    return 1
 
 
 def _run_all_passes(targets: list[str]) -> str:
