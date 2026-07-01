@@ -189,6 +189,8 @@ Project rules are committed files that work with `ast-grep`, so CI doesn't need
 ```text
 byor install        Register byor's AI integrations (machine-wide)
 byor init           Initialize byor in a repository
+byor init --private Keep byor to yourself; commit nothing (git info/exclude)
+byor init --gate    Distribute a byor-free pre-commit + CI gate to the team
 byor hook           Add or remove an agent integration
 byor doctor         Check that everything is wired up
 byor profile        List or apply configured profiles

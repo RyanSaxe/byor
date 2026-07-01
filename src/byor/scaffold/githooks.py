@@ -20,6 +20,19 @@ SHIM_CONTENT = f"""#!/bin/sh
 {SHIM_LINE}
 """
 
+# The private-mode gate: check staged files on commit, blocking on diagnostics.
+# It runs byor directly (byor is the private user's own tool) and no-ops when
+# byor is absent, so it never blocks a contributor who has not installed it.
+PRECOMMIT_LINE = "byor agent-check --files <staged files>"
+
+PRECOMMIT_CONTENT = f"""#!/bin/sh
+{SHIM_MARKER}
+command -v byor >/dev/null 2>&1 || exit 0
+files=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$files" ] && exit 0
+byor agent-check --files $files
+"""
+
 
 def install_git_shims(repo_root: Path) -> list[str]:
     """Install marked post-merge/post-checkout shims; returns summary lines.
@@ -41,17 +54,33 @@ def install_git_shims(repo_root: Path) -> list[str]:
     hooks_dir = _hooks_dir(repo_root)
     messages: list[str] = []
     for name in SHIM_HOOK_NAMES:
-        messages.extend(_install_shim(hooks_dir / name))
+        messages.extend(_install_shim(hooks_dir / name, SHIM_CONTENT, SHIM_LINE))
     return messages
 
 
-def _install_shim(hook: Path) -> list[str]:
-    result = write_marked_text(hook, SHIM_CONTENT, SHIM_MARKER)
+def install_precommit_shim(repo_root: Path) -> list[str]:
+    """Install a marked pre-commit hook that gates commits on `byor agent-check`."""
+    if not (repo_root / ".git").exists():
+        raise ConfigError(
+            f"{repo_root} has no .git directory; cannot install a pre-commit hook"
+        )
+    hooks_path = git_output(repo_root, "config", "--get", "core.hooksPath")
+    if hooks_path is not None:
+        return [
+            f"core.hooksPath is set ({hooks_path}); add a pre-commit hook running:",
+            f"  {PRECOMMIT_LINE}",
+        ]
+    hook = _hooks_dir(repo_root) / "pre-commit"
+    return _install_shim(hook, PRECOMMIT_CONTENT, PRECOMMIT_LINE)
+
+
+def _install_shim(hook: Path, content: str, line: str) -> list[str]:
+    result = write_marked_text(hook, content, SHIM_MARKER)
     if result == "unmarked":
         return [
             f".git/hooks/{hook.name} exists without the BYOR marker; "
             "add this line to it:",
-            f"  {SHIM_LINE}",
+            f"  {line}",
         ]
     if result == "unchanged":
         return []

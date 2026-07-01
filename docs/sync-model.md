@@ -123,6 +123,32 @@ jobs:
       - run: ast-grep scan --error
 ```
 
+## The team gate
+
+`byor init --gate` automates that CI file and a matching
+`.pre-commit-config.yaml`, and first makes them self-contained. It **promotes
+everything** — every effective global and package rule into `.byor/rules/project/`,
+every global and package check into `.byor/config.yml`, and any check that runs
+a `~/` script into a committed copy under `.byor/scripts/` with the command
+repointed. The emitted artifacts then run `ast-grep scan --error` and each check
+directly, so the whole gate enforces with **no byor and no `~/.config/byor`** —
+just ast-grep and the check commands. pre-commit passes each check its staged
+matching files (via a `files:` filter from `extensions`); CI runs each check
+whole-repo, mirroring byor's two scan modes.
+
+The artifacts are byor-owned build products, like the rule mirror. A committed
+`gate: true` in `.byor/config.yml` marks the repo, and any byor command
+regenerates the CI workflow and byor's block of the pre-commit config from the
+current committed rules and checks. So the maintainer adds a rule or check with
+byor as usual and the gate refreshes itself; teammates only ever run it, and
+need nothing byor. A pre-existing, user-owned `.pre-commit-config.yaml` is never
+overwritten — byor prints the block to paste in instead.
+
+Under `--private` the gate commits nothing: byor installs a local
+`.git/hooks/pre-commit` shim that runs `byor agent-check` on the staged files
+(and no-ops when byor is not installed), consistent with private mode hiding
+byor's whole footprint.
+
 ## The git-pull collision case
 
 A teammate can commit a project rule whose ID matches one of your synced
