@@ -44,14 +44,14 @@ Text output groups by file and sorts by line, then rule ID:
 BYOR found 1 issue in AI-written code.
 
 src/example.py:3:9
-Rule: no-python-cast
+Rule: python.no-typing-cast
 Severity: warning
 Message: Avoid typing.cast in Python code.
 Code:
   3 | value = cast(int, "3")
 
 Instruction:
-Do not use typing.cast here. Fix the type by narrowing, changing the signature, introducing a protocol, or restructuring the value flow. If the cast is genuinely necessary, leave a concise comment explaining the invariant that the type checker cannot see.
+Do not use typing.cast here. Fix the type by narrowing, changing the signature, introducing a protocol, or restructuring the value flow. Keep a cast only when the needed invariant cannot be expressed by Python's type system.
 ```
 
 Every in-scope diagnostic is rendered — the agent sees the full set, never a
@@ -68,8 +68,8 @@ self-correct:
 ```text
 BYOR found 1 issue in AI-written code.
 
-src/example.py:3:9  [warning] no-python-cast
-Do not use typing.cast here. Fix the type by narrowing, changing the signature, introducing a protocol, or restructuring the value flow. If the cast is genuinely necessary, leave a concise comment explaining the invariant that the type checker cannot see.
+src/example.py:3:9  [warning] python.no-typing-cast
+Do not use typing.cast here. Fix the type by narrowing, changing the signature, introducing a protocol, or restructuring the value flow. Keep a cast only when the needed invariant cannot be expressed by Python's type system.
 ```
 
 To make it the default in every repo, including hook runs, opt in globally in

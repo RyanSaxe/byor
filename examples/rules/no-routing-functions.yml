@@ -1,10 +1,10 @@
 # Demonstrates: relational rules — composing `any`, `all`, and the positional
 # and structural operators that ast-grep adds on top of a bare pattern. A simple
-# pattern cannot express "a call that is the only statement in a function"; this
-# rule can, by combining three conditions:
+# pattern cannot express "a call/yield-from that is the only statement in a
+# function"; this rule can, by combining three conditions:
 #
-#   1. `any`     — the statement is a call, in any of its forms (returned,
-#                  awaited, or a bare expression statement).
+#   1. `any`     — the statement is a call in any pass-through form (returned,
+#                  awaited, bare expression, or `yield from`).
 #   2. `nthChild` — the call is the function body's only real statement. The
 #                  first branch matches a lone statement; the second tolerates a
 #                  leading docstring (`follows` an expression_statement holding a
@@ -17,7 +17,7 @@
 id: no-routing-functions
 language: Python
 severity: warning
-message: Do not create routing functions whose only behavior is another call.
+message: Do not create functions whose only behavior is routing to another call.
 rule:
   all:
     - any:
@@ -28,6 +28,9 @@ rule:
             selector: expression_statement
         - pattern:
             context: await $CALLEE($$$ARGS)
+            selector: expression_statement
+        - pattern:
+            context: yield from $CALLEE($$$ARGS)
             selector: expression_statement
     - any:
         - all:
@@ -53,12 +56,18 @@ metadata:
   byor:
     rationale: >
       A function that only forwards to another call adds indirection without
-      adding behavior, making control flow harder to follow and APIs harder to
-      change.
+      adding behavior. Renaming variables, reordering arguments, or adding
+      defaults is still routing unless the function owns meaningful logic or a
+      real boundary.
     agent_prompt: >
       Remove this routing function and call the underlying implementation
-      directly. If this function represents a necessary boundary, move real
-      boundary behavior into it rather than preserving a pass-through wrapper.
+      directly. If the function must exist as a public API or integration
+      boundary, add real boundary behavior such as validation, translation,
+      authorization, retry policy, error handling, or instrumentation. Do not
+      preserve a wrapper whose only effect is changing argument order, defaults,
+      or names.
     tags:
       - python
       - design
+      - style-guide
+      - greenfield

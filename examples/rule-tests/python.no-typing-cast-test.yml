@@ -1,0 +1,11 @@
+id: python.no-typing-cast
+valid:
+  - value = int(raw)
+  - user = narrow(value)
+invalid:
+  - from typing import cast
+  - from typing_extensions import cast as safe_cast
+  - user = cast(User, value)
+  - user = typing.cast(User, value)
+  - user = typing_extensions.cast(User, value)
+  - return cast(list[int], items)

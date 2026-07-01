@@ -26,23 +26,39 @@ check. Here is an example:
 ```yaml
 # .byor/rules/project/keyword-only-args.yml
 id: keyword-only-args
-language: python
+language: Python
 severity: warning
-message: Arguments after the first two must be keyword-only. Add `*` so callers pass them by name.
+message: Arguments after the first two must be keyword-only. Treat two as a
+  maximum, not a target; one or zero positional arguments can be clearer.
 rule:
-  kind: parameters
   any:
-    - all:  # a function whose third argument is still positional
-        - has: { nthChild: 3, any: [{kind: identifier}, {kind: typed_parameter}, {kind: default_parameter}, {kind: typed_default_parameter}] }
-        - not: { has: { nthChild: 1, regex: "^(self|cls)$" } }
-    - all:  # a method, where self/cls shifts the limit to the fourth slot
-        - has: { nthChild: 1, regex: "^(self|cls)$" }
-        - has: { nthChild: 4, any: [{kind: identifier}, {kind: typed_parameter}, {kind: default_parameter}, {kind: typed_default_parameter}] }
+    - pattern: { context: "def $FUNC(self, $A, $B, $C): $$$BODY", selector: parameters }
+    - pattern: { context: "def $FUNC(self, $A, $B, $C, $$$REST): $$$BODY", selector: parameters }
+    - pattern: { context: "def $FUNC(self, $A, $B, $C=$DEFAULT): $$$BODY", selector: parameters }
+    - pattern: { context: "def $FUNC(self, $A, $B, $C=$DEFAULT, $$$REST): $$$BODY", selector: parameters }
+    - pattern: { context: "def $FUNC(cls, $A, $B, $C): $$$BODY", selector: parameters }
+    - pattern: { context: "def $FUNC(cls, $A, $B, $C, $$$REST): $$$BODY", selector: parameters }
+    - pattern: { context: "def $FUNC(cls, $A, $B, $C=$DEFAULT): $$$BODY", selector: parameters }
+    - pattern: { context: "def $FUNC(cls, $A, $B, $C=$DEFAULT, $$$REST): $$$BODY", selector: parameters }
+    - pattern: { context: "def $FUNC($A, $B, $C): $$$BODY", selector: parameters }
+    - pattern: { context: "def $FUNC($A, $B, $C, $$$REST): $$$BODY", selector: parameters }
+    - pattern: { context: "def $FUNC($A, $B, $C=$DEFAULT): $$$BODY", selector: parameters }
+    - pattern: { context: "def $FUNC($A, $B, $C=$DEFAULT, $$$REST): $$$BODY", selector: parameters }
+constraints:
+  A:
+    all:
+      - any: [{ kind: identifier }, { kind: typed_parameter }, { kind: default_parameter }, { kind: typed_default_parameter }]
+      - not: { regex: ^(self|cls)$ }
+  B:
+    any: [{ kind: identifier }, { kind: typed_parameter }, { kind: default_parameter }, { kind: typed_default_parameter }]
+  C:
+    any: [{ kind: identifier }, { kind: typed_parameter }, { kind: default_parameter }, { kind: typed_default_parameter }]
 metadata:
   byor:
     agent_prompt: >
-      Put a bare `*` after the second parameter so the rest are keyword-only,
-      e.g. def f(a, b, *, c, d), and pass them by name at the call sites.
+      Insert a bare `*` after the second real parameter so every later argument
+      is keyword-only. For methods, self or cls does not count toward the two
+      allowed caller-supplied positional arguments.
 ```
 
 A rule like this is a structural [ast-grep](https://ast-grep.github.io) check,

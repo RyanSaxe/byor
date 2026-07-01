@@ -29,8 +29,8 @@ are copied, YAML files sync did not produce — including hand edits to
 generated copies — are overwritten or removed without ceremony, empty
 subdirectories are pruned, and non-YAML files (`.gitkeep`) are left alone.
 Relative paths below the global rules root are preserved
-(`rules/python/no-python-cast.yml` →
-`personal/global/python/no-python-cast.yml`).
+(`rules/python.no-typing-cast.yml` →
+`personal/global/python.no-typing-cast.yml`).
 
 A global rule is *not* copied when:
 

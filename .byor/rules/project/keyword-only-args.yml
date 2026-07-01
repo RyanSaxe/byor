@@ -6,10 +6,28 @@ message: Arguments after the first two must be keyword-only. Treat two as a
 rule:
   any:
   - pattern:
-      context: "def $FUNC($SELF, $A, $B, $C): $$$BODY"
+      context: "def $FUNC(self, $A, $B, $C): $$$BODY"
       selector: parameters
   - pattern:
-      context: "def $FUNC($SELF, $A, $B, $C, $$$REST): $$$BODY"
+      context: "def $FUNC(self, $A, $B, $C, $$$REST): $$$BODY"
+      selector: parameters
+  - pattern:
+      context: "def $FUNC(self, $A, $B, $C=$DEFAULT): $$$BODY"
+      selector: parameters
+  - pattern:
+      context: "def $FUNC(self, $A, $B, $C=$DEFAULT, $$$REST): $$$BODY"
+      selector: parameters
+  - pattern:
+      context: "def $FUNC(cls, $A, $B, $C): $$$BODY"
+      selector: parameters
+  - pattern:
+      context: "def $FUNC(cls, $A, $B, $C, $$$REST): $$$BODY"
+      selector: parameters
+  - pattern:
+      context: "def $FUNC(cls, $A, $B, $C=$DEFAULT): $$$BODY"
+      selector: parameters
+  - pattern:
+      context: "def $FUNC(cls, $A, $B, $C=$DEFAULT, $$$REST): $$$BODY"
       selector: parameters
   - pattern:
       context: "def $FUNC($A, $B, $C): $$$BODY"
@@ -17,9 +35,13 @@ rule:
   - pattern:
       context: "def $FUNC($A, $B, $C, $$$REST): $$$BODY"
       selector: parameters
+  - pattern:
+      context: "def $FUNC($A, $B, $C=$DEFAULT): $$$BODY"
+      selector: parameters
+  - pattern:
+      context: "def $FUNC($A, $B, $C=$DEFAULT, $$$REST): $$$BODY"
+      selector: parameters
 constraints:
-  SELF:
-    regex: ^(self|cls)$
   A:
     all:
     - any:

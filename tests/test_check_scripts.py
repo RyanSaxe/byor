@@ -30,6 +30,7 @@ SCRIPT_CASES: tuple[tuple[str, str, str], ...] = (
 @pytest.mark.parametrize(("script_name", "expected", "bad_content"), SCRIPT_CASES)
 def test_check_script_no_args_scans_unignored_repo_files(
     tmp_path: Path,
+    *,
     script_name: str,
     expected: str,
     bad_content: str,
@@ -55,6 +56,7 @@ def test_check_script_no_args_scans_unignored_repo_files(
 @pytest.mark.parametrize(("script_name", "expected", "bad_content"), SCRIPT_CASES)
 def test_check_script_no_args_respects_gitignore(
     tmp_path: Path,
+    *,
     script_name: str,
     expected: str,
     bad_content: str,

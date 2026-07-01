@@ -25,6 +25,10 @@ invalid:
   - |
     async def save(user):
         return await store(user)
+  # Yield-from pass-through.
+  - |
+    def records():
+        yield from fetch_records()
   # Documented one-liner: a docstring still leaves a single real statement.
   - |
     def save(user):
