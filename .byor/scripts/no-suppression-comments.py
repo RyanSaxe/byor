@@ -6,17 +6,21 @@
 """Reject Python comments that suppress diagnostics.
 
 The check scans Python comments for suppression directives such as noqa,
-type-ignore, tool-specific ignore comments, and coverage pragmas. Greenfield
+type-ignore, tool-specific ignore comments, and coverage pragmas. Comments are
+located with the tokenize module, so markers inside string literals do not
+count; syntactically broken files fall back to a plain line scan. Greenfield
 code should fix the underlying problem instead of hiding it from agents,
 reviewers, linters, or type checkers.
 """
 
 from __future__ import annotations
 
+import io
 import re
 import shutil
 import subprocess
 import sys
+import tokenize
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -125,17 +129,29 @@ def _walk_python_files(root: Path) -> list[Path]:
 
 def _scan(path: Path) -> list[_Finding]:
     findings: list[_Finding] = []
-    lines = path.read_text(encoding="utf-8").splitlines()
-    for line_number, line in enumerate(lines, 1):
-        comment_index = line.find("#")
-        if comment_index == -1:
-            continue
-        comment = line[comment_index:]
+    for line_number, comment in _comments(path.read_text(encoding="utf-8")):
         for pattern in PATTERNS:
             if pattern.regex.search(comment):
                 findings.append(_Finding(path, line_number, pattern.name))
                 break
     return findings
+
+
+def _comments(source: str) -> list[tuple[int, str]]:
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
+    except (tokenize.TokenError, SyntaxError):
+        return _comment_like_line_tails(source)
+    return [(token.start[0], token.string) for token in tokens if token.type == tokenize.COMMENT]
+
+
+def _comment_like_line_tails(source: str) -> list[tuple[int, str]]:
+    tails: list[tuple[int, str]] = []
+    for line_number, line in enumerate(source.splitlines(), 1):
+        comment_index = line.find("#")
+        if comment_index != -1:
+            tails.append((line_number, line[comment_index:]))
+    return tails
 
 
 if __name__ == "__main__":

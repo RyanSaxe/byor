@@ -15,7 +15,7 @@ import pytest
 from support import git
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / ".byor" / "scripts"
-SUPPRESSION_CONTENT = "value = 1  " + "#" + " noqa\n"
+SUPPRESSION_CONTENT = "value = 1  # noqa\n"
 SCRIPT_CASES: tuple[tuple[str, str, str], ...] = (
     ("module-contract.py", "module docstring required", "def missing_contract() -> int:\n    return 1\n"),
     (
@@ -79,7 +79,46 @@ def test_check_script_no_args_respects_gitignore(
     assert expected not in completed.stdout
 
 
+NO_SUPPRESSION_COMMAND = (sys.executable, str(SCRIPTS_DIR / "no-suppression-comments.py"))
 MODULE_CONTRACT_COMMAND = (sys.executable, str(SCRIPTS_DIR / "module-contract.py"))
+
+
+def test_no_suppression_comments_ignores_markers_inside_strings(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    (repo / "strings.py").write_text('DOC = "add # noqa to the line"\n')
+
+    completed = subprocess.run(
+        NO_SUPPRESSION_COMMAND,
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+
+
+def test_no_suppression_comments_still_scans_broken_files(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    (repo / "broken.py").write_text("x = (\n    # noqa\n")
+
+    completed = subprocess.run(
+        NO_SUPPRESSION_COMMAND,
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    assert "suppression comment is not allowed" in completed.stdout
+
+
 RUFF_SCRIPT_COMMAND = (sys.executable, str(SCRIPTS_DIR / "ruff.py"))
 GOOD_MODULE_DOCSTRING = (
     '"""Serve as a fixture module for the module contract tests.\n'
