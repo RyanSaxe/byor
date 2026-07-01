@@ -28,37 +28,43 @@ check. Here is an example:
 id: keyword-only-args
 language: Python
 severity: warning
-message: Arguments after the first two must be keyword-only. Treat two as a
-  maximum, not a target; one or zero positional arguments can be clearer.
-rule:
-  any:
-    - pattern: { context: "def $FUNC(self, $A, $B, $C): $$$BODY", selector: parameters }
-    - pattern: { context: "def $FUNC(self, $A, $B, $C, $$$REST): $$$BODY", selector: parameters }
-    - pattern: { context: "def $FUNC(self, $A, $B, $C=$DEFAULT): $$$BODY", selector: parameters }
-    - pattern: { context: "def $FUNC(self, $A, $B, $C=$DEFAULT, $$$REST): $$$BODY", selector: parameters }
-    - pattern: { context: "def $FUNC(cls, $A, $B, $C): $$$BODY", selector: parameters }
-    - pattern: { context: "def $FUNC(cls, $A, $B, $C, $$$REST): $$$BODY", selector: parameters }
-    - pattern: { context: "def $FUNC(cls, $A, $B, $C=$DEFAULT): $$$BODY", selector: parameters }
-    - pattern: { context: "def $FUNC(cls, $A, $B, $C=$DEFAULT, $$$REST): $$$BODY", selector: parameters }
-    - pattern: { context: "def $FUNC($A, $B, $C): $$$BODY", selector: parameters }
-    - pattern: { context: "def $FUNC($A, $B, $C, $$$REST): $$$BODY", selector: parameters }
-    - pattern: { context: "def $FUNC($A, $B, $C=$DEFAULT): $$$BODY", selector: parameters }
-    - pattern: { context: "def $FUNC($A, $B, $C=$DEFAULT, $$$REST): $$$BODY", selector: parameters }
-constraints:
-  A:
+message: Parameters after the first two must be keyword-only. Two positional
+  parameters is a maximum, not a target; one or zero can be clearer.
+utils:
+  positional-param:
+    any:
+      - kind: identifier
+      - kind: typed_parameter
+      - kind: default_parameter
+      - kind: typed_default_parameter
+  counted-param:
     all:
-      - any: [{ kind: identifier }, { kind: typed_parameter }, { kind: default_parameter }, { kind: typed_default_parameter }]
+      - matches: positional-param
       - not: { regex: ^(self|cls)$ }
-  B:
-    any: [{ kind: identifier }, { kind: typed_parameter }, { kind: default_parameter }, { kind: typed_default_parameter }]
-  C:
-    any: [{ kind: identifier }, { kind: typed_parameter }, { kind: default_parameter }, { kind: typed_default_parameter }]
+      - not:
+          follows:
+            stopBy: end
+            any: [{ kind: keyword_separator }, { kind: list_splat_pattern }]
+rule:
+  kind: parameters
+  has:
+    all:
+      - matches: counted-param
+      - follows:
+          stopBy: end
+          all:
+            - matches: counted-param
+            - follows: { stopBy: end, matches: counted-param }
 metadata:
   byor:
     agent_prompt: >
-      Insert a bare `*` after the second real parameter so every later argument
-      is keyword-only. For methods, self or cls does not count toward the two
-      allowed caller-supplied positional arguments.
+      Insert a bare `*` after the last positional parameter so every later
+      argument is keyword-only, for example def f(a, b, *, c, d). self and cls
+      do not count; parameters before a `/` do. Do not pick a signature
+      mechanically: choose zero, one, or two positional parameters by how call
+      sites read. A natural order like add(2, 3) or a single obvious subject
+      like save_user(user) reads well positionally; booleans, config values,
+      and parameters of the same type belong after the `*`.
 ```
 
 A rule like this is a structural [ast-grep](https://ast-grep.github.io) check,

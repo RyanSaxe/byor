@@ -1,79 +1,49 @@
-# Demonstrates: signature `context` patterns plus metavariable constraints. A
-# single pattern either misses defaulted parameters or treats keyword-only
-# parameters as positional, so this rule uses explicit branches for plain and
-# defaulted third parameters, plus literal `self`/`cls` method branches:
+# Demonstrates: counting sibling nodes with `utils` plus relational rules
+# instead of enumerating signature patterns. Pattern branches cannot see a
+# positional-only `/`, so this rule matches the `parameters` node directly:
 #
-#   1. `context` + `selector` — match just the `parameters` node from a synthetic
-#                              function definition.
-#   2. default branches       — catch `admin=False` positional parameters, not
-#                              just bare names.
-#   3. literal self/cls       — avoid constraints on absent metavariables while
-#                              still exempting methods and classmethods.
+#   1. `positional-param` — the four node kinds a positional parameter can be.
+#   2. `counted-param`    — a positional parameter that is not `self`/`cls` and
+#                           does not follow a bare `*` or `*args` (those are
+#                           already keyword-only).
+#   3. nested `follows`   — a counted parameter preceded by two more counted
+#                           parameters marks a third positional slot, so the
+#                           surrounding `parameters` node is flagged once.
 id: keyword-only-args
 language: Python
 severity: warning
-message: Arguments after the first two must be keyword-only. Treat two as a
-  maximum, not a target; one or zero positional arguments can be clearer.
-rule:
-  any:
-    - pattern:
-        context: "def $FUNC(self, $A, $B, $C): $$$BODY"
-        selector: parameters
-    - pattern:
-        context: "def $FUNC(self, $A, $B, $C, $$$REST): $$$BODY"
-        selector: parameters
-    - pattern:
-        context: "def $FUNC(self, $A, $B, $C=$DEFAULT): $$$BODY"
-        selector: parameters
-    - pattern:
-        context: "def $FUNC(self, $A, $B, $C=$DEFAULT, $$$REST): $$$BODY"
-        selector: parameters
-    - pattern:
-        context: "def $FUNC(cls, $A, $B, $C): $$$BODY"
-        selector: parameters
-    - pattern:
-        context: "def $FUNC(cls, $A, $B, $C, $$$REST): $$$BODY"
-        selector: parameters
-    - pattern:
-        context: "def $FUNC(cls, $A, $B, $C=$DEFAULT): $$$BODY"
-        selector: parameters
-    - pattern:
-        context: "def $FUNC(cls, $A, $B, $C=$DEFAULT, $$$REST): $$$BODY"
-        selector: parameters
-    - pattern:
-        context: "def $FUNC($A, $B, $C): $$$BODY"
-        selector: parameters
-    - pattern:
-        context: "def $FUNC($A, $B, $C, $$$REST): $$$BODY"
-        selector: parameters
-    - pattern:
-        context: "def $FUNC($A, $B, $C=$DEFAULT): $$$BODY"
-        selector: parameters
-    - pattern:
-        context: "def $FUNC($A, $B, $C=$DEFAULT, $$$REST): $$$BODY"
-        selector: parameters
-constraints:
-  A:
+message: Parameters after the first two must be keyword-only. Two positional
+  parameters is a maximum, not a target; one or zero can be clearer.
+utils:
+  positional-param:
+    any:
+      - kind: identifier
+      - kind: typed_parameter
+      - kind: default_parameter
+      - kind: typed_default_parameter
+  counted-param:
     all:
-      - any:
-          - kind: identifier
-          - kind: typed_parameter
-          - kind: default_parameter
-          - kind: typed_default_parameter
+      - matches: positional-param
       - not:
           regex: ^(self|cls)$
-  B:
-    any:
-      - kind: identifier
-      - kind: typed_parameter
-      - kind: default_parameter
-      - kind: typed_default_parameter
-  C:
-    any:
-      - kind: identifier
-      - kind: typed_parameter
-      - kind: default_parameter
-      - kind: typed_default_parameter
+      - not:
+          follows:
+            stopBy: end
+            any:
+              - kind: keyword_separator
+              - kind: list_splat_pattern
+rule:
+  kind: parameters
+  has:
+    all:
+      - matches: counted-param
+      - follows:
+          stopBy: end
+          all:
+            - matches: counted-param
+            - follows:
+                stopBy: end
+                matches: counted-param
 metadata:
   byor:
     rationale: >
@@ -81,13 +51,15 @@ metadata:
       After the first two positional arguments, callers should name the values
       they pass so reviews and future signature changes stay clear.
     agent_prompt: >
-      Insert a bare `*` after the second real parameter so every later argument
-      is keyword-only, for example def f(a, b, *, c, d). For methods, self or
-      cls does not count toward the two allowed caller-supplied positional
-      arguments. Treat two as a maximum, not a target: use one or even zero
-      caller-supplied positional parameters when that makes the signature and
-      call sites easier to read. Update call sites to pass later arguments by
-      name.
+      Insert a bare `*` after the last positional parameter so every later
+      argument is keyword-only, for example def f(a, b, *, c, d). self and cls
+      do not count; parameters before a `/` do. Do not pick a signature
+      mechanically: two positional parameters is a maximum, not a target.
+      Choose zero, one, or two by how call sites read. A natural, unambiguous
+      order like add(2, 3) or a single obvious subject like save_user(user)
+      reads well positionally; booleans, config values, and parameters of the
+      same type belong after the `*` even when a positional slot is free.
+      Update call sites to pass keyword arguments by name.
     tags:
       - python
       - style-guide

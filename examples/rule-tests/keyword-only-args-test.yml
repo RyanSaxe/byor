@@ -12,6 +12,10 @@ valid:
   - |
     def log(level, message, *args):
         return level
+  # Positional-only parameters count, and two is still fine.
+  - |
+    def move(x, y, /):
+        return x
   # Methods get one free slot for self.
   - |
     class User:
@@ -32,10 +36,26 @@ invalid:
   - |
     def make_user(name, email, admin=False, verified=False):
         return name
+  # A `/` separates positional-only parameters; it does not reset the count.
+  - |
+    def make_user(name, email, /, admin):
+        return name
+  # ...wherever it appears.
+  - |
+    def make_user(name, /, email, admin):
+        return name
+  - |
+    def make_user(name, email, /, admin, verified):
+        return name
   # self plus three positional parameters trips the method limit.
   - |
     class User:
         def update(self, first, last, email):
+            return first
+  # ...with or without a `/` in the signature.
+  - |
+    class User:
+        def update(self, first, last, /, email):
             return first
   # async is no exception.
   - |
