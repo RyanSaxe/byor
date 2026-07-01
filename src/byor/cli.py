@@ -7,7 +7,6 @@ import sys
 from collections.abc import Sequence
 from importlib.metadata import version
 from pathlib import Path
-from typing import get_args
 
 from byor.agents.harness import HARNESS_CHOICES
 from byor.agents.install import AGENT_CHOICES, run_hook
@@ -27,7 +26,6 @@ from byor.rules.commands import (
     run_remove,
 )
 from byor.rules.sync import heal_global, heal_repo, run_sync
-from byor.scaffold.ignore import IgnoreMode
 from byor.scan.agent_check import run_agent_check
 
 COMMANDS = {
@@ -121,9 +119,10 @@ def _add_install_arguments(command: argparse.ArgumentParser) -> None:
 
 def _add_init_arguments(command: argparse.ArgumentParser) -> None:
     command.add_argument(
-        "--ignore-mode",
-        choices=get_args(IgnoreMode),
-        help="Write ignore entries to .gitignore (project) or .git/info/exclude (local)",
+        "--private",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Hide byor's whole footprint via .git/info/exclude; commit nothing",
     )
     command.add_argument(
         "--git-hooks",

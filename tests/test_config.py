@@ -146,7 +146,7 @@ def test_global_config_round_trips_checks_and_init_defaults(tmp_path: Path) -> N
         agents=["claude-code", "skill"],
         checks=[CheckDef("mypy", ["py"], "mypy", tags=["strict"])],
         init=InitDefaults(
-            ignore_mode="local",
+            private=True,
             git_hooks=True,
             profile="existing",
         ),

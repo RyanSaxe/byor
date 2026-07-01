@@ -6,6 +6,7 @@ from support import git
 from byor.errors import ConfigError
 from byor.scaffold.ignore import (
     IGNORED_PATTERNS,
+    PRIVATE_IGNORED_PATTERNS,
     ignore_file,
     rule_visibility_ok,
     write_ignore_block,
@@ -13,48 +14,48 @@ from byor.scaffold.ignore import (
 )
 
 
-def test_project_mode_appends_block_preserving_existing_entries(
+def test_shared_mode_appends_block_preserving_existing_entries(
     tmp_path: Path,
 ) -> None:
     gitignore = tmp_path / ".gitignore"
     gitignore.write_text("node_modules/\n")
 
-    assert write_ignore_block(tmp_path, "project") is True
+    assert write_ignore_block(tmp_path, private=False) is True
 
     content = gitignore.read_text()
     assert content.startswith("node_modules/\n")
     assert all(pattern in content for pattern in IGNORED_PATTERNS)
 
 
-def test_project_mode_is_idempotent(tmp_path: Path) -> None:
-    write_ignore_block(tmp_path, "project")
+def test_shared_mode_is_idempotent(tmp_path: Path) -> None:
+    write_ignore_block(tmp_path, private=False)
     first = (tmp_path / ".gitignore").read_text()
 
-    assert write_ignore_block(tmp_path, "project") is False
+    assert write_ignore_block(tmp_path, private=False) is False
     assert (tmp_path / ".gitignore").read_text() == first
 
 
 def test_edits_inside_the_block_are_healed(tmp_path: Path) -> None:
-    write_ignore_block(tmp_path, "project")
+    write_ignore_block(tmp_path, private=False)
     gitignore = tmp_path / ".gitignore"
     pristine = gitignore.read_text()
     gitignore.write_text(pristine.replace(".byor/local.yml\n", ""))
 
-    assert write_ignore_block(tmp_path, "project") is True
+    assert write_ignore_block(tmp_path, private=False) is True
     assert gitignore.read_text() == pristine
 
 
-def test_local_mode_writes_git_info_exclude(tmp_path: Path) -> None:
+def test_private_mode_writes_git_info_exclude(tmp_path: Path) -> None:
     git(tmp_path, "init", "--quiet")
 
-    assert write_ignore_block(tmp_path, "local") is True
+    assert write_ignore_block(tmp_path, private=True) is True
 
     content = (tmp_path / ".git" / "info" / "exclude").read_text()
-    assert all(pattern in content for pattern in IGNORED_PATTERNS)
+    assert all(pattern in content for pattern in PRIVATE_IGNORED_PATTERNS)
     assert not (tmp_path / ".gitignore").exists()
 
 
-def test_local_mode_resolves_info_exclude_in_a_worktree(tmp_path: Path) -> None:
+def test_private_mode_resolves_info_exclude_in_a_worktree(tmp_path: Path) -> None:
     main_repo = tmp_path / "main"
     main_repo.mkdir()
     git(main_repo, "init", "--quiet")
@@ -62,17 +63,17 @@ def test_local_mode_resolves_info_exclude_in_a_worktree(tmp_path: Path) -> None:
     worktree = tmp_path / "worktree"
     git(main_repo, "worktree", "add", "-q", str(worktree))
 
-    assert write_ignore_block(worktree, "local") is True
+    assert write_ignore_block(worktree, private=True) is True
 
     # `.git` in the worktree is a file; info/exclude lives in the common git dir.
-    exclude = ignore_file(worktree, "local")
+    exclude = ignore_file(worktree, private=True)
     assert exclude.read_text()
-    assert all(pattern in exclude.read_text() for pattern in IGNORED_PATTERNS)
+    assert all(pattern in exclude.read_text() for pattern in PRIVATE_IGNORED_PATTERNS)
 
 
-def test_local_mode_requires_a_git_repository(tmp_path: Path) -> None:
+def test_private_mode_requires_a_git_repository(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="no .git directory"):
-        write_ignore_block(tmp_path, "local")
+        write_ignore_block(tmp_path, private=True)
 
 
 def test_ignored_patterns_cover_nested_rule_files() -> None:

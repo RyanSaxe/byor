@@ -29,11 +29,11 @@ from byor.config import (
     save_repo_registry,
 )
 from byor.errors import RepoNotInitialized
+from byor.io.gitio import git_output
 from byor.io.paths import display_path, global_config_dir, resolve_repo_root
 from byor.rules.sync import load_canonical_rules, summarize_changes, sync_repo
 from byor.scaffold.githooks import install_git_shims
 from byor.scaffold.ignore import (
-    IgnoreMode,
     ignore_file,
     write_ignore_block,
     write_rule_visibility_file,
@@ -45,7 +45,7 @@ from byor.scaffold.sgconfig import ensure_rule_dirs
 class InitOptions:
     """Fully resolved init choices; defaults live in _options_from_args."""
 
-    ignore_mode: IgnoreMode
+    private: bool
     git_hooks: bool
     register: bool
     replace_sgconfig: bool
@@ -69,7 +69,7 @@ def initialize_repo(
     """Run init steps 1-7; returns summary lines for changes made."""
     messages: list[str] = []
     global_config = _bootstrap_global_dir(config_dir)
-    repo_config = _ensure_repo_layout(repo_root)
+    repo_config = _ensure_repo_layout(repo_root, options.private)
     sgconfig_message = ensure_rule_dirs(
         repo_root / repo_config.paths.sgconfig,
         rule_dir_relpaths(repo_config.paths),
@@ -77,9 +77,15 @@ def initialize_repo(
     )
     if sgconfig_message is not None:
         messages.append(sgconfig_message)
-    if write_ignore_block(repo_root, options.ignore_mode):
-        target = display_path(ignore_file(repo_root, options.ignore_mode), repo_root)
+    if write_ignore_block(repo_root, options.private):
+        target = display_path(ignore_file(repo_root, options.private), repo_root)
         messages.append(f"Wrote ignore block to {target}")
+    sgconfig = repo_config.paths.sgconfig
+    if options.private and git_output(repo_root, "ls-files", "--", sgconfig):
+        messages.append(
+            f"warning: {sgconfig} is already tracked; git will still show byor's "
+            "changes to it despite private mode"
+        )
     if options.git_hooks:
         messages.extend(install_git_shims(repo_root))
     if options.register and register_repo(
@@ -111,8 +117,13 @@ def _bootstrap_global_dir(config_dir: Path) -> GlobalConfig:
     return config
 
 
-def _ensure_repo_layout(repo_root: Path) -> RepoConfig:
-    """Create .byor/ config files and rule directories."""
+def _ensure_repo_layout(repo_root: Path, private: bool) -> RepoConfig:
+    """Create .byor/ config files and rule directories.
+
+    A private setup git-ignores the whole `.byor/` tree, so every rule
+    directory — the shared project one included — needs a visibility file to
+    stay loadable by ast-grep; a shared setup only needs it on the personal ones.
+    """
     config = _load_or_default_repo_config(repo_root)
     if not repo_config_path(repo_root).is_file():
         save_repo_config(repo_root, config)
@@ -122,12 +133,15 @@ def _ensure_repo_layout(repo_root: Path) -> RepoConfig:
         gitkeep = repo_root / rules_dir / ".gitkeep"
         gitkeep.parent.mkdir(parents=True, exist_ok=True)
         gitkeep.touch(exist_ok=True)
-    for personal_dir in (
+    visible_dirs = [
         config.paths.personal_local_rules,
         config.paths.personal_global_rules,
         config.paths.personal_packages_rules,
-    ):
-        write_rule_visibility_file(repo_root / personal_dir)
+    ]
+    if private:
+        visible_dirs.append(config.paths.project_rules)
+    for rules_dir in visible_dirs:
+        write_rule_visibility_file(repo_root / rules_dir)
     return config
 
 
@@ -145,16 +159,16 @@ def _options_from_args(args: argparse.Namespace, defaults: InitDefaults) -> Init
     answers under `--non-interactive`; an explicit flag always overrides both.
     """
     interactive = not args.non_interactive
-    if args.ignore_mode is not None:
-        ignore_mode: IgnoreMode = args.ignore_mode
+    if args.private is not None:
+        private: bool = args.private
     else:
-        ignore_mode = _resolve_ignore_mode(defaults.ignore_mode, interactive)
+        private = _resolve_private(defaults.private, interactive)
     if args.git_hooks is not None:
         git_hooks: bool = args.git_hooks
     else:
         git_hooks = _resolve_git_hooks(defaults.git_hooks, interactive)
     return InitOptions(
-        ignore_mode=ignore_mode,
+        private=private,
         git_hooks=git_hooks,
         register=not args.no_register,
         replace_sgconfig=args.replace_sgconfig,
@@ -162,9 +176,9 @@ def _options_from_args(args: argparse.Namespace, defaults: InitDefaults) -> Init
     )
 
 
-def _resolve_ignore_mode(default: str | None, interactive: bool) -> IgnoreMode:
-    fallback: IgnoreMode = "local" if default == "local" else "project"
-    return _prompt_ignore_mode(fallback) if interactive else fallback
+def _resolve_private(default: bool | None, interactive: bool) -> bool:
+    fallback = default if default is not None else False
+    return _prompt_private(fallback) if interactive else fallback
 
 
 def _resolve_git_hooks(default: bool | None, interactive: bool) -> bool:
@@ -180,13 +194,13 @@ def _resolve_profile(args: argparse.Namespace, defaults: InitDefaults) -> str | 
     return defaults.profile
 
 
-def _prompt_ignore_mode(default: IgnoreMode) -> IgnoreMode:
+def _prompt_private(default: bool) -> bool:
     choice = prompt_choice(
-        "Where should byor write its git ignore entries?",
-        ("project .gitignore (team-visible)", "local .git/info/exclude (private)"),
-        default=1 if default == "local" else 0,
+        "Make this byor setup private (hide everything from git, don't commit)?",
+        ("no, share it with the team", "yes, keep it to myself"),
+        default=1 if default else 0,
     )
-    return "local" if choice == 1 else "project"
+    return choice == 1
 
 
 def _prompt_git_hooks(default: bool) -> bool:
