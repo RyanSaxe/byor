@@ -22,6 +22,7 @@ from byor.config import (
     load_local_config,
     load_repo_config,
     save_local_config,
+    save_repo_config,
 )
 from byor.errors import ByorError, ConfigError, UnsafeOverwrite
 from byor.io.fsio import write_text_atomic
@@ -42,9 +43,11 @@ from byor.rules.sync import (
     SyncPlan,
     iter_registered_repos,
     load_canonical_rules,
+    load_installed_packages,
     summarize_changes,
     sync_repo,
 )
+from byor.scan.checks import load_effective_checks
 
 DEFAULT_EDITOR = "vi"
 
@@ -173,11 +176,15 @@ def run_remove(args: argparse.Namespace) -> int:
 
 def run_promote(args: argparse.Namespace) -> int:
     context = repo_context(args)
-    source_scope: RuleScope = args.from_scope
-    _, rule = _find_rule(context, args.rule_id, source_scope)
-    source_dir = scope_rules_dir(
-        source_scope, context.repo_root, context.paths, context.canonical.root
-    )
+    if args.check is not None:
+        return _promote_check(context, args.check)
+    if args.from_scope is None:
+        raise ByorError("promoting a rule requires --from {local,global,package}")
+    return _promote_rule(context, args)
+
+
+def _promote_rule(context: RepoContext, args: argparse.Namespace) -> int:
+    rule, source_dir, remove_source = _promote_source(context, args)
     project_dir = context.repo_root / context.paths.project_rules
     destination = project_dir / rule.path.relative_to(source_dir)
     if destination.exists() and not args.replace:
@@ -188,7 +195,6 @@ def run_promote(args: argparse.Namespace) -> int:
     # Conflict check on the post-promote state, before any write. With
     # --keep-local this fails: keeping the local original would leave project
     # and local rules sharing the ID, which ast-grep rejects.
-    remove_source = source_scope == "local" and not args.keep_local
     removed = {destination, rule.path} if remove_source else {destination}
     _check_conflicts(context, "project", replace(rule, path=destination), removed)
     write_text_atomic(destination, rule.content)
@@ -196,6 +202,54 @@ def run_promote(args: argparse.Namespace) -> int:
         rule.path.unlink()
     print(f"Promoted '{rule.id}' to {display_path(destination, context.repo_root)}")
     _finish(context, fan_out=False)
+    return 0
+
+
+def _promote_source(
+    context: RepoContext, args: argparse.Namespace
+) -> tuple[Rule, Path, bool]:
+    """The rule to promote, its source directory, and whether to remove the source.
+
+    A package rule, like a canonical global one, is copied and left in place; a
+    local rule moves unless --keep-local keeps the (now conflicting) original.
+    """
+    if args.from_scope == "package":
+        return (*_find_package_rule(context, args.rule_id), False)
+    scope: RuleScope = args.from_scope
+    _, rule = _find_rule(context, args.rule_id, scope)
+    source_dir = scope_rules_dir(
+        scope, context.repo_root, context.paths, context.canonical.root
+    )
+    return rule, source_dir, scope == "local" and not args.keep_local
+
+
+def _find_package_rule(context: RepoContext, rule_id: str) -> tuple[Rule, Path]:
+    packages = load_installed_packages(
+        context.canonical, load_local_config(context.repo_root).packages
+    )
+    for package in packages:
+        for rule in package.rules:
+            if rule.id == rule_id:
+                return rule, package.root
+    raise ByorError(f"No rule with ID '{rule_id}' found in installed packages.")
+
+
+def _promote_check(context: RepoContext, name: str) -> int:
+    """Copy a global or package check into tracked .byor/config.yml by name.
+
+    The effective-check merge already lets a repo check win by name, so the
+    copied check runs exactly once — in byor, CI, and pre-commit alike.
+    """
+    repo_config = load_repo_config(context.repo_root)
+    if any(check.name == name for check in repo_config.checks):
+        raise ByorError(f"check '{name}' is already a repo check")
+    effective = load_effective_checks(context.repo_root, context.config_dir)
+    match = next((check for check in effective if check.name == name), None)
+    if match is None:
+        raise ByorError(f"no global or package check named '{name}' to promote")
+    repo_config.checks.append(match.definition)
+    save_repo_config(context.repo_root, repo_config)
+    print(f"Promoted check '{name}' into .byor/config.yml")
     return 0
 
 

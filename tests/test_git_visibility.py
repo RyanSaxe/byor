@@ -9,7 +9,14 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from support import git, mirror, write_global_rule, write_rule
+from support import (
+    git,
+    install_package,
+    mirror,
+    write_global_rule,
+    write_package_rule,
+    write_rule,
+)
 
 from byor.cli import main
 from byor.scan.astgrep import resolve_ast_grep
@@ -43,6 +50,21 @@ def test_synced_global_rule_is_seen_by_ast_grep_scan(
     (repo / "app.py").write_text(VIOLATION)
 
     assert "no-python-cast" in scan(repo)
+
+
+def test_installed_package_rule_is_seen_by_ast_grep_and_hidden_from_git(
+    home: Path,
+) -> None:
+    write_package_rule(home, "python-strict", "no-python-cast.yml", "no-python-cast")
+    repo = git_repo(home)
+    git(repo, "add", "-A")
+    git(repo, "commit", "--quiet", "-m", "init")
+    install_package(repo, "python-strict")
+    assert main(["sync", "--repo", str(repo)]) == 0
+    (repo / "app.py").write_text(VIOLATION)
+
+    assert "no-python-cast" in scan(repo)
+    assert "personal/packages" not in git(repo, "status", "--porcelain")
 
 
 def test_local_personal_rule_is_seen_by_ast_grep_scan(home: Path) -> None:

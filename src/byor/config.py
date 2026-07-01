@@ -13,6 +13,9 @@ from byor.io.yamlio import load_yaml_mapping, write_yaml_atomic
 
 CONFIG_VERSION = 1
 
+# A package's checks manifest; reserved at the package root, never a rule file.
+PACKAGE_CHECKS_FILE = "checks.yml"
+
 # The value types a managed config section may hold, written back in place.
 SectionValue = str | None | bool | int | list[str]
 
@@ -25,6 +28,7 @@ class RepoPaths:
     project_rules: str = ".byor/rules/project"
     personal_local_rules: str = ".byor/rules/personal/local"
     personal_global_rules: str = ".byor/rules/personal/global"
+    personal_packages_rules: str = ".byor/rules/personal/packages"
 
 
 @dataclass(frozen=True)
@@ -64,6 +68,8 @@ class LocalConfig:
     excluded_rule_tags: list[str] = field(default_factory=list)
     excluded_checks: list[str] = field(default_factory=list)
     excluded_check_tags: list[str] = field(default_factory=list)
+    packages: list[str] = field(default_factory=list)
+    """Global packages this user opted this repo into (see GlobalConfig.packages_path)."""
 
 
 @dataclass
@@ -98,6 +104,7 @@ class GlobalConfig:
     """
 
     rules_path: str = "rules"
+    packages_path: str = "packages"
     repos_path: str = "repos.yml"
     ast_grep_command: str = "auto"
     output_concise: bool = False
@@ -112,11 +119,12 @@ class GlobalConfig:
 
 
 def rule_dir_relpaths(paths: RepoPaths) -> list[str]:
-    """The three rule directories sgconfig.yml must list, repo-relative."""
+    """The rule directories sgconfig.yml must list, repo-relative."""
     return [
         paths.project_rules,
         paths.personal_local_rules,
         paths.personal_global_rules,
+        paths.personal_packages_rules,
     ]
 
 
@@ -134,6 +142,21 @@ def global_config_path(config_dir: Path) -> Path:
 
 def global_rules_dir(config_dir: Path, config: GlobalConfig) -> Path:
     return config_dir / config.rules_path
+
+
+def global_packages_dir(config_dir: Path, config: GlobalConfig) -> Path:
+    """Where opt-in package bundles live; each subdirectory is one package."""
+    return config_dir / config.packages_path
+
+
+def load_package_checks(
+    config_dir: Path, config: GlobalConfig, name: str
+) -> list[CheckDef]:
+    """The checks a package declares in its checks.yml; empty when it has none."""
+    path = global_packages_dir(config_dir, config) / name / PACKAGE_CHECKS_FILE
+    if not path.is_file():
+        return []
+    return _check_defs(load_yaml_mapping(path), path)
 
 
 def repo_registry_path(config_dir: Path, config: GlobalConfig) -> Path:
@@ -162,6 +185,9 @@ def load_repo_config(repo_root: Path) -> RepoConfig:
             personal_global_rules=_string(
                 paths, "personal_global_rules", defaults.personal_global_rules, path
             ),
+            personal_packages_rules=_string(
+                paths, "personal_packages_rules", defaults.personal_packages_rules, path
+            ),
         ),
         checks=_check_defs(data, path),
     )
@@ -180,6 +206,7 @@ def save_repo_config(repo_root: Path, config: RepoConfig) -> None:
             "project_rules": config.paths.project_rules,
             "personal_local_rules": config.paths.personal_local_rules,
             "personal_global_rules": config.paths.personal_global_rules,
+            "personal_packages_rules": config.paths.personal_packages_rules,
         },
     )
     _write_checks(data, config.checks)
@@ -200,6 +227,7 @@ def load_local_config(repo_root: Path) -> LocalConfig:
         excluded_rule_tags=_string_list(section, "excluded_tags", path),
         excluded_checks=_string_list(checks, "excluded", path),
         excluded_check_tags=_string_list(checks, "excluded_tags", path),
+        packages=_string_list(data, "packages", path),
     )
 
 
@@ -223,6 +251,7 @@ def save_local_config(repo_root: Path, config: LocalConfig) -> None:
             "excluded_tags": list(config.excluded_check_tags),
         },
     )
+    data["packages"] = list(config.packages)
     write_yaml_atomic(path, data)
 
 
@@ -241,6 +270,7 @@ def load_global_config(config_dir: Path) -> GlobalConfig:
     defaults = GlobalConfig()
     return GlobalConfig(
         rules_path=_string(paths, "rules", defaults.rules_path, path),
+        packages_path=_string(paths, "packages", defaults.packages_path, path),
         repos_path=_string(paths, "repos", defaults.repos_path, path),
         ast_grep_command=_string(ast_grep, "command", defaults.ast_grep_command, path),
         output_concise=_bool(output, "concise", defaults.output_concise, path),
@@ -261,7 +291,13 @@ def save_global_config(config_dir: Path, config: GlobalConfig) -> None:
     data = _load_or_new(path)
     data["version"] = CONFIG_VERSION
     _update_section(
-        data, "paths", {"rules": config.rules_path, "repos": config.repos_path}
+        data,
+        "paths",
+        {
+            "rules": config.rules_path,
+            "packages": config.packages_path,
+            "repos": config.repos_path,
+        },
     )
     _update_section(data, "ast_grep", {"command": config.ast_grep_command})
     output_values: dict[str, SectionValue] = {"concise": config.output_concise}

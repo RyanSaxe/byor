@@ -10,9 +10,25 @@ from pathlib import Path
 from typing import get_args
 
 from byor.agents.harness import HARNESS_CHOICES
-from byor.agents.install import AGENT_CHOICES
+from byor.agents.install import AGENT_CHOICES, run_hook
+from byor.commands.doctor import run_doctor
+from byor.commands.init import run_init
+from byor.commands.install import run_install
+from byor.commands.listing import run_list
+from byor.commands.package import run_package
+from byor.commands.profile import run_profile
 from byor.errors import ByorError
+from byor.io.paths import global_config_dir, resolve_repo_root
+from byor.rules.commands import (
+    run_add,
+    run_edit,
+    run_exclusion,
+    run_promote,
+    run_remove,
+)
+from byor.rules.sync import heal_global, heal_repo, run_sync
 from byor.scaffold.ignore import IgnoreMode
+from byor.scan.agent_check import run_agent_check
 
 COMMANDS = {
     "install": "Register byor's AI integrations globally (one-time)",
@@ -26,12 +42,13 @@ COMMANDS = {
     "exclude": "Disable a global rule in this repository",
     "include": "Re-enable a previously excluded global rule",
     "profile": "List and apply local exclusion profiles",
+    "package": "List and install opt-in rule/check packages",
     "list": "Show rules and where they come from",
     "agent-check": "Run ast-grep on changed files and render agent feedback",
     "hook": "Install or uninstall AI agent integrations",
 }
 
-REPO_COMMANDS = frozenset(COMMANDS) - {"install", "hook", "profile"}
+REPO_COMMANDS = frozenset(COMMANDS) - {"install", "hook", "profile", "package"}
 REPO_HELP = "Repository root (default: search upward from cwd)"
 
 
@@ -70,6 +87,8 @@ def build_parser() -> argparse.ArgumentParser:
             _add_exclusion_arguments(command)
         if name == "profile":
             _add_profile_arguments(command)
+        if name == "package":
+            _add_package_arguments(command)
         if name == "agent-check":
             _add_agent_check_arguments(command)
         if name == "hook":
@@ -214,13 +233,20 @@ def _add_rule_lookup_arguments(command: argparse.ArgumentParser, action: str) ->
 
 
 def _add_promote_arguments(command: argparse.ArgumentParser) -> None:
-    command.add_argument("rule_id", metavar="RULE_ID", help="ID of the rule to promote")
+    target = command.add_mutually_exclusive_group(required=True)
+    target.add_argument(
+        "rule_id", nargs="?", metavar="RULE_ID", help="ID of the rule to promote"
+    )
+    target.add_argument(
+        "--check",
+        metavar="NAME",
+        help="Promote a global or package check into tracked .byor/config.yml",
+    )
     command.add_argument(
         "--from",
         dest="from_scope",
-        choices=("local", "global"),
-        required=True,
-        help="Scope the rule currently lives in",
+        choices=("local", "global", "package"),
+        help="Scope the rule currently lives in (required when promoting a rule)",
     )
     command.add_argument(
         "--to",
@@ -259,6 +285,16 @@ def _add_profile_arguments(command: argparse.ArgumentParser) -> None:
         "add", help="Add a profile's exclusions to this repository"
     )
     add.add_argument("name", metavar="NAME", help="Profile name")
+    add.add_argument("--repo", type=Path, help=REPO_HELP)
+
+
+def _add_package_arguments(command: argparse.ArgumentParser) -> None:
+    actions = command.add_subparsers(dest="package_action", required=True)
+    actions.add_parser("list", help="List available packages")
+    add = actions.add_parser(
+        "add", help="Install a package's rules and checks into this repository"
+    )
+    add.add_argument("name", metavar="NAME", help="Package name")
     add.add_argument("--repo", type=Path, help=REPO_HELP)
 
 
@@ -314,7 +350,7 @@ def _add_doctor_arguments(command: argparse.ArgumentParser) -> None:
 # Commands whose body performs the heal itself, or must not self-heal: install
 # (the command that sets global state up), init (runs a full sync as a step),
 # and sync (whose --check variant must never write).
-SELF_SYNCING_COMMANDS = frozenset({"install", "init", "sync", "profile"})
+SELF_SYNCING_COMMANDS = frozenset({"install", "init", "sync", "profile", "package"})
 
 
 def _is_hook_invocation(args: argparse.Namespace) -> bool:
@@ -324,6 +360,25 @@ def _is_hook_invocation(args: argparse.Namespace) -> bool:
     return (
         args.command == "agent-check" and getattr(args, "stdin_hook", None) is not None
     )
+
+
+_HANDLERS = {
+    "install": run_install,
+    "init": run_init,
+    "sync": run_sync,
+    "doctor": run_doctor,
+    "list": run_list,
+    "add": run_add,
+    "edit": run_edit,
+    "remove": run_remove,
+    "promote": run_promote,
+    "profile": run_profile,
+    "package": run_package,
+    "exclude": run_exclusion,
+    "include": run_exclusion,
+    "agent-check": run_agent_check,
+    "hook": run_hook,
+}
 
 
 def run(args: argparse.Namespace) -> int:
@@ -339,60 +394,10 @@ def run(args: argparse.Namespace) -> int:
         if heal_message is not None:
             # stderr keeps stdout clean for JSON-emitting commands.
             print(heal_message, file=sys.stderr)
-    if args.command == "install":
-        from byor.commands.install import run_install
-
-        return run_install(args)
-    if args.command == "init":
-        # Deferred so startup (--help, future hot paths) never pays for ruamel.
-        from byor.commands.init import run_init
-
-        return run_init(args)
-    if args.command == "sync":
-        from byor.rules.sync import run_sync
-
-        return run_sync(args)
-    if args.command == "doctor":
-        from byor.commands.doctor import run_doctor
-
-        return run_doctor(args)
-    if args.command == "list":
-        from byor.commands.listing import run_list
-
-        return run_list(args)
-    if args.command == "add":
-        from byor.rules.commands import run_add
-
-        return run_add(args)
-    if args.command == "edit":
-        from byor.rules.commands import run_edit
-
-        return run_edit(args)
-    if args.command == "remove":
-        from byor.rules.commands import run_remove
-
-        return run_remove(args)
-    if args.command == "promote":
-        from byor.rules.commands import run_promote
-
-        return run_promote(args)
-    if args.command == "profile":
-        from byor.commands.profile import run_profile
-
-        return run_profile(args)
-    if args.command in ("exclude", "include"):
-        from byor.rules.commands import run_exclusion
-
-        return run_exclusion(args)
-    if args.command == "agent-check":
-        from byor.scan.agent_check import run_agent_check
-
-        return run_agent_check(args)
-    if args.command == "hook":
-        from byor.agents.install import run_hook
-
-        return run_hook(args)
-    raise ByorError(f"'{args.command}' is not implemented yet")
+    handler = _HANDLERS.get(args.command)
+    if handler is None:
+        raise ByorError(f"'{args.command}' is not implemented yet")
+    return handler(args)
 
 
 def _self_heal_preamble(args: argparse.Namespace) -> str | None:
@@ -402,8 +407,6 @@ def _self_heal_preamble(args: argparse.Namespace) -> str | None:
     can report what was healed; the global heal is silent. Uninitialized repos
     heal silently.
     """
-    from byor.io.paths import global_config_dir, resolve_repo_root
-    from byor.rules.sync import heal_global, heal_repo
 
     config_dir = global_config_dir()
     heal_global(config_dir)

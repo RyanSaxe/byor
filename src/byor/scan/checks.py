@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -32,6 +33,7 @@ from byor.config import (
     RepoConfig,
     load_global_config,
     load_local_config,
+    load_package_checks,
     load_repo_config,
     repo_config_path,
 )
@@ -61,25 +63,34 @@ class CheckOutcome:
 
 
 def effective_checks(
-    repo_config: RepoConfig, global_config: GlobalConfig, local_config: LocalConfig
+    repo_config: RepoConfig,
+    global_config: GlobalConfig,
+    local_config: LocalConfig,
+    package_checks: Sequence[tuple[str, CheckDef]] = (),
 ) -> list[EffectiveCheck]:
-    """Merge repo and global checks by name (repo wins), minus local exclusions.
+    """Merge checks by precedence (repo > package > global), minus exclusions.
 
-    Repo checks keep their config order; global checks whose name a repo check
-    already claims are dropped. Excluded names are removed from the result.
+    The first tier to claim a name wins; lower tiers drop that name. `origin`
+    records where the surviving check came from ("repo", "global", or
+    "package:<name>"). Excluded names or tags are removed from the result.
     """
     excluded = set(local_config.excluded_checks)
     excluded_tags = set(local_config.excluded_check_tags)
-    repo_names = {check.name for check in repo_config.checks}
-    merged = list(repo_config.checks) + [
-        check for check in global_config.checks if check.name not in repo_names
+    tiers: list[tuple[str, CheckDef]] = [
+        *(("repo", check) for check in repo_config.checks),
+        *package_checks,
+        *(("global", check) for check in global_config.checks),
     ]
-    origins = {check.name: "repo" for check in repo_config.checks}
-    return [
-        EffectiveCheck(definition=check, origin=origins.get(check.name, "global"))
-        for check in merged
-        if check.name not in excluded and not excluded_tags.intersection(check.tags)
-    ]
+    seen: set[str] = set()
+    result: list[EffectiveCheck] = []
+    for origin, check in tiers:
+        if check.name in seen:
+            continue
+        seen.add(check.name)
+        if check.name in excluded or excluded_tags.intersection(check.tags):
+            continue
+        result.append(EffectiveCheck(definition=check, origin=origin))
+    return result
 
 
 def load_effective_checks(repo_root: Path, config_dir: Path) -> list[EffectiveCheck]:
@@ -96,11 +107,14 @@ def load_effective_checks(repo_root: Path, config_dir: Path) -> list[EffectiveCh
         if repo_config_path(repo_root).is_file()
         else RepoConfig()
     )
-    return effective_checks(
-        repo_config,
-        load_global_config(config_dir),
-        load_local_config(repo_root),
-    )
+    global_config = load_global_config(config_dir)
+    local_config = load_local_config(repo_root)
+    package_checks = [
+        (f"package:{name}", check)
+        for name in local_config.packages
+        for check in load_package_checks(config_dir, global_config, name)
+    ]
+    return effective_checks(repo_config, global_config, local_config, package_checks)
 
 
 def run_checks(
