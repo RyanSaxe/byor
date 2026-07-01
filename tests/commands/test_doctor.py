@@ -1,3 +1,10 @@
+"""Exercise doctor health checks.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
+
 import json
 import shutil
 import sys
@@ -13,6 +20,7 @@ from support import (
     write_rule,
 )
 
+from byor.agents.opencode import OPENCODE_PLUGIN, OPENCODE_PLUGIN_RELPATH
 from byor.cli import main
 from byor.commands.doctor import collect_checks
 from byor.config import (
@@ -25,9 +33,7 @@ from byor.config import (
 from byor.scan.astgrep import NOT_FOUND_MESSAGE
 
 
-def test_doctor_reports_ok_for_a_healthy_repo(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_doctor_reports_ok_for_a_healthy_repo(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     capsys.readouterr()
 
@@ -38,9 +44,7 @@ def test_doctor_reports_ok_for_a_healthy_repo(
     assert "FAIL" not in out
 
 
-def test_doctor_json_matches_the_spec_shape(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_doctor_json_matches_the_spec_shape(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     capsys.readouterr()
 
@@ -68,9 +72,7 @@ def test_doctor_json_matches_the_spec_shape(
     }
 
 
-def test_doctor_surfaces_configured_checks_with_origin(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_doctor_surfaces_configured_checks_with_origin(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     config = load_repo_config(repo)
     config.checks.append(CheckDef("ruff", ["py"], "uv run ruff check"))
@@ -84,9 +86,7 @@ def test_doctor_surfaces_configured_checks_with_origin(
     assert "checks: ruff (repo)" in out
 
 
-def test_doctor_extra_checks_reports_when_all_are_excluded(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_doctor_extra_checks_reports_when_all_are_excluded(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     config = load_repo_config(repo)
     config.checks.append(CheckDef("ruff", ["py"], "uv run ruff check"))
@@ -100,7 +100,7 @@ def test_doctor_extra_checks_reports_when_all_are_excluded(
 
 
 def test_doctor_reports_missing_ast_grep_with_the_install_message(
-    home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home)
     empty_bin = home / "empty-bin"
@@ -116,10 +116,8 @@ def test_doctor_reports_missing_ast_grep_with_the_install_message(
     assert NOT_FOUND_MESSAGE in capsys.readouterr().out
 
 
-def test_doctor_global_section_is_healthy_after_install(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    install_agents(home, "claude-code")
+def test_doctor_global_section_is_healthy_after_install(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    install_agents("claude-code")
     elsewhere = home / "elsewhere"
     elsewhere.mkdir()
     capsys.readouterr()
@@ -131,9 +129,7 @@ def test_doctor_global_section_is_healthy_after_install(
     assert "agent integrations installed for: claude-code, skill" in out
 
 
-def test_doctor_reports_a_non_byor_repo_gracefully(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_doctor_reports_a_non_byor_repo_gracefully(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = home / "untouched"
     repo.mkdir()
     capsys.readouterr()
@@ -147,9 +143,7 @@ def test_doctor_reports_a_non_byor_repo_gracefully(
     assert "byor init" in out
 
 
-def test_doctor_flags_missing_sgconfig(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_doctor_flags_missing_sgconfig(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     (repo / "sgconfig.yml").unlink()
     capsys.readouterr()
@@ -159,11 +153,7 @@ def test_doctor_flags_missing_sgconfig(
     assert "sgconfig.yml is missing; run `byor init`" in capsys.readouterr().out
 
 
-def test_doctor_renders_a_failing_check_for_invalid_rules(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A broken rule stops the self-heal preamble's sync, but doctor must still
-    render its check table rather than abort."""
+def test_doctor_renders_a_failing_check_for_invalid_rules(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     broken = repo / ".byor" / "rules" / "project" / "broken.yml"
     broken.write_text("id: broken\n")
@@ -192,14 +182,7 @@ def test_quick_checks_skip_recursive_rule_validation(home: Path) -> None:
     assert all(check.ok for check in quick)
 
 
-def test_doctor_flags_a_missing_rule_visibility_file(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Without the .ignore negations, ast-grep would skip the git-ignored rules.
-
-    Uses the local dir: the global mirror's .ignore is restored by the
-    self-heal preamble before doctor runs.
-    """
+def test_doctor_flags_a_missing_rule_visibility_file(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     (repo / ".byor" / "rules" / "personal" / "local" / ".ignore").unlink()
     capsys.readouterr()
@@ -214,9 +197,7 @@ def test_doctor_flags_a_missing_rule_visibility_file(
 def test_doctor_flags_duplicate_project_and_local_ids(home: Path) -> None:
     repo = make_repo(home)
     write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
-    write_rule(
-        repo / ".byor" / "rules" / "personal" / "local" / "no-cast.yml", "no-cast"
-    )
+    write_rule(repo / ".byor" / "rules" / "personal" / "local" / "no-cast.yml", "no-cast")
 
     checks = collect_checks(repo, home / "xdg" / "byor", quick=False)
 
@@ -225,11 +206,9 @@ def test_doctor_flags_duplicate_project_and_local_ids(home: Path) -> None:
     assert "no-cast" in failed["rule_ids_unique"].message
 
 
-def test_doctor_flags_registered_repos_whose_path_is_gone(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_doctor_flags_registered_repos_whose_path_is_gone(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
-    gone = make_repo(home, "gone")
+    gone = make_repo(home, name="gone")
     shutil.rmtree(gone)
     capsys.readouterr()
 
@@ -238,20 +217,20 @@ def test_doctor_flags_registered_repos_whose_path_is_gone(
     assert f"{gone} no longer exists" in capsys.readouterr().out
 
 
-def test_doctor_flags_a_missing_opencode_plugin(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_doctor_self_heals_a_missing_opencode_plugin(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = repo_with_agents(home, "opencode")
-    (home / ".config" / "opencode" / "plugin" / "byor.ts").unlink()
+    plugin = home / OPENCODE_PLUGIN_RELPATH
+    plugin.unlink()
     capsys.readouterr()
 
-    assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
+    assert main(["doctor", "--repo", str(repo), "--quick"]) == 0
 
-    assert "~/.config/opencode/plugin/byor.ts is missing" in capsys.readouterr().out
+    assert plugin.read_text() == OPENCODE_PLUGIN
+    assert "~/.config/opencode/plugin/byor.ts is missing" not in capsys.readouterr().out
 
 
 def test_doctor_flags_a_missing_packages_visibility_file(home: Path) -> None:
-    write_package_rule(home, "pkg", "no-cast.yml", "pkg-no-cast")
+    write_package_rule(home, "pkg", relpath="no-cast.yml", rule_id="pkg-no-cast")
     repo = make_repo(home)
     install_package(repo, "pkg")
     assert main(["sync", "--repo", str(repo)]) == 0
@@ -264,7 +243,7 @@ def test_doctor_flags_a_missing_packages_visibility_file(home: Path) -> None:
 
 
 def test_doctor_flags_a_stale_packages_mirror(home: Path) -> None:
-    write_package_rule(home, "pkg", "no-cast.yml", "pkg-no-cast")
+    write_package_rule(home, "pkg", relpath="no-cast.yml", rule_id="pkg-no-cast")
     repo = make_repo(home)
     install_package(repo, "pkg")
     assert main(["sync", "--repo", str(repo)]) == 0

@@ -1,3 +1,10 @@
+"""Exercise profile command behavior.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
+
 from pathlib import Path
 
 import pytest
@@ -12,9 +19,7 @@ from byor.config import (
 )
 
 
-def test_profile_list_shows_configured_profiles(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_profile_list_shows_configured_profiles(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     save_global_config(
         home / "xdg" / "byor",
         GlobalConfig(
@@ -32,11 +37,9 @@ def test_profile_list_shows_configured_profiles(
     assert "minimal" in out
 
 
-def test_profile_add_applies_selectors_and_syncs(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_profile_add_applies_selectors_and_syncs(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
-    write_global_rule(home, "no-cast.yml", "no-cast", tags=["legacy-risk"])
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast", tags=["legacy-risk"])
     save_global_config(
         home / "xdg" / "byor",
         GlobalConfig(
@@ -56,9 +59,7 @@ def test_profile_add_applies_selectors_and_syncs(
     local = load_local_config(repo)
     assert local.excluded_rule_tags == ["legacy-risk"]
     assert local.excluded_checks == ["ty"]
-    assert not (
-        repo / ".byor" / "rules" / "personal" / "global" / "no-cast.yml"
-    ).exists()
+    assert not (repo / ".byor" / "rules" / "personal" / "global" / "no-cast.yml").exists()
     out = capsys.readouterr().out
     assert "Added profile 'existing' to .byor/local.yml" in out
     assert "Synced 1 removed global rule" in out
@@ -70,9 +71,7 @@ def test_profile_add_preserves_existing_exclusions_and_is_idempotent(
     repo = make_repo(home)
     save_global_config(
         home / "xdg" / "byor",
-        GlobalConfig(
-            profiles={"existing": ProfileConfig(excluded_rule_tags=["legacy-risk"])}
-        ),
+        GlobalConfig(profiles={"existing": ProfileConfig(excluded_rule_tags=["legacy-risk"])}),
     )
     main(["exclude", "--repo", str(repo), "--check", "mypy"])
     capsys.readouterr()
@@ -85,9 +84,7 @@ def test_profile_add_preserves_existing_exclusions_and_is_idempotent(
     assert local.excluded_rule_tags == ["legacy-risk"]  # added once, not duplicated
 
 
-def test_profile_add_reports_unknown_profile(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_profile_add_reports_unknown_profile(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     capsys.readouterr()
 
@@ -98,9 +95,7 @@ def test_profile_add_reports_unknown_profile(
     assert "Traceback" not in captured.err
 
 
-def test_profile_add_requires_initialized_repo(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_profile_add_requires_initialized_repo(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = home / "bare"
     repo.mkdir()
     save_global_config(

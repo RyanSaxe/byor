@@ -1,29 +1,32 @@
-"""A byor-free .pre-commit-config.yaml that gates on the committed rules and checks.
+"""Render pre-commit enforcement for BYOR.
 
-Each hook runs `ast-grep scan --error` or a committed check command directly, so
-the team enforces the gate through the standard `pre-commit` tool with no byor
-dependency. pre-commit passes the staged matching files to each hook, mirroring
-byor's own per-file scoping. The file is shared: byor owns it only when it
-carries the marker header, regenerating it wholesale then; a user-owned config
-is never touched, and byor hands back the block to paste in instead.
+The pre-commit scaffold turns repository checks and ast-grep scanning into managed local hooks.
+Generated entries use uvx tooling for reproducible contributors while preserving BYOR-managed
+ownership markers.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from byor.config import CheckDef
 from byor.io.fsio import MANAGED_NOTICE, write_marked_text
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from byor.config import CheckDef
+
+__all__ = ("write_precommit_config",)
 
 CONFIG_RELPATH = ".pre-commit-config.yaml"
 
 GATE_MARKER = f"# {MANAGED_NOTICE}"
+AST_GREP_ENTRY = "uvx --from ast-grep-cli ast-grep scan --error"
 
 
 def write_precommit_config(repo_root: Path, checks: list[CheckDef]) -> list[str]:
-    """Converge .pre-commit-config.yaml, or return the block to add if user-owned."""
     content = f"{GATE_MARKER}\nrepos:\n{_local_repo_block(checks)}"
-    result = write_marked_text(repo_root / CONFIG_RELPATH, content, GATE_MARKER)
+    result = write_marked_text(repo_root / CONFIG_RELPATH, content, marker=GATE_MARKER)
     if result == "unmarked":
         return [
             f"{CONFIG_RELPATH} already exists; add this to its `repos:` list:",
@@ -35,15 +38,14 @@ def write_precommit_config(repo_root: Path, checks: list[CheckDef]) -> list[str]
 
 
 def _local_repo_block(checks: list[CheckDef]) -> str:
-    hooks = [_hook("byor-ast-grep", "ast-grep scan", "ast-grep scan --error", [])]
+    hooks = [_hook("byor-ast-grep", "ast-grep scan", entry=AST_GREP_ENTRY, extensions=[])]
     hooks.extend(
-        _hook(f"byor-{check.name}", check.name, check.run, check.extensions)
-        for check in checks
+        _hook(f"byor-{check.name}", check.name, entry=check.run, extensions=check.extensions) for check in checks
     )
     return "  - repo: local\n    hooks:\n" + "\n".join(hooks) + "\n"
 
 
-def _hook(hook_id: str, name: str, entry: str, extensions: list[str]) -> str:
+def _hook(hook_id: str, name: str, *, entry: str, extensions: list[str]) -> str:
     lines = [
         f"      - id: {hook_id}",
         f"        name: {name}",

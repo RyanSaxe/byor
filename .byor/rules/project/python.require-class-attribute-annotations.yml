@@ -1,0 +1,35 @@
+id: python.require-class-attribute-annotations
+language: Python
+severity: warning
+message: Class attributes should have explicit type annotations.
+rule:
+  all:
+  - pattern:
+      context: |
+        class C:
+            $FIELD = $VALUE
+      selector: expression_statement
+  - inside:
+      kind: block
+      inside:
+        kind: class_definition
+        field: body
+  - not:
+      inside:
+        kind: function_definition
+        stopBy: end
+metadata:
+  byor:
+    rationale: >
+      Class-level attributes are part of the class contract. Annotating them
+      makes state and constants visible to readers and type checkers.
+    agent_prompt: >
+      Add an explicit annotation to this class attribute, or move the value to a
+      local variable if it is not intended to be class state. Do not guess
+      ClassVar or instance semantics just to satisfy this rule; let the type
+      checker validate the chosen annotation.
+    tags:
+    - python
+    - typing
+    - style-guide
+    - greenfield

@@ -1,18 +1,38 @@
-"""Rule discovery, minimal parsing, and ID validation."""
+"""Load and validate ast-grep rule files.
+
+Rule files carry ast-grep YAML plus BYOR metadata used by listing and agent feedback. This module
+owns discovery, parsing, ID validation, conflict detection, and safe scope resolution for every
+command that touches rules.
+"""
 
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from ruamel.yaml.comments import CommentedMap
 
-from byor.config import RepoPaths
-from byor.errors import ConfigError, DuplicateRuleId, RuleValidationError
+from byor.errors import ConfigError, DuplicateRuleIdError, RuleValidationError
 from byor.io.yamlio import parse_yaml_mapping
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from byor.config import RepoPaths
+
+__all__ = (
+    "ByorMetadata",
+    "Rule",
+    "check_id_conflicts",
+    "discover_rule_files",
+    "load_rule",
+    "load_rules",
+    "require_unique_ids",
+    "rule_id_warnings",
+    "scope_rules_dir",
+)
 
 RuleScope = Literal["project", "local", "global"]
 
@@ -35,8 +55,6 @@ ALLOW_EXCEPTIONS_SENTENCE = (
 
 @dataclass
 class ByorMetadata:
-    """The optional metadata.byor block of a rule file."""
-
     rationale: str | None = None
     agent_prompt: str | None = None
     docs_url: str | None = None
@@ -45,8 +63,6 @@ class ByorMetadata:
 
 @dataclass
 class Rule:
-    """One rule file, parsed just enough for sync, listing, and validation."""
-
     id: str
     language: str
     message: str
@@ -64,14 +80,9 @@ class Rule:
 
 
 def discover_rule_files(rules_dir: Path) -> list[Path]:
-    """All .yml/.yaml files below rules_dir, recursive, sorted. Missing dir is empty."""
     if not rules_dir.is_dir():
         return []
-    return sorted(
-        path
-        for path in rules_dir.rglob("*")
-        if path.suffix in RULE_FILE_SUFFIXES and path.is_file()
-    )
+    return sorted(path for path in rules_dir.rglob("*") if path.suffix in RULE_FILE_SUFFIXES and path.is_file())
 
 
 def load_rule(path: Path) -> Rule:
@@ -88,15 +99,15 @@ def load_rule(path: Path) -> Rule:
         raise RuleValidationError(str(error)) from error
     missing = [name for name in REQUIRED_AST_GREP_FIELDS if data.get(name) is None]
     if missing:
-        raise RuleValidationError(
-            f"{path}: missing required ast-grep fields: {', '.join(missing)}"
-        )
+        msg = f"{path}: missing required ast-grep fields: {', '.join(missing)}"
+        raise RuleValidationError(msg)
     if not isinstance(data.get("rule"), CommentedMap):
-        raise RuleValidationError(f"{path}: expected 'rule' to be a mapping")
+        msg = f"{path}: expected 'rule' to be a mapping"
+        raise RuleValidationError(msg)
     return Rule(
-        id=_safe_rule_id(_string(data, "id", path), path),
-        language=_string(data, "language", path),
-        message=_string(data, "message", path),
+        id=_safe_rule_id(_string(data, "id", path=path), path),
+        language=_string(data, "language", path=path),
+        message=_string(data, "message", path=path),
         path=path,
         content=text,
         severity=_lenient_string(data, "severity"),
@@ -105,42 +116,25 @@ def load_rule(path: Path) -> Rule:
 
 
 def load_rules(rules_dir: Path) -> list[Rule]:
-    """Discover and parse every rule below rules_dir."""
     return [load_rule(path) for path in discover_rule_files(rules_dir)]
 
 
 def _safe_rule_id(rule_id: str, path: Path) -> str:
-    """A rule's id becomes its filename (`<id>.yml`), so it must be a bare name.
-
-    Rejects path separators and traversal components outright; the softer
-    recommended-pattern check (uppercase, dots) stays a warning.
-    """
     if rule_id in ("", ".", "..") or "\\" in rule_id or rule_id != Path(rule_id).name:
-        raise RuleValidationError(
-            f"{path}: rule ID '{rule_id}' must be a bare name, with no path "
-            "separators or '..' components"
-        )
+        msg = f"{path}: rule ID '{rule_id}' must be a bare name, with no path separators or '..' components"
+        raise RuleValidationError(msg)
     return rule_id
 
 
 def rule_id_warnings(rules: Iterable[Rule]) -> list[str]:
-    """Warnings for IDs outside the recommended pattern; never rejects."""
     return [
-        f"{rule.path}: rule ID '{rule.id}' does not match the recommended"
-        f" pattern {RECOMMENDED_ID_PATTERN.pattern}"
+        f"{rule.path}: rule ID '{rule.id}' does not match the recommended pattern {RECOMMENDED_ID_PATTERN.pattern}"
         for rule in rules
         if not RECOMMENDED_ID_PATTERN.fullmatch(rule.id)
     ]
 
 
-def scope_rules_dir(
-    scope: RuleScope, repo_root: Path, paths: RepoPaths, global_rules_root: Path
-) -> Path:
-    """The directory a scope's rules live in.
-
-    For the global scope this is the canonical global rules root, never the
-    generated repo copy under personal/global.
-    """
+def scope_rules_dir(scope: RuleScope, repo_root: Path, *, paths: RepoPaths, global_rules_root: Path) -> Path:
     if scope == "project":
         return repo_root / paths.project_rules
     if scope == "local":
@@ -148,13 +142,11 @@ def scope_rules_dir(
     return global_rules_root
 
 
-def check_id_conflicts(
-    project: list[Rule], local: list[Rule], canonical_global: list[Rule]
-) -> None:
+def check_id_conflicts(project: list[Rule], local: list[Rule], *, canonical_global: list[Rule]) -> None:
     """Enforce the rule-ID conflict table.
 
     Duplicate IDs within one scope and project/local collisions raise
-    DuplicateRuleId. Project or local IDs matching global IDs are overrides,
+    DuplicateRuleIdError. Project or local IDs matching global IDs are overrides,
     not errors: sync skips the global copy.
     """
     require_unique_ids(project, "project rules")
@@ -168,13 +160,11 @@ def check_id_conflicts(
     )
 
 
-def require_unique_ids(rules: list[Rule], where: str, hint: str | None = None) -> None:
+def require_unique_ids(rules: list[Rule], where: str, *, hint: str | None = None) -> None:
     paths_by_id: dict[str, list[Path]] = {}
     for rule in rules:
         paths_by_id.setdefault(rule.id, []).append(rule.path)
-    duplicates = {
-        rule_id: paths for rule_id, paths in paths_by_id.items() if len(paths) > 1
-    }
+    duplicates = {rule_id: paths for rule_id, paths in paths_by_id.items() if len(paths) > 1}
     if not duplicates:
         return
     lines = [f"Duplicate rule IDs within {where}:"]
@@ -183,11 +173,10 @@ def require_unique_ids(rules: list[Rule], where: str, hint: str | None = None) -
         lines.extend(f"    {path}" for path in paths)
     if hint is not None:
         lines.append(hint)
-    raise DuplicateRuleId("\n".join(lines))
+    raise DuplicateRuleIdError("\n".join(lines))
 
 
 def _byor_metadata(data: CommentedMap) -> ByorMetadata:
-    """Lenient by design: a malformed metadata value degrades to its default."""
     metadata = data.get("metadata")
     block = metadata.get("byor") if isinstance(metadata, CommentedMap) else None
     if not isinstance(block, CommentedMap):
@@ -200,10 +189,11 @@ def _byor_metadata(data: CommentedMap) -> ByorMetadata:
     )
 
 
-def _string(section: CommentedMap, key: str, path: Path) -> str:
+def _string(section: CommentedMap, key: str, *, path: Path) -> str:
     value = section.get(key)
     if not isinstance(value, str):
-        raise RuleValidationError(f"{path}: expected '{key}' to be a string")
+        msg = f"{path}: expected '{key}' to be a string"
+        raise RuleValidationError(msg)
     return value
 
 

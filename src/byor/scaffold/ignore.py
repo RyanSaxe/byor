@@ -1,15 +1,13 @@
-"""The marked git ignore block for BYOR's untracked generated state,
-plus the `.ignore` files that keep those rules visible to ast-grep.
+"""Manage BYOR ignore files and rule visibility.
 
-ast-grep's rule discovery respects gitignore, so the git-ignored personal rule
-files would never be loaded inside a git repository. ast-grep also reads
-`.ignore` files, which git does not, so a `.ignore` with negation patterns in
-each personal rule directory un-ignores the rules for ast-grep alone.
+Private and public modes need different ignore targets while ast-grep still needs mirrored personal
+rules to remain discoverable. This module owns the generated ignore blocks and visibility files that
+balance those constraints.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from byor.errors import ConfigError
 from byor.io.fsio import (
@@ -19,6 +17,16 @@ from byor.io.fsio import (
     write_text_atomic,
 )
 from byor.io.gitio import git_output
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+__all__ = (
+    "ignore_file",
+    "rule_visibility_ok",
+    "write_ignore_block",
+    "write_rule_visibility_file",
+)
 
 # The always-ignored personal state, written to .gitignore in a shared setup.
 # `**` so nested rules (e.g. personal/global/python/no-cast.yml) are ignored too.
@@ -50,26 +58,16 @@ VISIBILITY_FILE_CONTENT = (
     f"{VISIBILITY_MARKER}\n"
     "# Git ignores the personal rule files in this directory, and ast-grep's\n"
     "# rule discovery respects gitignore. ast-grep also reads .ignore files\n"
-    "# (git does not), so these negations keep the rules visible to ast-grep.\n"
-    + "\n".join(VISIBILITY_PATTERNS)
-    + "\n"
+    "# (git does not), so these negations keep the rules visible to ast-grep.\n" + "\n".join(VISIBILITY_PATTERNS) + "\n"
 )
 
 
 def write_rule_visibility_file(rules_dir: Path) -> MarkedWriteResult:
-    """Converge `rules_dir/.ignore` so ast-grep loads the git-ignored rules.
-
-    A user-owned (unmarked) .ignore is never touched; doctor flags it when it
-    no longer keeps the rules visible.
-    """
     rules_dir.mkdir(parents=True, exist_ok=True)
-    return write_marked_text(
-        rules_dir / ".ignore", VISIBILITY_FILE_CONTENT, VISIBILITY_MARKER
-    )
+    return write_marked_text(rules_dir / ".ignore", VISIBILITY_FILE_CONTENT, marker=VISIBILITY_MARKER)
 
 
 def rule_visibility_ok(rules_dir: Path) -> bool:
-    """Whether `rules_dir/.ignore` un-ignores rule files for ast-grep."""
     path = rules_dir / ".ignore"
     if not path.is_file():
         return False
@@ -77,18 +75,18 @@ def rule_visibility_ok(rules_dir: Path) -> bool:
     return all(pattern in lines for pattern in VISIBILITY_PATTERNS)
 
 
-def ignore_file(repo_root: Path, private: bool) -> Path:
-    """The gitignore target: shared setups use .gitignore, private ones exclude."""
+def ignore_file(repo_root: Path, *, private: bool) -> Path:
     if not private:
         return repo_root / ".gitignore"
     # --git-path resolves worktrees, whose `.git` is a file, not a directory.
     output = git_output(repo_root, "rev-parse", "--git-path", "info/exclude")
     if output is None:
-        raise ConfigError(f"could not locate the git info/exclude file for {repo_root}")
+        msg = f"could not locate the git info/exclude file for {repo_root}"
+        raise ConfigError(msg)
     return (repo_root / output).resolve()
 
 
-def write_ignore_block(repo_root: Path, private: bool) -> bool:
+def write_ignore_block(repo_root: Path, *, private: bool) -> bool:
     """Write the BYOR ignore block, replacing any previous one.
 
     A shared setup ignores only the always-personal state, in .gitignore. A
@@ -96,9 +94,10 @@ def write_ignore_block(repo_root: Path, private: bool) -> bool:
     byor creates is tracked. Idempotent; returns True only when the file changed.
     """
     if private and not (repo_root / ".git").exists():
-        raise ConfigError(f"{repo_root} has no .git directory; cannot use private mode")
+        msg = f"{repo_root} has no .git directory; cannot use private mode"
+        raise ConfigError(msg)
     patterns = PRIVATE_IGNORED_PATTERNS if private else IGNORED_PATTERNS
-    path = ignore_file(repo_root, private)
+    path = ignore_file(repo_root, private=private)
     current = path.read_text(encoding="utf-8") if path.is_file() else ""
     updated = _with_block(current, patterns)
     if updated == current:
@@ -122,7 +121,7 @@ def _with_block(content: str, patterns: tuple[str, ...]) -> str:
     return "".join(lines[:begin]) + block + tail
 
 
-def _marker_index(lines: list[str], marker: str, start: int) -> int | None:
+def _marker_index(lines: list[str], marker: str, *, start: int) -> int | None:
     for index in range(start, len(lines)):
         if lines[index].rstrip("\n") == marker:
             return index

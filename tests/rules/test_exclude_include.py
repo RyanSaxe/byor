@@ -1,3 +1,10 @@
+"""Exercise rule exclusion and inclusion behavior.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
+
 from pathlib import Path
 
 import pytest
@@ -7,11 +14,9 @@ from byor.cli import main
 from byor.config import load_local_config
 
 
-def test_exclude_removes_copy_and_include_restores_it(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_exclude_removes_copy_and_include_restores_it(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
-    canonical = write_global_rule(home, "no-cast.yml", "no-cast")
+    canonical = write_global_rule(home, "no-cast.yml", rule_id="no-cast")
     main(["sync", "--repo", str(repo)])
     capsys.readouterr()
 
@@ -32,11 +37,9 @@ def test_exclude_removes_copy_and_include_restores_it(
     assert f"Synced 1 updated global rule into {repo}" in out
 
 
-def test_include_leaves_rule_skipped_when_project_owns_the_id(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_include_leaves_rule_skipped_when_project_owns_the_id(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
-    write_global_rule(home, "no-cast.yml", "no-cast")
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
     write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
     main(["exclude", "--repo", str(repo), "no-cast"])
     capsys.readouterr()
@@ -59,11 +62,9 @@ def test_exclude_is_idempotent(home: Path, capsys: pytest.CaptureFixture[str]) -
     assert (repo / ".byor" / "local.yml").read_text().count("no-cast") == 1
 
 
-def test_exclude_and_include_rule_tag(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_exclude_and_include_rule_tag(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
-    write_global_rule(home, "no-cast.yml", "no-cast", tags=["legacy-risk"])
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast", tags=["legacy-risk"])
     main(["sync", "--repo", str(repo)])
     capsys.readouterr()
 
@@ -80,9 +81,7 @@ def test_exclude_and_include_rule_tag(
     assert "Re-enabled rule tag 'legacy-risk'" in capsys.readouterr().out
 
 
-def test_exclude_and_include_check_selectors(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_exclude_and_include_check_selectors(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
 
     assert main(["exclude", "--repo", str(repo), "--check", "ty"]) == 0
@@ -101,9 +100,7 @@ def test_exclude_and_include_check_selectors(
     assert "Re-enabled check tag 'strict'" in capsys.readouterr().out
 
 
-def test_exclude_requires_exactly_one_selector(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_exclude_requires_exactly_one_selector(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
 
     assert main(["exclude", "--repo", str(repo)]) == 1
@@ -113,9 +110,7 @@ def test_exclude_requires_exactly_one_selector(
     assert "choose exactly one" in captured.err
 
 
-def test_exclude_requires_an_initialized_repo(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_exclude_requires_an_initialized_repo(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = home / "bare"
     repo.mkdir()
 

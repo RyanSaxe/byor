@@ -1,3 +1,10 @@
+"""Exercise sgconfig scaffold behavior.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
+
 from pathlib import Path
 
 import pytest
@@ -30,12 +37,7 @@ def test_creates_sgconfig_when_missing(tmp_path: Path) -> None:
 def test_appends_missing_entries_preserving_user_content(tmp_path: Path) -> None:
     path = tmp_path / "sgconfig.yml"
     path.write_text(
-        "# team scanner config\n"
-        "ruleDirs:\n"
-        "  - custom-rules\n"
-        "  - .byor/rules/project\n"
-        "utilDirs:\n"
-        "  - utils\n"
+        "# team scanner config\nruleDirs:\n  - custom-rules\n  - .byor/rules/project\nutilDirs:\n  - utils\n"
     )
 
     message = ensure_rule_dirs(path, RULE_DIRS)
@@ -83,7 +85,8 @@ def test_replace_overwrites_after_timestamped_backup(tmp_path: Path) -> None:
 
     message = ensure_rule_dirs(path, RULE_DIRS, replace=True)
 
-    assert message is not None and "backup" in message
+    assert message is not None
+    assert "backup" in message
     backups = list(tmp_path.glob("sgconfig.yml.byor-backup-*"))
     assert len(backups) == 1
     assert backups[0].read_text() == "ruleDirs: not-a-list\n"

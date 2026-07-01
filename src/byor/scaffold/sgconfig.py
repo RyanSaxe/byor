@@ -1,10 +1,15 @@
-"""Create or update sgconfig.yml so ast-grep sees the BYOR rule dirs."""
+"""Create sgconfig files for BYOR rule discovery.
+
+ast-grep reads rule directories from sgconfig, so BYOR updates those files conservatively and backs
+up replacements. The helpers preserve unrelated user content while making global and repository
+rules visible to scans.
+"""
 
 from __future__ import annotations
 
 import os
 import shutil
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from ruamel.yaml.comments import CommentedMap
@@ -13,12 +18,16 @@ from byor.errors import ConfigError
 from byor.io.paths import home_sgconfig_path
 from byor.io.yamlio import load_yaml_mapping, write_yaml_atomic
 
+__all__ = (
+    "ensure_home_sgconfig",
+    "ensure_rule_dirs",
+    "remove_home_rule_dir",
+)
+
 BACKUP_TIMESTAMP_FORMAT = "%Y%m%d-%H%M%S"
 
 
-def ensure_rule_dirs(
-    path: Path, rule_dirs: list[str], replace: bool = False
-) -> str | None:
+def ensure_rule_dirs(path: Path, rule_dirs: list[str], *, replace: bool = False) -> str | None:
     """Make sure sgconfig.yml lists every rule dir, preserving user content.
 
     Missing entries are appended; existing keys, entries, and comments survive.
@@ -39,10 +48,11 @@ def ensure_rule_dirs(
         write_yaml_atomic(path, data)
         return f"Updated {path.name}"
     if not isinstance(existing, list):
-        raise ConfigError(
+        msg = (
             f"Cannot update {path.name}: expected ruleDirs to be a list.\n"
             f"Edit {path.name} manually or rerun with --replace-sgconfig."
         )
+        raise ConfigError(msg)
     missing = [rule_dir for rule_dir in rule_dirs if rule_dir not in existing]
     if not missing:
         return None
@@ -66,10 +76,6 @@ def ensure_home_sgconfig(rules_dir: Path, home: Path | None = None) -> str | Non
 
 
 def remove_home_rule_dir(rules_dir: Path, home: Path | None = None) -> bool:
-    """Drop byor's global rules entry from `~/sgconfig.yml`, leaving user entries.
-
-    Deletes the file when it held only our entry; returns True when it changed.
-    """
     home = home or Path.home()
     path = home_sgconfig_path(home)
     if not path.is_file():
@@ -94,7 +100,7 @@ def _minimal_sgconfig(rule_dirs: list[str]) -> CommentedMap:
 
 
 def _backup(path: Path) -> Path:
-    stamp = datetime.now().strftime(BACKUP_TIMESTAMP_FORMAT)
+    stamp = datetime.now(tz=UTC).strftime(BACKUP_TIMESTAMP_FORMAT)
     backup = path.with_name(f"{path.name}.byor-backup-{stamp}")
     shutil.copy2(path, backup)
     return backup

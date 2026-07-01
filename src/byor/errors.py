@@ -1,31 +1,44 @@
-"""Expected error types for byor commands."""
+"""Define BYOR exception types.
+
+Commands raise these exceptions for expected user-facing failures rather than leaking tracebacks.
+The small hierarchy also carries exit-code behavior, letting the CLI render consistent errors while
+tests assert precise failure modes.
+"""
+
+__all__ = (
+    "AstGrepNotFoundError",
+    "ByorError",
+    "ConfigError",
+    "DuplicateRuleIdError",
+    "RepoNotInitializedError",
+    "RuleValidationError",
+    "UnsafeOverwriteError",
+)
 
 
 class ByorError(Exception):
-    """Expected failure: rendered as a clean message, never a traceback."""
-
     exit_code: int = 1
 
 
-class AstGrepNotFound(ByorError):
-    """No usable ast-grep executable could be resolved."""
+class AstGrepNotFoundError(ByorError):
+    pass
 
 
 class ConfigError(ByorError):
-    """A config file is malformed, has the wrong shape, or an unsupported version."""
+    pass
 
 
-class RepoNotInitialized(ByorError):
-    """The repository has no .byor/config.yml; `byor init` has not run here."""
+class RepoNotInitializedError(ByorError):
+    pass
 
 
 class RuleValidationError(ByorError):
-    """A rule file is invalid YAML or lacks the fields ast-grep requires."""
+    pass
 
 
-class DuplicateRuleId(ByorError):
-    """Two rule files share an ID in a way ast-grep would reject."""
+class DuplicateRuleIdError(ByorError):
+    pass
 
 
-class UnsafeOverwrite(ByorError):
-    """Refusing to overwrite an existing file without an explicit flag."""
+class UnsafeOverwriteError(ByorError):
+    pass

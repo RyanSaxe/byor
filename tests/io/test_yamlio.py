@@ -1,3 +1,10 @@
+"""Exercise YAML IO helpers.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
+
 from pathlib import Path
 
 import pytest
@@ -8,13 +15,7 @@ from byor.io.yamlio import load_yaml_mapping, write_yaml_atomic
 
 def test_round_trip_preserves_comments_and_key_order(tmp_path: Path) -> None:
     path = tmp_path / "sgconfig.yml"
-    path.write_text(
-        "# team scanner config\n"
-        "ruleDirs:\n"
-        "  - rules  # existing entry\n"
-        "utilDirs:\n"
-        "  - utils\n"
-    )
+    path.write_text("# team scanner config\nruleDirs:\n  - rules  # existing entry\nutilDirs:\n  - utils\n")
 
     data = load_yaml_mapping(path)
     data["testConfigs"] = ["tests"]

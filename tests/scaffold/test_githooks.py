@@ -1,4 +1,9 @@
-"""Git hook shims installed by `byor init --git-hooks`."""
+"""Exercise generated git hook shims.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
 
 import os
 from pathlib import Path
@@ -17,9 +22,7 @@ def git_repo(home: Path) -> Path:
     return repo
 
 
-def test_init_installs_executable_shims_idempotently(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_init_installs_executable_shims_idempotently(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = git_repo(home)
 
     assert main(["init", "--repo", str(repo), "--non-interactive", "--git-hooks"]) == 0
@@ -35,9 +38,7 @@ def test_init_installs_executable_shims_idempotently(
     assert "Installed .git/hooks" not in capsys.readouterr().out
 
 
-def test_unmarked_existing_hook_is_left_untouched(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_unmarked_existing_hook_is_left_untouched(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = git_repo(home)
     existing = repo / ".git" / "hooks" / "post-merge"
     existing.write_text("#!/bin/sh\nmy own hook\n")
@@ -61,9 +62,7 @@ def test_outdated_marked_shim_is_updated(home: Path) -> None:
     assert stale.read_text() == SHIM_CONTENT
 
 
-def test_core_hooks_path_repo_gets_the_line_instead_of_files(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_core_hooks_path_repo_gets_the_line_instead_of_files(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = git_repo(home)
     git(repo, "config", "core.hooksPath", ".husky")
 
@@ -77,15 +76,13 @@ def test_core_hooks_path_repo_gets_the_line_instead_of_files(
 
 
 def test_shims_install_into_worktrees_common_hooks_dir(home: Path) -> None:
-    main_repo = make_repo(home, "main-repo")
+    main_repo = make_repo(home, name="main-repo")
     git(main_repo, "init", "--quiet")
     git(main_repo, "commit", "--allow-empty", "-q", "-m", "init")
     worktree = home / "worktree"
     git(main_repo, "worktree", "add", "-q", str(worktree))
 
-    assert (
-        main(["init", "--repo", str(worktree), "--non-interactive", "--git-hooks"]) == 0
-    )
+    assert main(["init", "--repo", str(worktree), "--non-interactive", "--git-hooks"]) == 0
 
     hook = main_repo / ".git" / "hooks" / "post-merge"
     assert hook.read_text() == SHIM_CONTENT

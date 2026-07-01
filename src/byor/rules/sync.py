@@ -1,14 +1,19 @@
-"""Mirror canonical global rules into repositories."""
+"""Mirror canonical global rules into repositories.
+
+Sync computes the effective global and package rules for a repository, writes managed mirror
+directories, and reports staleness. It is the convergence engine shared by init, sync, profile,
+package, and self-heal flows.
+"""
 
 from __future__ import annotations
 
-import argparse
 import os
 import sys
-from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+from byor.agents.install import install_agent
 from byor.config import (
     PACKAGE_CHECKS_FILE,
     LocalConfig,
@@ -35,6 +40,34 @@ from byor.rules.skill import global_skill_dirs, skill_files
 from byor.scaffold.ignore import write_rule_visibility_file
 from byor.scaffold.sgconfig import ensure_home_sgconfig
 
+if TYPE_CHECKING:
+    import argparse
+    from collections.abc import Iterable, Iterator
+
+__all__ = (
+    "CanonicalRules",
+    "InstalledPackage",
+    "MirrorResult",
+    "SkippedRule",
+    "SyncPlan",
+    "compute_packages_plan",
+    "compute_sync_plan",
+    "heal_global",
+    "heal_repo",
+    "iter_registered_repos",
+    "load_canonical_rules",
+    "load_installed_packages",
+    "mirror_contents",
+    "mirror_global_rules",
+    "refresh_skill_renders",
+    "repo_is_stale",
+    "repo_packages_plan",
+    "repo_sync_plan",
+    "run_sync",
+    "summarize_changes",
+    "sync_repo",
+)
+
 STALE_EXIT_CODE = 3
 
 
@@ -47,8 +80,6 @@ class SkippedRule:
 
 @dataclass
 class SyncPlan:
-    """What the personal/global mirror should contain, and what was skipped."""
-
     desired: dict[str, str]
     """Relative path below the global rules root -> rule file content."""
 
@@ -68,12 +99,6 @@ class MirrorResult:
 
 @dataclass
 class CanonicalRules:
-    """The canonical global rules, loaded once and reused across repo syncs.
-
-    `packages_root` is the base directory whose subdirectories are opt-in
-    packages; a repo mirrors only the packages its local config names.
-    """
-
     root: Path
     rules: list[Rule]
     packages_root: Path
@@ -81,8 +106,6 @@ class CanonicalRules:
 
 @dataclass
 class InstalledPackage:
-    """One opt-in package a repo has installed, with its loaded rules."""
-
     name: str
     root: Path
     rules: list[Rule]
@@ -98,10 +121,7 @@ def load_canonical_rules(config_dir: Path) -> CanonicalRules:
     )
 
 
-def load_installed_packages(
-    canonical: CanonicalRules, names: Iterable[str]
-) -> list[InstalledPackage]:
-    """Load the rules of each named package; a missing package is empty, not fatal."""
+def load_installed_packages(canonical: CanonicalRules, names: Iterable[str]) -> list[InstalledPackage]:
     return [
         InstalledPackage(
             name=name,
@@ -113,7 +133,6 @@ def load_installed_packages(
 
 
 def _load_package_rules(root: Path) -> list[Rule]:
-    """A package's rules: every rule file except the reserved checks manifest."""
     return [
         load_rule(path)
         for path in discover_rule_files(root)
@@ -124,17 +143,18 @@ def _load_package_rules(root: Path) -> list[Rule]:
 def _effective_canonical(
     project: list[Rule],
     local: list[Rule],
+    *,
     excluded_rule_ids: Iterable[str],
     excluded_tags: Iterable[str],
     canonical: CanonicalRules,
 ) -> tuple[list[Rule], list[SkippedRule]]:
-    """The canonical global rules a repo keeps, and why the rest were skipped.
+    """Return the canonical global rules a repo keeps and skip the rest.
 
     Step 7 (combined effective IDs are unique) holds by construction: project
     and local IDs are unique and disjoint per check_id_conflicts, and every
     kept global rule has an ID outside both sets and unique among global rules.
     """
-    check_id_conflicts(project, local, canonical.rules)
+    check_id_conflicts(project, local, canonical_global=canonical.rules)
     project_ids = {rule.id for rule in project}
     local_ids = {rule.id for rule in local}
     excluded = set(excluded_rule_ids)
@@ -142,7 +162,7 @@ def _effective_canonical(
     kept: list[Rule] = []
     skipped: list[SkippedRule] = []
     for rule in canonical.rules:
-        reason = _skip_reason(rule, project_ids, local_ids, excluded, excluded_tag_set)
+        reason = _skip_reason(rule, project_ids, local_ids=local_ids, excluded=excluded, excluded_tags=excluded_tag_set)
         if reason is None:
             kept.append(rule)
         else:
@@ -153,23 +173,22 @@ def _effective_canonical(
 def compute_sync_plan(
     project: list[Rule],
     local: list[Rule],
+    *,
     excluded_rule_ids: Iterable[str],
     excluded_tags: Iterable[str],
     canonical: CanonicalRules,
 ) -> SyncPlan:
-    """Validate the loaded rules and decide the global mirror contents."""
     kept, skipped = _effective_canonical(
-        project, local, excluded_rule_ids, excluded_tags, canonical
+        project, local, excluded_rule_ids=excluded_rule_ids, excluded_tags=excluded_tags, canonical=canonical
     )
-    desired = {
-        rule.path.relative_to(canonical.root).as_posix(): rule.content for rule in kept
-    }
+    desired = {rule.path.relative_to(canonical.root).as_posix(): rule.content for rule in kept}
     return SyncPlan(desired=desired, skipped=skipped)
 
 
 def compute_packages_plan(
     project: list[Rule],
     local: list[Rule],
+    *,
     local_config: LocalConfig,
     kept_global_ids: set[str],
     packages: list[InstalledPackage],
@@ -191,7 +210,12 @@ def compute_packages_plan(
     for package in packages:
         for rule in package.rules:
             reason = _package_skip_reason(
-                rule, project_ids, local_ids, kept_global_ids, excluded, excluded_tags
+                rule,
+                project_ids,
+                local_ids=local_ids,
+                global_ids=kept_global_ids,
+                excluded=excluded,
+                excluded_tags=excluded_tags,
             )
             if reason is not None:
                 skipped.append(SkippedRule(rule.id, reason, list(rule.tags)))
@@ -208,7 +232,6 @@ def compute_packages_plan(
 
 
 def mirror_contents(mirror_dir: Path) -> dict[str, str]:
-    """The YAML files currently in the mirror, as relative path -> content."""
     return {
         path.relative_to(mirror_dir).as_posix(): path.read_text(encoding="utf-8")
         for path in discover_rule_files(mirror_dir)
@@ -240,23 +263,19 @@ def mirror_global_rules(mirror_dir: Path, desired: dict[str, str]) -> MirrorResu
 
 
 def repo_sync_plan(repo_root: Path, canonical: CanonicalRules) -> tuple[SyncPlan, Path]:
-    """One repository's global-rule sync plan plus its mirror directory."""
     paths = load_repo_config(repo_root).paths
     local_config = load_local_config(repo_root)
     plan = compute_sync_plan(
         load_rules(repo_root / paths.project_rules),
         load_rules(repo_root / paths.personal_local_rules),
-        local_config.excluded_rule_ids,
-        local_config.excluded_rule_tags,
-        canonical,
+        excluded_rule_ids=local_config.excluded_rule_ids,
+        excluded_tags=local_config.excluded_rule_tags,
+        canonical=canonical,
     )
     return plan, resolve_within(repo_root, repo_root / paths.personal_global_rules)
 
 
-def repo_packages_plan(
-    repo_root: Path, canonical: CanonicalRules
-) -> tuple[SyncPlan, Path]:
-    """One repository's package-rule sync plan plus its packages mirror directory."""
+def repo_packages_plan(repo_root: Path, canonical: CanonicalRules) -> tuple[SyncPlan, Path]:
     paths = load_repo_config(repo_root).paths
     local_config = load_local_config(repo_root)
     project = load_rules(repo_root / paths.project_rules)
@@ -264,24 +283,21 @@ def repo_packages_plan(
     kept_global, _ = _effective_canonical(
         project,
         local,
-        local_config.excluded_rule_ids,
-        local_config.excluded_rule_tags,
-        canonical,
+        excluded_rule_ids=local_config.excluded_rule_ids,
+        excluded_tags=local_config.excluded_rule_tags,
+        canonical=canonical,
     )
     plan = compute_packages_plan(
         project,
         local,
-        local_config,
-        {rule.id for rule in kept_global},
-        load_installed_packages(canonical, local_config.packages),
+        local_config=local_config,
+        kept_global_ids={rule.id for rule in kept_global},
+        packages=load_installed_packages(canonical, local_config.packages),
     )
     return plan, resolve_within(repo_root, repo_root / paths.personal_packages_rules)
 
 
-def sync_repo(
-    repo_root: Path, canonical: CanonicalRules
-) -> tuple[SyncPlan, MirrorResult]:
-    """Sync one repository's global and package rule mirrors into place."""
+def sync_repo(repo_root: Path, canonical: CanonicalRules) -> tuple[SyncPlan, MirrorResult]:
     global_plan, global_dir = repo_sync_plan(repo_root, canonical)
     global_result = mirror_global_rules(global_dir, global_plan.desired)
     packages_plan, packages_dir = repo_packages_plan(repo_root, canonical)
@@ -300,13 +316,9 @@ def sync_repo(
 
 
 def repo_is_stale(repo_root: Path, canonical: CanonicalRules) -> bool:
-    """The cheap staleness check: path and content comparison for both mirrors."""
     global_plan, global_dir = repo_sync_plan(repo_root, canonical)
     packages_plan, packages_dir = repo_packages_plan(repo_root, canonical)
-    return (
-        mirror_contents(global_dir) != global_plan.desired
-        or mirror_contents(packages_dir) != packages_plan.desired
-    )
+    return mirror_contents(global_dir) != global_plan.desired or mirror_contents(packages_dir) != packages_plan.desired
 
 
 def heal_global(config_dir: Path) -> None:
@@ -314,23 +326,18 @@ def heal_global(config_dir: Path) -> None:
 
     Runs on every command (even outside a repo): refreshes the global skill
     render so a byor upgrade is reflected without a reinstall, and reconverges
-    `~/sgconfig.yml` whenever global rules exist so ast-grep keeps applying them
+    recorded agent hooks/plugins plus `~/sgconfig.yml` so upgrades keep applying
     everywhere.
     """
     config = load_global_config(config_dir)
     rules_dir = global_rules_dir(config_dir, config)
     if rules_dir.is_dir():
         ensure_home_sgconfig(rules_dir)
-    if "skill" in config.agents:
-        refresh_skill_renders()
+    for agent in config.agents:
+        install_agent(agent)
 
 
 def heal_repo(repo_root: Path, config_dir: Path) -> str | None:
-    """The repo self-heal preamble: sync the rule mirror, one line when changed.
-
-    Uninitialized repositories are skipped silently: the command being run
-    will fail with its own clearer RepoNotInitialized error.
-    """
     if not repo_config_path(repo_root).is_file():
         return None
     _, result = sync_repo(repo_root, load_canonical_rules(config_dir))
@@ -348,11 +355,10 @@ def refresh_skill_renders() -> None:
     """
     for base in global_skill_dirs():
         for relpath, content in skill_files():
-            write_marked_text(base / relpath, content, MANAGED_MARKER)
+            write_marked_text(base / relpath, content, marker=MANAGED_MARKER)
 
 
 def summarize_changes(result: MirrorResult) -> str:
-    """E.g. '2 updated global rules' or '1 updated, 1 removed global rules'."""
     parts: list[str] = []
     if result.written:
         parts.append(f"{result.written} updated")
@@ -363,23 +369,12 @@ def summarize_changes(result: MirrorResult) -> str:
 
 
 def iter_registered_repos(config_dir: Path) -> Iterator[Path]:
-    """Registered repo roots that exist and are initialized, for fan-out.
-
-    Warns on stderr and skips registry entries whose path is gone or that have
-    no .byor/config.yml.
-    """
     registry_path = repo_registry_path(config_dir, load_global_config(config_dir))
     for repo_root in load_repo_registry(registry_path):
         if not repo_root.is_dir():
-            print(
-                f"byor: skipping {repo_root}: path no longer exists",
-                file=sys.stderr,
-            )
+            sys.stderr.write(f"byor: skipping {repo_root}: path no longer exists\n")
         elif not repo_config_path(repo_root).is_file():
-            print(
-                f"byor: skipping {repo_root}: no .byor/config.yml",
-                file=sys.stderr,
-            )
+            sys.stderr.write(f"byor: skipping {repo_root}: no .byor/config.yml\n")
         else:
             yield repo_root
 
@@ -396,8 +391,7 @@ def run_sync(args: argparse.Namespace) -> int:
     return 0
 
 
-def _sync_all(config_dir: Path, canonical: CanonicalRules, check: bool) -> int:
-    """Sync (or check) every registered repository."""
+def _sync_all(config_dir: Path, canonical: CanonicalRules, *, check: bool) -> int:
     exit_code = 0
     for repo_root in iter_registered_repos(config_dir):
         if check:
@@ -408,32 +402,30 @@ def _sync_all(config_dir: Path, canonical: CanonicalRules, check: bool) -> int:
 
 
 def _sync_and_report(repo_root: Path, canonical: CanonicalRules) -> None:
-    """Sync one repo and print its sync output."""
     plan, _ = sync_repo(repo_root, canonical)
-    print(f"Synced {_count(len(plan.desired), 'global rule')} into {repo_root}")
+    sys.stdout.write(f"Synced {_count(len(plan.desired), 'global rule')} into {repo_root}\n")
     if plan.skipped:
-        print(f"Skipped {_count(len(plan.skipped), 'global rule')}:")
+        sys.stdout.write(f"Skipped {_count(len(plan.skipped), 'global rule')}:\n")
         for skipped in plan.skipped:
-            print(f"  {skipped.id}: {skipped.reason}")
+            sys.stdout.write(f"  {skipped.id}: {skipped.reason}\n")
 
 
 def _report_staleness(repo_root: Path, canonical: CanonicalRules) -> int:
-    """`sync --check`: report without writing; exit 3 when stale."""
     if repo_is_stale(repo_root, canonical):
-        print(f"Sync is stale in {repo_root}; run `byor sync`.")
+        sys.stdout.write(f"Sync is stale in {repo_root}; run `byor sync`.\n")
         return STALE_EXIT_CODE
-    print(f"Sync is fresh in {repo_root}")
+    sys.stdout.write(f"Sync is fresh in {repo_root}\n")
     return 0
 
 
 def _skip_reason(
     rule: Rule,
     project_ids: set[str],
+    *,
     local_ids: set[str],
     excluded: set[str],
     excluded_tags: set[str],
 ) -> str | None:
-    """Why a canonical global rule is not mirrored; overrides trump exclusion."""
     if rule.id in project_ids:
         return "overridden by project rule"
     if rule.id in local_ids:
@@ -449,12 +441,12 @@ def _skip_reason(
 def _package_skip_reason(
     rule: Rule,
     project_ids: set[str],
+    *,
     local_ids: set[str],
     global_ids: set[str],
     excluded: set[str],
     excluded_tags: set[str],
 ) -> str | None:
-    """Why an installed package's rule is not mirrored; owned scopes trump it."""
     if rule.id in project_ids:
         return "overridden by project rule"
     if rule.id in local_ids:
@@ -470,7 +462,6 @@ def _package_skip_reason(
 
 
 def _prune_empty_dirs(root: Path) -> None:
-    """Remove empty subdirectories below root, deepest first; keep root itself."""
     # os.walk snapshots entries before children are pruned, so re-check emptiness.
     for dirpath, _, _ in os.walk(root, topdown=False):
         directory = Path(dirpath)

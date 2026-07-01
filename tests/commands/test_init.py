@@ -1,3 +1,10 @@
+"""Exercise repository initialization behavior.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
+
 import io
 import sys
 from pathlib import Path
@@ -30,7 +37,6 @@ TRACKED_FILES = (
 
 @pytest.fixture
 def repo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """An empty repo dir, with the global config dir and home isolated under tmp_path."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     repo = tmp_path / "repo"
@@ -88,23 +94,16 @@ def test_init_applies_requested_profile(repo: Path) -> None:
             }
         ),
     )
-    write_global_rule(repo.parent, "no-cast.yml", "no-cast", tags=["legacy-risk"])
+    write_global_rule(repo.parent, "no-cast.yml", rule_id="no-cast", tags=["legacy-risk"])
 
-    assert (
-        main(
-            ["init", "--repo", str(repo), "--non-interactive", "--profile", "existing"]
-        )
-        == 0
-    )
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--profile", "existing"]) == 0
 
     local = load_local_config(repo)
     assert local.excluded_rule_ids == ["python.no-staticmethod"]
     assert local.excluded_rule_tags == ["legacy-risk"]
     assert local.excluded_checks == ["ty"]
     assert local.excluded_check_tags == ["strict"]
-    assert not (
-        repo / ".byor" / "rules" / "personal" / "global" / "no-cast.yml"
-    ).exists()
+    assert not (repo / ".byor" / "rules" / "personal" / "global" / "no-cast.yml").exists()
 
 
 def test_init_uses_global_profile_default(repo: Path) -> None:
@@ -151,9 +150,7 @@ def test_init_is_idempotent(repo: Path) -> None:
 
 
 def test_init_preserves_existing_sgconfig_content(repo: Path) -> None:
-    (repo / "sgconfig.yml").write_text(
-        "# team config\nruleDirs:\n  - custom-rules\nutilDirs:\n  - utils\n"
-    )
+    (repo / "sgconfig.yml").write_text("# team config\nruleDirs:\n  - custom-rules\nutilDirs:\n  - utils\n")
 
     assert main(["init", "--repo", str(repo), "--non-interactive"]) == 0
 
@@ -164,9 +161,7 @@ def test_init_preserves_existing_sgconfig_content(repo: Path) -> None:
     assert ".byor/rules/personal/global" in content
 
 
-def test_init_rejects_non_list_rule_dirs_without_traceback(
-    repo: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_init_rejects_non_list_rule_dirs_without_traceback(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     (repo / "sgconfig.yml").write_text("ruleDirs: not-a-list\n")
 
     assert main(["init", "--repo", str(repo), "--non-interactive"]) == 1
@@ -214,16 +209,12 @@ def test_private_hides_everything_via_git_info_exclude(repo: Path) -> None:
 
 
 def test_no_register_creates_empty_registry(repo: Path) -> None:
-    assert (
-        main(["init", "--repo", str(repo), "--non-interactive", "--no-register"]) == 0
-    )
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--no-register"]) == 0
 
     assert load_repo_registry(config_dir(repo) / "repos.yml") == []
 
 
-def test_git_hooks_without_a_git_dir_fail_cleanly(
-    repo: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_git_hooks_without_a_git_dir_fail_cleanly(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["init", "--repo", str(repo), "--non-interactive", "--git-hooks"]) == 1
 
     captured = capsys.readouterr()
@@ -232,9 +223,8 @@ def test_git_hooks_without_a_git_dir_fail_cleanly(
 
 
 def test_init_ends_with_quick_doctor_surfacing_problems(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    repo: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Init succeeds without ast-grep but its closing doctor --quick says so."""
     empty_bin = repo.parent / "empty-bin"
     empty_bin.mkdir()
     monkeypatch.setenv("PATH", str(empty_bin))
@@ -252,6 +242,7 @@ def test_init_ends_with_quick_doctor_surfacing_problems(
 def test_interactive_prompts_drive_private_and_git_hooks(
     repo: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     git(repo, "init", "--quiet")
@@ -291,9 +282,7 @@ def test_explicit_flag_overrides_global_init_default(repo: Path) -> None:
     assert ".byor/" not in (repo / ".git" / "info" / "exclude").read_text()
 
 
-def test_global_default_seeds_interactive_prompt(
-    repo: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_global_default_seeds_interactive_prompt(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     git(repo, "init", "--quiet")
     seed_init_defaults(repo, InitDefaults(private=True))
     # Empty answers accept each prompt's default; the global default makes the

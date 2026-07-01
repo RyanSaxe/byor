@@ -1,13 +1,19 @@
-"""Command-line entry point for byor."""
+"""Build and dispatch the BYOR command-line interface.
+
+The CLI module owns argparse construction, pre-command self-healing, and command dispatch while
+implementation details live in focused command modules. That separation keeps the command surface
+auditable without mixing it with rule or scan logic.
+"""
 
 from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Sequence
-from importlib.metadata import version
+from functools import partial
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+from byor import __version__
 from byor.agents.harness import HARNESS_CHOICES
 from byor.agents.install import AGENT_CHOICES, run_hook
 from byor.commands.doctor import run_doctor
@@ -28,6 +34,15 @@ from byor.rules.commands import (
 )
 from byor.rules.sync import heal_global, heal_repo, run_sync
 from byor.scan.agent_check import run_agent_check
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
+__all__ = (
+    "build_parser",
+    "main",
+    "run",
+)
 
 COMMANDS = {
     "install": "Register byor's AI integrations globally (one-time)",
@@ -56,9 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="byor",
         description="Custom ast-grep diagnostics, easy to set up, share, and expose to AI agents.",
     )
-    parser.add_argument(
-        "--version", action="version", version=f"byor {version('byor')}"
-    )
+    parser.add_argument("--version", action="version", version=f"byor {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
     for name, help_text in COMMANDS.items():
         command = subparsers.add_parser(name, help=help_text, description=help_text)
@@ -66,43 +79,9 @@ def build_parser() -> argparse.ArgumentParser:
         command.set_defaults(repo=None)
         if name in REPO_COMMANDS:
             command.add_argument("--repo", type=Path, help=REPO_HELP)
-        if name == "install":
-            _add_install_arguments(command)
-        if name == "init":
-            _add_init_arguments(command)
-        if name == "sync":
-            _add_sync_arguments(command)
-        if name == "doctor":
-            _add_doctor_arguments(command)
-        if name == "list":
-            _add_list_arguments(command)
-        if name == "add":
-            _add_add_arguments(command)
-        if name in ("edit", "remove"):
-            _add_rule_lookup_arguments(command, action=name)
-        if name == "promote":
-            _add_promote_arguments(command)
-        if name in ("exclude", "include"):
-            _add_exclusion_arguments(command)
-        if name == "profile":
-            _add_profile_arguments(command)
-        if name == "package":
-            _add_package_arguments(command)
-        if name == "agent-check":
-            _add_agent_check_arguments(command)
-        if name == "hook":
-            actions = command.add_subparsers(dest="hook_action", required=True)
-            for action_name, action_help in (
-                ("install", "Install agent integration files"),
-                ("uninstall", "Remove BYOR-managed agent files"),
-            ):
-                action = actions.add_parser(action_name, help=action_help)
-                action.add_argument(
-                    "--agent",
-                    choices=AGENT_CHOICES,
-                    required=True,
-                    help="Which AI integration to manage",
-                )
+        add_arguments = _COMMAND_ARGUMENTS.get(name)
+        if add_arguments is not None:
+            add_arguments(command)
     return parser
 
 
@@ -165,9 +144,7 @@ def _add_init_arguments(command: argparse.ArgumentParser) -> None:
 
 
 def _add_sync_arguments(command: argparse.ArgumentParser) -> None:
-    command.add_argument(
-        "--all", action="store_true", help="Sync every registered repository"
-    )
+    command.add_argument("--all", action="store_true", help="Sync every registered repository")
     command.add_argument(
         "--check",
         action="store_true",
@@ -183,9 +160,7 @@ def _add_list_arguments(command: argparse.ArgumentParser) -> None:
         default="effective",
         help="Which rules to show (default: effective, what ast-grep sees)",
     )
-    command.add_argument(
-        "--json", action="store_true", help="Emit machine-readable JSON"
-    )
+    command.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
     command.add_argument(
         "--tags",
         action="store_true",
@@ -201,9 +176,7 @@ def _add_add_arguments(command: argparse.ArgumentParser) -> None:
         required=True,
         help="Where the new rule lives",
     )
-    command.add_argument(
-        "--language", help="Language for the generated template (default: Python)"
-    )
+    command.add_argument("--language", help="Language for the generated template (default: Python)")
     command.add_argument("--id", help="Rule ID for the generated template")
     command.add_argument(
         "--allow-exceptions",
@@ -226,10 +199,7 @@ def _add_add_arguments(command: argparse.ArgumentParser) -> None:
 
 
 def _add_rule_lookup_arguments(command: argparse.ArgumentParser, action: str) -> None:
-    """edit and remove share their signature: RULE_ID plus scope resolution."""
-    command.add_argument(
-        "rule_id", metavar="RULE_ID", help=f"ID of the rule to {action}"
-    )
+    command.add_argument("rule_id", metavar="RULE_ID", help=f"ID of the rule to {action}")
     command.add_argument(
         "--scope",
         choices=("project", "local", "global", "auto"),
@@ -240,9 +210,7 @@ def _add_rule_lookup_arguments(command: argparse.ArgumentParser, action: str) ->
 
 def _add_promote_arguments(command: argparse.ArgumentParser) -> None:
     target = command.add_mutually_exclusive_group(required=True)
-    target.add_argument(
-        "rule_id", nargs="?", metavar="RULE_ID", help="ID of the rule to promote"
-    )
+    target.add_argument("rule_id", nargs="?", metavar="RULE_ID", help="ID of the rule to promote")
     target.add_argument(
         "--check",
         metavar="NAME",
@@ -287,9 +255,7 @@ def _add_exclusion_arguments(command: argparse.ArgumentParser) -> None:
 def _add_profile_arguments(command: argparse.ArgumentParser) -> None:
     actions = command.add_subparsers(dest="profile_action", required=True)
     actions.add_parser("list", help="List configured profiles")
-    add = actions.add_parser(
-        "add", help="Add a profile's exclusions to this repository"
-    )
+    add = actions.add_parser("add", help="Add a profile's exclusions to this repository")
     add.add_argument("name", metavar="NAME", help="Profile name")
     add.add_argument("--repo", type=Path, help=REPO_HELP)
 
@@ -297,9 +263,7 @@ def _add_profile_arguments(command: argparse.ArgumentParser) -> None:
 def _add_package_arguments(command: argparse.ArgumentParser) -> None:
     actions = command.add_subparsers(dest="package_action", required=True)
     actions.add_parser("list", help="List available packages")
-    add = actions.add_parser(
-        "add", help="Install a package's rules and checks into this repository"
-    )
+    add = actions.add_parser("add", help="Install a package's rules and checks into this repository")
     add.add_argument("name", metavar="NAME", help="Package name")
     add.add_argument("--repo", type=Path, help=REPO_HELP)
 
@@ -345,12 +309,42 @@ def _add_agent_check_arguments(command: argparse.ArgumentParser) -> None:
 
 
 def _add_doctor_arguments(command: argparse.ArgumentParser) -> None:
-    command.add_argument(
-        "--quick", action="store_true", help="Skip recursive rule validation"
-    )
-    command.add_argument(
-        "--json", action="store_true", help="Emit machine-readable JSON"
-    )
+    command.add_argument("--quick", action="store_true", help="Skip recursive rule validation")
+    command.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+
+
+def _add_hook_arguments(command: argparse.ArgumentParser) -> None:
+    actions = command.add_subparsers(dest="hook_action", required=True)
+    for action_name, action_help in (
+        ("install", "Install agent integration files"),
+        ("uninstall", "Remove BYOR-managed agent files"),
+    ):
+        action = actions.add_parser(action_name, help=action_help)
+        action.add_argument(
+            "--agent",
+            choices=AGENT_CHOICES,
+            required=True,
+            help="Which AI integration to manage",
+        )
+
+
+_COMMAND_ARGUMENTS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
+    "install": _add_install_arguments,
+    "init": _add_init_arguments,
+    "sync": _add_sync_arguments,
+    "doctor": _add_doctor_arguments,
+    "add": _add_add_arguments,
+    "edit": partial(_add_rule_lookup_arguments, action="edit"),
+    "remove": partial(_add_rule_lookup_arguments, action="remove"),
+    "promote": _add_promote_arguments,
+    "exclude": _add_exclusion_arguments,
+    "include": _add_exclusion_arguments,
+    "profile": _add_profile_arguments,
+    "package": _add_package_arguments,
+    "list": _add_list_arguments,
+    "agent-check": _add_agent_check_arguments,
+    "hook": _add_hook_arguments,
+}
 
 
 # Commands whose body performs the heal itself, or must not self-heal: install
@@ -360,12 +354,7 @@ SELF_SYNCING_COMMANDS = frozenset({"install", "init", "sync", "profile", "packag
 
 
 def _is_hook_invocation(args: argparse.Namespace) -> bool:
-    """A fail-open hook call (`agent-check --stdin-hook`) must never self-heal:
-    a healing error would surface as a non-zero exit and block the agent.
-    """
-    return (
-        args.command == "agent-check" and getattr(args, "stdin_hook", None) is not None
-    )
+    return args.command == "agent-check" and getattr(args, "stdin_hook", None) is not None
 
 
 _HANDLERS = {
@@ -399,19 +388,15 @@ def run(args: argparse.Namespace) -> int:
             heal_messages = []
         for message in heal_messages:
             # stderr keeps stdout clean for JSON-emitting commands.
-            print(message, file=sys.stderr)
+            sys.stderr.write(f"{message}\n")
     handler = _HANDLERS.get(args.command)
     if handler is None:
-        raise ByorError(f"'{args.command}' is not implemented yet")
+        msg = f"'{args.command}' is not implemented yet"
+        raise ByorError(msg)
     return handler(args)
 
 
 def _self_heal_preamble(args: argparse.Namespace) -> list[str]:
-    """Heal machine-level state always, plus a stale repo's mirror and gate.
-
-    Returns the repo heal lines (empty when nothing changed) so doctor can report
-    what was healed; the global heal is silent. Uninitialized repos heal silently.
-    """
     config_dir = global_config_dir()
     heal_global(config_dir)
     repo_root = resolve_repo_root(explicit=args.repo)
@@ -425,7 +410,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         return run(args)
     except ByorError as error:
-        print(f"byor: {error}", file=sys.stderr)
+        sys.stderr.write(f"byor: {error}\n")
         return error.exit_code
 
 

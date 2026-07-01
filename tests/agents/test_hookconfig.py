@@ -1,4 +1,9 @@
-"""The generalized per-harness hook-config engine (global registration)."""
+"""Exercise managed agent hook configuration.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
 
 import json
 from pathlib import Path
@@ -13,6 +18,7 @@ from byor.agents.hookconfig import (
     global_hook_dir,
     hook_command,
     hook_installed,
+    hook_problem,
     install_hook,
     uninstall_hook,
 )
@@ -21,7 +27,6 @@ from byor.errors import ConfigError
 
 @pytest.fixture(autouse=True)
 def isolated_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """A home directory the global hook configs land under, never the real one."""
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setattr(Path, "home", lambda: home)
@@ -38,9 +43,7 @@ SHARED_HARNESSES = [h for h in HARNESS_CHOICES if not HOOK_SPECS[h].owns_file]
 
 
 @pytest.mark.parametrize("harness", HARNESS_CHOICES)
-def test_install_writes_an_unguarded_command(
-    harness: Harness, isolated_home: Path
-) -> None:
+def test_install_writes_an_unguarded_command(harness: Harness, isolated_home: Path) -> None:
     install_hook(harness)
 
     [command] = commands_in(json.loads(config_path(isolated_home, harness).read_text()))
@@ -68,10 +71,30 @@ def test_install_is_idempotent(harness: Harness, isolated_home: Path) -> None:
     assert config_path(isolated_home, harness).read_text() == snapshot
 
 
+def test_stale_bare_byor_entry_is_not_current(isolated_home: Path) -> None:
+    spec = HOOK_SPECS["codex"]
+    path = config_path(isolated_home, "codex")
+    path.parent.mkdir(parents=True)
+    stale: dict[str, object] = {
+        "matcher": "Edit|Write",
+        "hooks": [{"type": "command", "command": f"{BYOR_COMMAND_SIGNATURE} codex"}],
+    }
+    path.write_text(json.dumps(_config_with_entry(spec.key_path, stale)))
+
+    assert hook_installed("codex") is False
+    assert hook_problem("codex") == "the codex hook is out of date"
+
+    install_hook("codex")
+
+    data = json.loads(path.read_text())
+    matcher = HOOK_SPECS["codex"].matcher
+    assert matcher is not None
+    assert matcher in json.dumps(data)
+    assert hook_installed("codex")
+
+
 @pytest.mark.parametrize("harness", SHARED_HARNESSES)
-def test_uninstall_removes_only_the_byor_entry(
-    harness: Harness, isolated_home: Path
-) -> None:
+def test_uninstall_removes_only_the_byor_entry(harness: Harness, isolated_home: Path) -> None:
     spec = HOOK_SPECS[harness]
     user_entry: dict[str, object] = {"command": "echo mine"}
     if spec.matcher is not None:
@@ -97,9 +120,7 @@ def test_install_preserves_unrelated_keys_and_user_entries(isolated_home: Path) 
     settings = config_path(isolated_home, "claude-code")
     settings.parent.mkdir(parents=True)
     user_group = {"matcher": "Bash", "hooks": [{"type": "command", "command": "true"}]}
-    settings.write_text(
-        json.dumps({"model": "opus", "hooks": {"PostToolUse": [user_group]}})
-    )
+    settings.write_text(json.dumps({"model": "opus", "hooks": {"PostToolUse": [user_group]}}))
 
     install_hook("claude-code")
 
@@ -114,9 +135,7 @@ def test_copilot_writes_the_documented_envelope(isolated_home: Path) -> None:
     data = json.loads(config_path(isolated_home, "copilot").read_text())
     assert data == {
         "version": 1,
-        "hooks": {
-            "postToolUse": [{"type": "command", "command": hook_command("copilot")}]
-        },
+        "hooks": {"postToolUse": [{"type": "command", "command": hook_command("copilot")}]},
     }
 
 
@@ -130,9 +149,7 @@ def test_copilot_owned_install_overwrites_a_stale_file(isolated_home: Path) -> N
 
     data = json.loads(path.read_text())
     assert "postToolUse" not in data  # the stale top-level key is gone
-    assert data["hooks"]["postToolUse"] == [
-        {"type": "command", "command": hook_command("copilot")}
-    ]
+    assert data["hooks"]["postToolUse"] == [{"type": "command", "command": hook_command("copilot")}]
 
 
 def test_copilot_uninstall_deletes_its_owned_file(isolated_home: Path) -> None:
@@ -145,7 +162,8 @@ def test_claude_code_matcher_excludes_notebook_edit() -> None:
     # NotebookEdit payloads carry notebook_path/new_source, which the parser
     # cannot read, so the hook must not subscribe to them and scan nothing.
     matcher = HOOK_SPECS["claude-code"].matcher
-    assert matcher is not None and "NotebookEdit" not in matcher
+    assert matcher is not None
+    assert "NotebookEdit" not in matcher
 
 
 def test_malformed_config_raises_a_clean_config_error(isolated_home: Path) -> None:
@@ -157,9 +175,7 @@ def test_malformed_config_raises_a_clean_config_error(isolated_home: Path) -> No
         install_hook("codex")
 
 
-def _config_with_entry(
-    key_path: tuple[str, ...], entry: dict[str, object]
-) -> dict[str, object]:
+def _config_with_entry(key_path: tuple[str, ...], entry: dict[str, object]) -> dict[str, object]:
     node: dict[str, object] = {}
     config = node
     for key in key_path[:-1]:

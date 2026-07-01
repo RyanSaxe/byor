@@ -1,20 +1,18 @@
-"""AI agent adapters: real post-edit hooks, plugin extensions, and the skill.
+"""Install and verify BYOR agent integrations.
 
-Agents are discoverable by their harness (the skill via the cross-agent
-`SKILL.md` standard, diagnostics via the installed post-edit hook or plugin), so
-byor writes no instruction files — the hook runs `byor agent-check`
-automatically and the harness surfaces the skill on its own.
+The install layer coordinates hooks, plugin files, and the shared skill render while respecting
+user-owned files. It is the global integration boundary used by install commands, doctor checks, and
+self-healing upgrades.
 """
 
 from __future__ import annotations
 
-import argparse
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from byor.agents.harness import HARNESS_CHOICES, Harness
-from byor.agents.hookconfig import hook_installed, install_hook, uninstall_hook
+from byor.agents.hookconfig import hook_problem, install_hook, uninstall_hook
 from byor.agents.opencode import (
     OPENCODE_MARKER,
     OPENCODE_PLUGIN,
@@ -23,8 +21,22 @@ from byor.agents.opencode import (
 from byor.agents.pi import PI_EXTENSION, PI_EXTENSION_RELPATH, PI_MARKER
 from byor.config import load_global_config, save_global_config
 from byor.io.fsio import MANAGED_MARKER, marked_text_status, write_marked_text
+from byor.io.output import write_lines
 from byor.io.paths import global_config_dir
 from byor.rules.skill import global_skill_dirs, skill_files
+
+if TYPE_CHECKING:
+    import argparse
+    from collections.abc import Sequence
+
+__all__ = (
+    "PluginAgent",
+    "agent_file_problems",
+    "install_agent",
+    "install_agents",
+    "run_hook",
+    "uninstall_agent",
+)
 
 # The stdin-hook harnesses: a set for membership, a map for Harness lookup.
 HOOK_HARNESSES: frozenset[str] = frozenset(HARNESS_CHOICES)
@@ -33,8 +45,6 @@ HARNESS_BY_NAME: dict[str, Harness] = {harness: harness for harness in HARNESS_C
 
 @dataclass(frozen=True)
 class PluginAgent:
-    """A harness whose integration is a single byor-managed plugin file."""
-
     relpath: str
     content: str
     marker: str
@@ -66,11 +76,6 @@ HARNESS_MANUAL_STEPS: dict[Harness, str] = {
 
 
 def run_hook(args: argparse.Namespace) -> int:
-    """`byor hook install|uninstall --agent NAME` — global, no repo needed.
-
-    The agent is recorded in the global config's ai.agents so doctor and
-    uninstall know about it.
-    """
     config_dir = global_config_dir()
     config = load_global_config(config_dir)
     if args.hook_action == "install":
@@ -85,13 +90,11 @@ def run_hook(args: argparse.Namespace) -> int:
             config.agents.remove(args.agent)
     if recorded:
         save_global_config(config_dir, config)
-    for message in messages:
-        print(message)
+    write_lines(messages)
     return 0
 
 
 def install_agents(agents: Sequence[str]) -> list[str]:
-    """Install each requested agent's hook, plugin, or skill — all global."""
     messages: list[str] = []
     for agent in agents:
         messages.extend(install_agent(agent))
@@ -99,7 +102,6 @@ def install_agents(agents: Sequence[str]) -> list[str]:
 
 
 def install_agent(agent: str) -> list[str]:
-    """Install one agent adapter globally; returns summary lines for changes."""
     if agent == "skill":
         return _install_skill()
     plugin = PLUGIN_AGENTS.get(agent)
@@ -116,7 +118,6 @@ def install_agent(agent: str) -> list[str]:
 
 
 def uninstall_agent(agent: str) -> list[str]:
-    """Remove one agent adapter; only marker-bearing files are deleted."""
     if agent == "skill":
         messages: list[str] = []
         for path in _global_skill_file_paths():
@@ -127,7 +128,7 @@ def uninstall_agent(agent: str) -> list[str]:
     plugin = PLUGIN_AGENTS.get(agent)
     if plugin is not None:
         path = _plugin_path(plugin)
-        return _remove_managed_path(path, _home_display(path), plugin.marker)
+        return _remove_managed_path(path, _home_display(path), marker=plugin.marker)
     harness = HARNESS_BY_NAME.get(agent)
     if harness is None:
         return []
@@ -146,36 +147,27 @@ def agent_file_problems(agents: Sequence[str]) -> list[str]:
     for agent in agents:
         if (plugin := PLUGIN_AGENTS.get(agent)) is not None:
             problems.extend(_plugin_problems(plugin))
-        elif (harness := HARNESS_BY_NAME.get(agent)) is not None and not hook_installed(
-            harness
-        ):
-            problems.append(f"the {agent} hook is not installed")
+        elif (harness := HARNESS_BY_NAME.get(agent)) is not None:
+            problem = hook_problem(harness)
+            if problem is not None:
+                problems.append(problem)
     return problems
 
 
 def _install_skill() -> list[str]:
-    """Write the byor-owned skill tree to its global discovery locations.
-
-    Both trees are byor-managed copies of the packaged skill; an unmarked file a
-    user placed at any path is left untouched, like any managed file.
-    """
     messages: list[str] = []
     for base in global_skill_dirs():
         for relpath, content in skill_files():
             path = base / relpath
-            messages.extend(_write_managed_path(path, content, _home_display(path)))
+            messages.extend(_write_managed_path(path, content, display=_home_display(path)))
     return messages
 
 
 def _global_skill_file_paths() -> list[Path]:
-    """Every absolute skill file path across both global skill directories."""
-    return [
-        base / relpath for base in global_skill_dirs() for relpath, _ in skill_files()
-    ]
+    return [base / relpath for base in global_skill_dirs() for relpath, _ in skill_files()]
 
 
 def _prune_empty_dirs(directory: Path) -> None:
-    """Remove `directory` and any empty subdirectories left after uninstall."""
     if not directory.is_dir():
         return
     for child in sorted(directory.iterdir(), reverse=True):
@@ -186,23 +178,23 @@ def _prune_empty_dirs(directory: Path) -> None:
 
 
 def _install_plugin(plugin: PluginAgent) -> list[str]:
-    """Write a byor-managed plugin to its global location under the user's home."""
     path = _plugin_path(plugin)
-    return _write_managed_path(path, plugin.content, _home_display(path), plugin.marker)
+    return _write_managed_path(
+        path,
+        plugin.content,
+        display=_home_display(path),
+        marker=plugin.marker,
+    )
 
 
 def _plugin_path(plugin: PluginAgent) -> Path:
-    """The plugin's absolute path; its relpath is relative to the home directory."""
     return Path.home() / plugin.relpath
 
 
 def _plugin_problems(plugin: PluginAgent) -> list[str]:
-    """Same ownership rules as the skill renders: a drifted marker-bearing
-    plugin needs a reinstall; an unmarked file is user-owned and accepted.
-    """
     path = _plugin_path(plugin)
     display = _home_display(path)
-    status = marked_text_status(path, plugin.content, plugin.marker)
+    status = marked_text_status(path, plugin.content, marker=plugin.marker)
     if status == "missing":
         return [f"{display} is missing"]
     if status == "drifted":
@@ -211,9 +203,13 @@ def _plugin_problems(plugin: PluginAgent) -> list[str]:
 
 
 def _write_managed_path(
-    path: Path, content: str, display: str, marker: str = MANAGED_MARKER
+    path: Path,
+    content: str,
+    *,
+    display: str,
+    marker: str = MANAGED_MARKER,
 ) -> list[str]:
-    result = write_marked_text(path, content, marker)
+    result = write_marked_text(path, content, marker=marker)
     if result == "unmarked":
         return [f"{display} exists without the BYOR marker; left untouched."]
     if result == "unchanged":
@@ -221,9 +217,7 @@ def _write_managed_path(
     return [f"Wrote {display}"]
 
 
-def _remove_managed_path(
-    path: Path, display: str, marker: str = MANAGED_MARKER
-) -> list[str]:
+def _remove_managed_path(path: Path, display: str, *, marker: str = MANAGED_MARKER) -> list[str]:
     if not path.is_file():
         return []
     if marker not in path.read_text(encoding="utf-8"):
@@ -233,7 +227,6 @@ def _remove_managed_path(
 
 
 def _home_display(path: Path) -> str:
-    """A `~/...` label for a global file under the user's home."""
     try:
         return f"~/{path.relative_to(Path.home()).as_posix()}"
     except ValueError:

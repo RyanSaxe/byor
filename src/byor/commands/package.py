@@ -1,14 +1,13 @@
-"""Package commands: list available packages and install one into a repository.
+"""Manage opt-in BYOR rule packages.
 
-Packages mirror profiles: a named bundle in the global config a repo opts into.
-Where a profile subtracts (exclusions), a package adds — its rules and checks
-apply once installed, and stay upgradable from the global source via sync.
+Packages are reusable bundles that repositories choose explicitly rather than inheriting globally.
+This command lists available packages, records selected packages locally, and triggers sync so their
+rules and checks become effective.
 """
 
 from __future__ import annotations
 
-import argparse
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from byor.config import (
     GlobalConfig,
@@ -19,8 +18,19 @@ from byor.config import (
     save_local_config,
 )
 from byor.errors import ConfigError
+from byor.io.output import write_line, write_lines
 from byor.io.paths import global_config_dir, resolve_repo_root
 from byor.rules.sync import load_canonical_rules, sync_repo
+
+if TYPE_CHECKING:
+    import argparse
+    from pathlib import Path
+
+__all__ = (
+    "add_package_to_local",
+    "available_packages",
+    "run_package",
+)
 
 
 def run_package(args: argparse.Namespace) -> int:
@@ -32,20 +42,29 @@ def run_package(args: argparse.Namespace) -> int:
     if args.package_action == "add":
         repo_root = resolve_repo_root(explicit=args.repo)
         load_repo_config(repo_root)
-        add_package_to_local(repo_root, config_dir, config, args.name)
-        print(f"Installed package '{args.name}' in .byor/local.yml")
+        add_package_to_local(
+            repo_root,
+            config_dir,
+            global_config=config,
+            name=args.name,
+        )
+        write_line(f"Installed package '{args.name}' in .byor/local.yml")
         _, result = sync_repo(repo_root, load_canonical_rules(config_dir))
         if result.changed:
-            print(f"Synced package '{args.name}' into {repo_root}")
+            write_line(f"Synced package '{args.name}' into {repo_root}")
         return 0
-    raise ConfigError(f"unknown package action: {args.package_action}")
+    msg = f"unknown package action: {args.package_action}"
+    raise ConfigError(msg)
 
 
 def add_package_to_local(
-    repo_root: Path, config_dir: Path, global_config: GlobalConfig, name: str
+    repo_root: Path,
+    config_dir: Path,
+    *,
+    global_config: GlobalConfig,
+    name: str,
 ) -> None:
-    """Record a package opt-in in .byor/local.yml; a no-op when already installed."""
-    _require_package(config_dir, global_config, name)
+    _require_package(config_dir, global_config, name=name)
     local = load_local_config(repo_root)
     if name not in local.packages:
         local.packages.append(name)
@@ -53,24 +72,23 @@ def add_package_to_local(
 
 
 def available_packages(config_dir: Path, global_config: GlobalConfig) -> list[str]:
-    """The package names that exist under the global packages directory."""
     base = global_packages_dir(config_dir, global_config)
     if not base.is_dir():
         return []
     return sorted(entry.name for entry in base.iterdir() if entry.is_dir())
 
 
-def _require_package(config_dir: Path, global_config: GlobalConfig, name: str) -> None:
+def _require_package(config_dir: Path, global_config: GlobalConfig, *, name: str) -> None:
     available = available_packages(config_dir, global_config)
     if name not in available:
         listed = ", ".join(available) or "none available"
-        raise ConfigError(f"unknown package '{name}' (available: {listed})")
+        msg = f"unknown package '{name}' (available: {listed})"
+        raise ConfigError(msg)
 
 
 def _print_packages(config_dir: Path, global_config: GlobalConfig) -> None:
     packages = available_packages(config_dir, global_config)
     if not packages:
-        print("No packages available.")
+        write_line("No packages available.")
         return
-    for name in packages:
-        print(name)
+    write_lines(packages)

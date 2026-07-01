@@ -1,8 +1,8 @@
-"""Isolated ast-grep subprocess handling.
+"""Run ast-grep and parse scan output.
 
-Every ast-grep invocation lives here: executable resolution, version parsing,
-and (for agent-check) JSON scans. No rule-indexing logic. All subprocess
-calls pass argv lists, never shell strings.
+Every ast-grep invocation lives here: executable resolution, version parsing, and JSON scan parsing.
+Centralizing subprocess behavior keeps rule scanning predictable and lets the rest of BYOR work with
+typed scan results.
 """
 
 from __future__ import annotations
@@ -13,11 +13,22 @@ import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from byor.errors import AstGrepNotFound, ByorError
+from byor.errors import AstGrepNotFoundError, ByorError
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+__all__ = (
+    "ScanMatch",
+    "ScanResult",
+    "ast_grep_version",
+    "resolve_ast_grep",
+    "scan_files",
+)
 
 NOT_FOUND_MESSAGE = (
     "A working ast-grep could not be found.\n"
@@ -59,9 +70,7 @@ def resolve_ast_grep(command: str = "auto") -> Path:
         candidates = ("ast-grep", "sg")
     # The bundled ast-grep sits beside the interpreter; consult it only in auto
     # mode, so an explicit override or configured command is honored exactly.
-    fallback_dir = (
-        os.path.dirname(sys.executable) if not override and command == "auto" else None
-    )
+    fallback_dir = str(Path(sys.executable).parent) if not override and command == "auto" else None
     probed: set[Path] = set()
     for candidate in candidates:
         for found in _candidate_locations(candidate, fallback_dir):
@@ -71,11 +80,10 @@ def resolve_ast_grep(command: str = "auto") -> Path:
             probed.add(executable)
             if _reports_ast_grep_version(executable):
                 return executable
-    raise AstGrepNotFound(NOT_FOUND_MESSAGE)
+    raise AstGrepNotFoundError(NOT_FOUND_MESSAGE)
 
 
 def _candidate_locations(candidate: str, fallback_dir: str | None) -> list[str]:
-    """`candidate` on PATH, then in `fallback_dir` when given — first match each."""
     locations: list[str] = []
     on_path = shutil.which(candidate)
     if on_path is not None:
@@ -89,12 +97,6 @@ def _candidate_locations(candidate: str, fallback_dir: str | None) -> list[str]:
 
 @dataclass
 class ScanMatch:
-    """One `ast-grep scan` match; line and column are 1-based.
-
-    ast-grep reports 0-based positions; the parse normalizes them once so
-    every consumer (linescope ranges, agent_check.Diagnostic) speaks 1-based.
-    """
-
     file: str
     line: int
     column: int
@@ -121,6 +123,7 @@ class ScanResult:
 def scan_files(
     executable: Path,
     repo_root: Path,
+    *,
     files: Sequence[Path],
     config: Path | None = None,
 ) -> ScanResult:
@@ -144,7 +147,7 @@ def scan_files(
     if config is not None:
         argv.extend(["--config", str(config)])
     argv.extend(str(file) for file in files)
-    result = subprocess.run(argv, capture_output=True, text=True, cwd=repo_root)
+    result = subprocess.run(argv, capture_output=True, text=True, cwd=repo_root, check=False)
     matches = _parse_scan_output(result.stdout)
     if matches is None:
         detail = result.stderr.strip() or result.stdout.strip()
@@ -154,40 +157,30 @@ def scan_files(
 
 
 def ast_grep_version(executable: Path) -> str:
-    """The version `executable --version` reports, e.g. '0.42.3'."""
     result = _run_version(executable)
     if result is None:
-        raise AstGrepNotFound(f"could not run `{executable} --version`")
+        msg = f"could not run `{executable} --version`"
+        raise AstGrepNotFoundError(msg)
     version = _parse_ast_grep_version(result)
     if version is None:
-        raise AstGrepNotFound(
-            f"could not read an ast-grep version from `{executable} --version`"
-        )
+        msg = f"could not read an ast-grep version from `{executable} --version`"
+        raise AstGrepNotFoundError(msg)
     return version
 
 
 def _reports_ast_grep_version(executable: Path) -> bool:
-    """Whether `executable --version` succeeds and names an ast-grep version."""
     result = _run_version(executable)
     return result is not None and _parse_ast_grep_version(result) is not None
 
 
 def _run_version(executable: Path) -> subprocess.CompletedProcess[str] | None:
-    """Run `executable --version`, or None when the executable cannot run."""
     try:
-        return subprocess.run(
-            [str(executable), "--version"], capture_output=True, text=True
-        )
+        return subprocess.run([str(executable), "--version"], capture_output=True, text=True, check=False)
     except OSError:
         return None
 
 
 def _parse_ast_grep_version(result: subprocess.CompletedProcess[str]) -> str | None:
-    """The ast-grep version named in a `--version` result, or None.
-
-    ast-grep prints `ast-grep 0.42.3`; a bare version number alone is rejected
-    so the unix `sg` (setgroups) tool, which has no such output, falls through.
-    """
     if result.returncode != 0:
         return None
     if "ast-grep" not in result.stdout:
@@ -197,7 +190,6 @@ def _parse_ast_grep_version(result: subprocess.CompletedProcess[str]) -> str | N
 
 
 def _parse_scan_output(stdout: str) -> list[ScanMatch] | None:
-    """Parse scan stdout into matches; None when it is not a JSON match list."""
     try:
         payload = json.loads(stdout)
     except json.JSONDecodeError:
@@ -231,29 +223,25 @@ def _parse_match(match: dict[str, object]) -> ScanMatch:
 def _string_field(match: dict[str, object], key: str) -> str:
     value = match.get(key)
     if not isinstance(value, str):
-        raise ByorError(f"unexpected ast-grep scan JSON: missing '{key}'")
+        msg = f"unexpected ast-grep scan JSON: missing '{key}'"
+        raise ByorError(msg)
     return value
 
 
 def _match_positions(match: dict[str, object]) -> tuple[int, int, int]:
-    """1-based (line, column, end_line); ast-grep's JSON is 0-based."""
     span = match.get("range")
     start = span.get("start") if isinstance(span, dict) else None
     end = span.get("end") if isinstance(span, dict) else None
     line = start.get("line") if isinstance(start, dict) else None
     column = start.get("column") if isinstance(start, dict) else None
     end_line = end.get("line") if isinstance(end, dict) else None
-    if (
-        not isinstance(line, int)
-        or not isinstance(column, int)
-        or not isinstance(end_line, int)
-    ):
-        raise ByorError("unexpected ast-grep scan JSON: missing 'range' positions")
+    if not isinstance(line, int) or not isinstance(column, int) or not isinstance(end_line, int):
+        msg = "unexpected ast-grep scan JSON: missing 'range' positions"
+        raise ByorError(msg)
     return line + 1, column + 1, end_line + 1
 
 
 def _agent_prompt(match: dict[str, object]) -> str | None:
-    """metadata.byor.agent_prompt; lenient because metadata is optional."""
     metadata = match.get("metadata")
     byor = metadata.get("byor") if isinstance(metadata, dict) else None
     prompt = byor.get("agent_prompt") if isinstance(byor, dict) else None

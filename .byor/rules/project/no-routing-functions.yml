@@ -1,48 +1,57 @@
 id: no-routing-functions
 language: Python
 severity: warning
-message: Do not create routing functions whose only behavior is another call.
+message: Do not create functions whose only behavior is routing to another call.
 rule:
   all:
-    - any:
-        - pattern: return $CALLEE($$$ARGS)
-        - pattern: return await $CALLEE($$$ARGS)
-        - pattern:
-            context: $CALLEE($$$ARGS)
-            selector: expression_statement
-        - pattern:
-            context: await $CALLEE($$$ARGS)
-            selector: expression_statement
-    - any:
-        - all:
-            - nthChild: 1
-            - nthChild:
-                position: 1
-                reverse: true
-        - all:
-            - nthChild: 2
-            - nthChild:
-                position: 1
-                reverse: true
-            - follows:
-                kind: expression_statement
-                has:
-                  kind: string
-    - inside:
-        kind: block
-        inside:
-          kind: function_definition
-          field: body
+  - any:
+    - pattern: return $CALLEE($$$ARGS)
+    - pattern: return await $CALLEE($$$ARGS)
+    - pattern:
+        context: $CALLEE($$$ARGS)
+        selector: expression_statement
+    - pattern:
+        context: await $CALLEE($$$ARGS)
+        selector: expression_statement
+    - pattern:
+        context: yield from $CALLEE($$$ARGS)
+        selector: expression_statement
+  - any:
+    - all:
+      - nthChild: 1
+      - nthChild:
+          position: 1
+          reverse: true
+    - all:
+      - nthChild: 2
+      - nthChild:
+          position: 1
+          reverse: true
+      - follows:
+          kind: expression_statement
+          has:
+            kind: string
+  - inside:
+      kind: block
+      inside:
+        kind: function_definition
+        field: body
 metadata:
   byor:
     rationale: >
       A function that only forwards to another call adds indirection without
-      adding behavior, making control flow harder to follow and APIs harder to
-      change.
+      adding behavior. Renaming variables, reordering arguments, or adding
+      defaults is still routing unless the function owns meaningful logic or a
+      real boundary.
     agent_prompt: >
       Remove this routing function and call the underlying implementation
-      directly. If this function represents a necessary boundary, move real
-      boundary behavior into it rather than preserving a pass-through wrapper.
+      directly. If the function must exist as a public API or integration
+      boundary, add real boundary behavior such as validation, translation,
+      authorization, retry policy, error handling, or instrumentation. Do not
+      preserve a wrapper whose only effect is changing argument order, defaults,
+      or names.
     tags:
-      - python
-      - design
+    - python
+    - design
+    - style-guide
+    - greenfield

@@ -1,3 +1,10 @@
+"""Exercise BYOR configuration loading and persistence.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
+
 from pathlib import Path
 
 import pytest
@@ -20,7 +27,7 @@ from byor.config import (
     save_local_config,
     save_repo_config,
 )
-from byor.errors import ConfigError, RepoNotInitialized
+from byor.errors import ConfigError, RepoNotInitializedError
 
 
 def test_repo_config_round_trips_and_writes_version(tmp_path: Path) -> None:
@@ -33,7 +40,7 @@ def test_repo_config_round_trips_and_writes_version(tmp_path: Path) -> None:
 
 
 def test_repo_config_missing_means_repo_not_initialized(tmp_path: Path) -> None:
-    with pytest.raises(RepoNotInitialized, match="byor init"):
+    with pytest.raises(RepoNotInitializedError, match="byor init"):
         load_repo_config(tmp_path)
 
 
@@ -53,9 +60,7 @@ def test_global_config_rejects_wrongly_typed_agents(tmp_path: Path) -> None:
 
 
 def test_repo_config_round_trips_checks(tmp_path: Path) -> None:
-    config = RepoConfig(
-        checks=[CheckDef("ruff", ["py"], "uv run ruff check --output-format concise")]
-    )
+    config = RepoConfig(checks=[CheckDef("ruff", ["py"], "uv run ruff check --output-format concise")])
 
     save_repo_config(tmp_path, config)
 
@@ -64,9 +69,7 @@ def test_repo_config_round_trips_checks(tmp_path: Path) -> None:
 
 def test_repo_config_rejects_a_check_missing_name_or_run(tmp_path: Path) -> None:
     (tmp_path / ".byor").mkdir()
-    (tmp_path / ".byor" / "config.yml").write_text(
-        "version: 1\nchecks:\n  - extensions: [py]\n"
-    )
+    (tmp_path / ".byor" / "config.yml").write_text("version: 1\nchecks:\n  - extensions: [py]\n")
 
     with pytest.raises(ConfigError, match="name"):
         load_repo_config(tmp_path)
@@ -75,9 +78,7 @@ def test_repo_config_rejects_a_check_missing_name_or_run(tmp_path: Path) -> None
 def test_repo_config_rejects_a_check_with_an_unparseable_run(tmp_path: Path) -> None:
     (tmp_path / ".byor").mkdir()
     # run value is the single token `cmd "` — an unterminated shell quote.
-    (tmp_path / ".byor" / "config.yml").write_text(
-        "version: 1\nchecks:\n  - name: bad\n    run: 'cmd \"'\n"
-    )
+    (tmp_path / ".byor" / "config.yml").write_text("version: 1\nchecks:\n  - name: bad\n    run: 'cmd \"'\n")
 
     with pytest.raises(ConfigError, match="invalid 'run'"):
         load_repo_config(tmp_path)
@@ -113,13 +114,7 @@ def test_local_config_round_trips(tmp_path: Path) -> None:
 def test_save_preserves_user_comments_and_unknown_keys(tmp_path: Path) -> None:
     path = tmp_path / ".byor" / "local.yml"
     path.parent.mkdir()
-    path.write_text(
-        "# personal overrides\n"
-        "version: 1\n"
-        "global:\n"
-        "  excluded_rule_ids: []\n"
-        "experimental: true\n"
-    )
+    path.write_text("# personal overrides\nversion: 1\nglobal:\n  excluded_rule_ids: []\nexperimental: true\n")
 
     save_local_config(tmp_path, LocalConfig(excluded_rule_ids=["no-python-cast"]))
 
@@ -175,8 +170,7 @@ def test_global_config_rejects_malformed_profiles(tmp_path: Path) -> None:
 
 def test_global_config_rejects_malformed_profile_tags(tmp_path: Path) -> None:
     (tmp_path / "config.yml").write_text(
-        "version: 1\nprofiles:\n  existing:\n    rules:\n"
-        "      excluded_tags: legacy-risk\n"
+        "version: 1\nprofiles:\n  existing:\n    rules:\n      excluded_tags: legacy-risk\n"
     )
 
     with pytest.raises(ConfigError, match="excluded_tags"):

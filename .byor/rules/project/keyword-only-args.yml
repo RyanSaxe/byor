@@ -1,0 +1,61 @@
+id: keyword-only-args
+language: Python
+severity: warning
+message: Arguments after the first two must be keyword-only. Treat two as a
+  maximum, not a target; one or zero positional arguments can be clearer.
+rule:
+  any:
+  - pattern:
+      context: "def $FUNC($SELF, $A, $B, $C): $$$BODY"
+      selector: parameters
+  - pattern:
+      context: "def $FUNC($SELF, $A, $B, $C, $$$REST): $$$BODY"
+      selector: parameters
+  - pattern:
+      context: "def $FUNC($A, $B, $C): $$$BODY"
+      selector: parameters
+  - pattern:
+      context: "def $FUNC($A, $B, $C, $$$REST): $$$BODY"
+      selector: parameters
+constraints:
+  SELF:
+    regex: ^(self|cls)$
+  A:
+    all:
+    - any:
+      - kind: identifier
+      - kind: typed_parameter
+      - kind: default_parameter
+      - kind: typed_default_parameter
+    - not:
+        regex: ^(self|cls)$
+  B:
+    any:
+    - kind: identifier
+    - kind: typed_parameter
+    - kind: default_parameter
+    - kind: typed_default_parameter
+  C:
+    any:
+    - kind: identifier
+    - kind: typed_parameter
+    - kind: default_parameter
+    - kind: typed_default_parameter
+metadata:
+  byor:
+    rationale: >
+      Long positional argument lists make call sites unreadable and brittle.
+      After the first two positional arguments, callers should name the values
+      they pass so reviews and future signature changes stay clear.
+    agent_prompt: >
+      Insert a bare `*` after the second real parameter so every later argument
+      is keyword-only, for example def f(a, b, *, c, d). For methods, self or
+      cls does not count toward the two allowed caller-supplied positional
+      arguments. Treat two as a maximum, not a target: use one or even zero
+      caller-supplied positional parameters when that makes the signature and
+      call sites easier to read. Update call sites to pass later arguments by
+      name.
+    tags:
+    - python
+    - style-guide
+    - greenfield

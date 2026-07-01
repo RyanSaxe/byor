@@ -65,6 +65,8 @@ jobs:
           fi
           echo "VERSION=$(uv version --short --color never)" >> "$GITHUB_ENV"
 
+      - run: uv run scripts/sync_version.py
+
       - run: uv build
 
       - name: Commit, tag, and push
@@ -73,6 +75,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [ "${{ steps.version.outputs.bumped }}" = "true" ]; then
             git commit -am "chore: release v$VERSION"
+          else
+            git diff --exit-code
           fi
           git tag "v$VERSION" 2>/dev/null || echo "tag v$VERSION already exists"
           git push origin HEAD

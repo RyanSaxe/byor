@@ -1,0 +1,35 @@
+id: python.question-mocks
+language: Python
+severity: info
+message: Verify this mock or monkeypatch is necessary.
+rule:
+  any:
+  - pattern: import unittest.mock
+  - pattern: from unittest.mock import $$$MOCK_NAMES
+  - all:
+    - kind: dotted_name
+    - regex: ^mock$
+    - inside:
+        all:
+        - kind: import_from_statement
+        - has:
+            field: module_name
+            regex: ^unittest$
+  - all:
+    - kind: parameters > identifier
+    - regex: ^monkeypatch$
+metadata:
+  byor:
+    rationale: >
+      Mocks and monkeypatching can couple tests to implementation details and
+      hide integration problems.
+    agent_prompt: >
+      Prefer real collaborators, small fakes, fixtures, or dependency
+      injection. Use mocks only when crossing an external boundary, controlling
+      time or randomness, simulating failure paths, or avoiding slow or
+      unavailable systems.
+    tags:
+    - python
+    - testing
+    - style-guide
+    - greenfield

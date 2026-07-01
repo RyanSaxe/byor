@@ -1,9 +1,16 @@
+"""Exercise ast-grep executable resolution and parsing.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
+
 import sys
 from pathlib import Path
 
 import pytest
 
-from byor.errors import AstGrepNotFound, ByorError
+from byor.errors import AstGrepNotFoundError, ByorError
 from byor.scan.astgrep import (
     NOT_FOUND_MESSAGE,
     VERSION_PATTERN,
@@ -14,12 +21,10 @@ from byor.scan.astgrep import (
 
 # These tests run `#!/bin/sh` stand-in executables, which Windows cannot exec;
 # the real-ast-grep cases below still exercise the resolver there.
-requires_sh = pytest.mark.skipif(
-    sys.platform == "win32", reason="fake executables are POSIX shell scripts"
-)
+requires_sh = pytest.mark.skipif(sys.platform == "win32", reason="fake executables are POSIX shell scripts")
 
 
-def fake_executable(path: Path, script: str = 'echo "ast-grep 9.9.9"') -> Path:
+def fake_executable(path: Path, *, script: str = 'echo "ast-grep 9.9.9"') -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f"#!/bin/sh\n{script}\n")
     path.chmod(0o755)
@@ -28,7 +33,7 @@ def fake_executable(path: Path, script: str = 'echo "ast-grep 9.9.9"') -> Path:
 
 @pytest.fixture
 def bin_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """An initially empty PATH, with $BYOR_AST_GREP unset.
+    """Provide an initially empty PATH with $BYOR_AST_GREP unset.
 
     The interpreter dir (the auto-mode fallback) is pointed at the same empty
     dir, so resolution sees only what a test puts here — not the real bundled
@@ -43,9 +48,7 @@ def bin_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 
 @requires_sh
-def test_env_override_wins_over_path(
-    bin_dir: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_env_override_wins_over_path(bin_dir: Path, monkeypatch: pytest.MonkeyPatch, *, tmp_path: Path) -> None:
     fake_executable(bin_dir / "ast-grep")
     override = fake_executable(tmp_path / "elsewhere" / "my-sg")
     monkeypatch.setenv("BYOR_AST_GREP", str(override))
@@ -68,7 +71,7 @@ def test_resolution_skips_a_candidate_that_is_not_ast_grep(bin_dir: Path) -> Non
     # Ubuntu's /usr/bin/sg is the setgroups tool: --version is not ast-grep's.
     fake_executable(bin_dir / "sg", script='echo "sg from util-linux"')
 
-    with pytest.raises(AstGrepNotFound) as excinfo:
+    with pytest.raises(AstGrepNotFoundError) as excinfo:
         resolve_ast_grep()
 
     assert str(excinfo.value) == NOT_FOUND_MESSAGE
@@ -83,11 +86,10 @@ def test_resolution_falls_through_to_a_real_ast_grep(bin_dir: Path) -> None:
 
 
 @requires_sh
+@pytest.mark.usefixtures("bin_dir")
 def test_resolution_falls_back_to_the_interpreter_dir_when_not_on_path(
-    bin_dir: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """`uv tool install byor` puts only `byor` on PATH; the bundled ast-grep sits
-    in byor's own venv bin next to the interpreter, so auto mode looks there."""
     venv_bin = tmp_path / "venv-bin"
     bundled = fake_executable(venv_bin / "ast-grep")
     monkeypatch.setattr(sys, "executable", str(venv_bin / "python"))  # not on PATH
@@ -97,7 +99,7 @@ def test_resolution_falls_back_to_the_interpreter_dir_when_not_on_path(
 
 @requires_sh
 def test_env_override_is_honored_or_fails_without_path_fallthrough(
-    bin_dir: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    bin_dir: Path, monkeypatch: pytest.MonkeyPatch, *, tmp_path: Path
 ) -> None:
     # $BYOR_AST_GREP wins when set; a non-ast-grep override does
     # not silently fall through to a valid ast-grep on PATH.
@@ -105,7 +107,7 @@ def test_env_override_is_honored_or_fails_without_path_fallthrough(
     override = fake_executable(tmp_path / "elsewhere" / "sg", script="exit 1")
     monkeypatch.setenv("BYOR_AST_GREP", str(override))
 
-    with pytest.raises(AstGrepNotFound):
+    with pytest.raises(AstGrepNotFoundError):
         resolve_ast_grep()
 
 
@@ -116,12 +118,13 @@ def test_configured_command_is_used_exactly(bin_dir: Path, tmp_path: Path) -> No
 
     assert resolve_ast_grep(command=str(configured)) == configured
 
-    with pytest.raises(AstGrepNotFound):
+    with pytest.raises(AstGrepNotFoundError):
         resolve_ast_grep(command=str(tmp_path / "custom" / "missing"))
 
 
-def test_missing_executable_raises_the_exact_install_message(bin_dir: Path) -> None:
-    with pytest.raises(AstGrepNotFound) as excinfo:
+@pytest.mark.usefixtures("bin_dir")
+def test_missing_executable_raises_the_exact_install_message() -> None:
+    with pytest.raises(AstGrepNotFoundError) as excinfo:
         resolve_ast_grep()
 
     assert str(excinfo.value) == NOT_FOUND_MESSAGE
@@ -145,7 +148,7 @@ def test_version_of_the_real_ast_grep_is_readable() -> None:
 def test_unreadable_version_fails_cleanly(bin_dir: Path) -> None:
     broken = fake_executable(bin_dir / "ast-grep", script="exit 1")
 
-    with pytest.raises(AstGrepNotFound, match="could not read an ast-grep version"):
+    with pytest.raises(AstGrepNotFoundError, match="could not read an ast-grep version"):
         ast_grep_version(broken)
 
 
@@ -173,7 +176,7 @@ def test_scan_parses_matches_with_metadata(tmp_path: Path) -> None:
     project = ast_grep_project(tmp_path)
     (project / "src.py").write_text('x = cast(int, "1")\n')
 
-    result = scan_files(resolve_ast_grep(), project, [project / "src.py"])
+    result = scan_files(resolve_ast_grep(), project, files=[project / "src.py"])
 
     assert result.warnings == ""
     (match,) = result.matches
@@ -191,18 +194,18 @@ def test_scan_reports_the_end_line_of_a_multi_line_match(tmp_path: Path) -> None
     project = ast_grep_project(tmp_path)
     (project / "src.py").write_text('pad = 0\nx = cast(\n    int,\n    "1",\n)\n')
 
-    result = scan_files(resolve_ast_grep(), project, [project / "src.py"])
+    result = scan_files(resolve_ast_grep(), project, files=[project / "src.py"])
 
     (match,) = result.matches
     assert (match.line, match.end_line) == (2, 5)
 
 
 def test_scan_without_metadata_yields_no_agent_prompt(tmp_path: Path) -> None:
-    rule = CAST_RULE.split("metadata:\n")[0]
+    rule = CAST_RULE.split("metadata:\n", maxsplit=1)[0]
     project = ast_grep_project(tmp_path, rule=rule)
     (project / "src.py").write_text("x = cast(int, 1)\n")
 
-    result = scan_files(resolve_ast_grep(), project, [project / "src.py"])
+    result = scan_files(resolve_ast_grep(), project, files=[project / "src.py"])
 
     assert result.matches[0].agent_prompt is None
 
@@ -212,4 +215,4 @@ def test_scan_failure_raises_with_ast_grep_message(tmp_path: Path) -> None:
     (tmp_path / "src.py").write_text("x = 1\n")
 
     with pytest.raises(ByorError, match="scan` failed"):
-        scan_files(resolve_ast_grep(), tmp_path, [tmp_path / "src.py"])
+        scan_files(resolve_ast_grep(), tmp_path, files=[tmp_path / "src.py"])

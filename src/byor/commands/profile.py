@@ -1,9 +1,13 @@
-"""Profile commands and application."""
+"""Apply named BYOR exclusion profiles.
+
+Profiles are global presets for excluding groups of rules or checks in a repository. This command
+records those exclusions locally and resyncs the repository so profile changes affect the same
+mirrors as manual excludes.
+"""
 
 from __future__ import annotations
 
-import argparse
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from byor.config import (
     GlobalConfig,
@@ -14,8 +18,18 @@ from byor.config import (
     save_local_config,
 )
 from byor.errors import ConfigError
+from byor.io.output import write_line
 from byor.io.paths import global_config_dir, resolve_repo_root
 from byor.rules.sync import load_canonical_rules, summarize_changes, sync_repo
+
+if TYPE_CHECKING:
+    import argparse
+    from pathlib import Path
+
+__all__ = (
+    "add_profile_to_local",
+    "run_profile",
+)
 
 
 def run_profile(args: argparse.Namespace) -> int:
@@ -27,19 +41,22 @@ def run_profile(args: argparse.Namespace) -> int:
     if args.profile_action == "add":
         repo_root = resolve_repo_root(explicit=args.repo)
         load_repo_config(repo_root)
-        add_profile_to_local(repo_root, config, args.name)
-        print(f"Added profile '{args.name}' to .byor/local.yml")
+        add_profile_to_local(repo_root, config, name=args.name)
+        write_line(f"Added profile '{args.name}' to .byor/local.yml")
         _, result = sync_repo(repo_root, load_canonical_rules(config_dir))
         if result.changed:
-            print(f"Synced {summarize_changes(result)} into {repo_root}")
+            write_line(f"Synced {summarize_changes(result)} into {repo_root}")
         return 0
-    raise ConfigError(f"unknown profile action: {args.profile_action}")
+    msg = f"unknown profile action: {args.profile_action}"
+    raise ConfigError(msg)
 
 
 def add_profile_to_local(
-    repo_root: Path, global_config: GlobalConfig, name: str
+    repo_root: Path,
+    global_config: GlobalConfig,
+    *,
+    name: str,
 ) -> None:
-    """Merge a profile's exclusions into .byor/local.yml, keeping existing ones."""
     profile = _profile(global_config, name)
     local = load_local_config(repo_root)
     _extend_unique(local.excluded_rule_ids, profile.excluded_rule_ids)
@@ -59,15 +76,16 @@ def _profile(global_config: GlobalConfig, name: str) -> ProfileConfig:
     profile = global_config.profiles.get(name)
     if profile is None:
         available = ", ".join(sorted(global_config.profiles)) or "none configured"
-        raise ConfigError(f"unknown profile '{name}' (available: {available})")
+        msg = f"unknown profile '{name}' (available: {available})"
+        raise ConfigError(msg)
     return profile
 
 
 def _print_profiles(config: GlobalConfig) -> None:
     if not config.profiles:
-        print("No profiles configured.")
+        write_line("No profiles configured.")
         return
     width = max(len(name) for name in config.profiles)
     for name, profile in config.profiles.items():
         description = profile.description or ""
-        print(f"{name:<{width}}  {description}".rstrip())
+        write_line(f"{name:<{width}}  {description}".rstrip())

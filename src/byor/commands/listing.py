@@ -1,20 +1,40 @@
-"""`byor list`: show rules and where they come from."""
+"""List effective BYOR rules, checks, and tags.
+
+Listing combines project, local, global, and package sources into a view that explains what
+currently applies. The same collection helpers power text and JSON output so humans and automation
+see consistent rule metadata.
+"""
 
 from __future__ import annotations
 
-import argparse
 import json
 from collections import Counter
 from dataclasses import asdict, dataclass
-from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from byor.config import load_repo_config
 from byor.errors import ByorError
+from byor.io.output import write_line, write_lines
 from byor.io.paths import display_path, global_config_dir, resolve_repo_root
 from byor.rules.rules import load_rules
 from byor.rules.sync import SkippedRule, load_canonical_rules, repo_sync_plan
 from byor.scan.checks import load_effective_checks
+
+if TYPE_CHECKING:
+    import argparse
+    from pathlib import Path
+
+__all__ = (
+    "ListedCheck",
+    "ListedRule",
+    "TagSummary",
+    "collect_checks",
+    "collect_rules",
+    "collect_skipped",
+    "render_listing",
+    "render_tags",
+    "run_list",
+)
 
 ListScope = Literal["project", "local", "global", "package", "effective", "all"]
 
@@ -51,22 +71,20 @@ def run_list(args: argparse.Namespace) -> int:
     rules = collect_rules(repo_root, scope)
     skipped = collect_skipped(repo_root, config_dir) if scope == "all" else []
     checks = collect_checks(repo_root, config_dir)
-    rules, skipped, checks = _filter_by_tags(rules, skipped, checks, args)
+    rules, skipped, checks = _filter_by_tags(rules, skipped, checks=checks, args=args)
     if args.json:
         payload = (
-            _tag_json_payload(rules, skipped, checks)
+            _tag_json_payload(rules, skipped, checks=checks)
             if args.tags
-            else _json_payload(rules, skipped, checks)
+            else _json_payload(rules, skipped, checks=checks)
         )
-        print(json.dumps(payload, indent=2))
+        write_line(json.dumps(payload, indent=2))
     elif args.tags:
-        for line in render_tags(rules, skipped, checks) or ["No tags found."]:
-            print(line)
+        write_lines(render_tags(rules, skipped, checks=checks) or ["No tags found."])
     else:
-        listing = render_listing(rules, skipped, checks)
+        listing = render_listing(rules, skipped, checks=checks)
         empty = ["No rules or checks yet. Add a rule with `byor add`."]
-        for line in listing or empty:
-            print(line)
+        write_lines(listing or empty)
     return 0
 
 
@@ -84,11 +102,7 @@ def collect_rules(repo_root: Path, scope: ListScope) -> list[ListedRule]:
         "global": paths.personal_global_rules,
         "package": paths.personal_packages_rules,
     }
-    wanted = (
-        ("project", "local", "global", "package")
-        if scope in ("effective", "all")
-        else (scope,)
-    )
+    wanted = ("project", "local", "global", "package") if scope in ("effective", "all") else (scope,)
     return [
         ListedRule(
             scope=name,
@@ -102,7 +116,6 @@ def collect_rules(repo_root: Path, scope: ListScope) -> list[ListedRule]:
 
 
 def collect_skipped(repo_root: Path, config_dir: Path) -> list[SkippedRule]:
-    """Canonical global rules sync does not mirror."""
     plan, _ = repo_sync_plan(repo_root, load_canonical_rules(config_dir))
     return plan.skipped
 
@@ -122,6 +135,7 @@ def collect_checks(repo_root: Path, config_dir: Path) -> list[ListedCheck]:
 def render_listing(
     rules: list[ListedRule],
     skipped: list[SkippedRule],
+    *,
     checks: list[ListedCheck],
 ) -> list[str]:
     rows = [(rule.scope, rule.id, rule.path) for rule in rules]
@@ -131,20 +145,18 @@ def render_listing(
         return []
     scope_width = max(len(scope) for scope, _, _ in rows)
     id_width = max(len(rule_id) for _, rule_id, _ in rows)
-    return [
-        f"{scope:<{scope_width}}  {rule_id:<{id_width}}  {detail}"
-        for scope, rule_id, detail in rows
-    ]
+    return [f"{scope:<{scope_width}}  {rule_id:<{id_width}}  {detail}" for scope, rule_id, detail in rows]
 
 
 def render_tags(
     rules: list[ListedRule],
     skipped: list[SkippedRule],
+    *,
     checks: list[ListedCheck],
 ) -> list[str]:
     rows = [
         (summary.kind, summary.tag, str(summary.count), _origins(summary.origins))
-        for summary in _tag_summaries(rules, skipped, checks)
+        for summary in _tag_summaries(rules, skipped, checks=checks)
     ]
     if not rows:
         return []
@@ -160,6 +172,7 @@ def render_tags(
 def _json_payload(
     rules: list[ListedRule],
     skipped: list[SkippedRule],
+    *,
     checks: list[ListedCheck],
 ) -> dict[str, list[dict[str, str | list[str]]]]:
     return {
@@ -172,22 +185,23 @@ def _json_payload(
 def _tag_json_payload(
     rules: list[ListedRule],
     skipped: list[SkippedRule],
+    *,
     checks: list[ListedCheck],
 ) -> dict[str, list[dict[str, str | int | dict[str, int]]]]:
-    return {
-        "tags": [asdict(summary) for summary in _tag_summaries(rules, skipped, checks)]
-    }
+    return {"tags": [asdict(summary) for summary in _tag_summaries(rules, skipped, checks=checks)]}
 
 
 def _filter_by_tags(
     rules: list[ListedRule],
     skipped: list[SkippedRule],
+    *,
     checks: list[ListedCheck],
     args: argparse.Namespace,
 ) -> tuple[list[ListedRule], list[SkippedRule], list[ListedCheck]]:
     tag = getattr(args, "tag", None)
     if getattr(args, "tags", False) and tag is not None:
-        raise ByorError("--tags cannot be combined with --tag")
+        msg = "--tags cannot be combined with --tag"
+        raise ByorError(msg)
     if tag is None:
         return rules, skipped, checks
     rules = [rule for rule in rules if tag in rule.tags]
@@ -199,15 +213,16 @@ def _filter_by_tags(
 def _tag_summaries(
     rules: list[ListedRule],
     skipped: list[SkippedRule],
+    *,
     checks: list[ListedCheck],
 ) -> list[TagSummary]:
     counts: dict[tuple[str, str], Counter[str]] = {}
     for rule in rules:
-        _count_tags(counts, "rule", rule.scope, rule.tags)
+        _count_tags(counts, "rule", origin=rule.scope, tags=rule.tags)
     for rule in skipped:
-        _count_tags(counts, "rule", "skipped", rule.tags)
+        _count_tags(counts, "rule", origin="skipped", tags=rule.tags)
     for check in checks:
-        _count_tags(counts, "check", check.origin, check.tags)
+        _count_tags(counts, "check", origin=check.origin, tags=check.tags)
     return [
         TagSummary(
             kind=kind,
@@ -222,6 +237,7 @@ def _tag_summaries(
 def _count_tags(
     counts: dict[tuple[str, str], Counter[str]],
     kind: str,
+    *,
     origin: str,
     tags: list[str],
 ) -> None:

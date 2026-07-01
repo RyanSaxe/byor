@@ -1,6 +1,12 @@
-"""Shared helpers for the test suite (importable via ``pythonpath = ["tests"]``)."""
+"""Provide shared helpers for the BYOR test suite.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
 
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -15,18 +21,11 @@ from byor.config import (
 )
 from byor.io.paths import global_config_dir
 
-RULE_TEMPLATE = (
-    "id: {rule_id}\n"
-    "language: Python\n"
-    "message: {message}\n"
-    "rule:\n"
-    "  pattern: cast($TYPE, $VALUE)\n"
-)
+RULE_TEMPLATE = "id: {rule_id}\nlanguage: Python\nmessage: {message}\nrule:\n  pattern: cast($TYPE, $VALUE)\n"
 NOOP_EDITOR = shlex.join([sys.executable, "-c", "pass"])
 
 
 def commands_in(node: object) -> list[str]:
-    """Every `command` string anywhere in a parsed harness-config JSON tree."""
     if isinstance(node, dict):
         found: list[str] = []
         for key, value in node.items():
@@ -41,9 +40,12 @@ def commands_in(node: object) -> list[str]:
 
 
 def git(repo: Path, *argv: str) -> str:
-    """Run git in `repo` with an inline throwaway identity; returns stdout."""
+    git_executable = shutil.which("git")
+    if git_executable is None:
+        msg = "git executable is required for this test"
+        raise RuntimeError(msg)
     result = subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@t", *argv],
+        [git_executable, "-c", "user.name=t", "-c", "user.email=t@t", *argv],
         cwd=repo,
         capture_output=True,
         text=True,
@@ -52,7 +54,7 @@ def git(repo: Path, *argv: str) -> str:
     return result.stdout
 
 
-def commit_file(repo: Path, name: str, content: str) -> Path:
+def commit_file(repo: Path, name: str, *, content: str) -> Path:
     file = repo / name
     file.write_text(content)
     git(repo, "add", name)
@@ -60,33 +62,31 @@ def commit_file(repo: Path, name: str, content: str) -> Path:
     return file
 
 
-def make_repo(home: Path, name: str = "repo", *extra: str) -> Path:
+def make_repo(home: Path, *, name: str = "repo", extra: tuple[str, ...] = ()) -> Path:
     repo = home / name
     repo.mkdir()
     assert main(["init", "--repo", str(repo), "--non-interactive", *extra]) == 0
     return repo
 
 
-def install_agents(home: Path, *agents: str) -> None:
-    """Register AI agents globally (the `byor install` step) for test setup."""
+def install_agents(*agents: str) -> None:
     assert main(["install", "--agents", ",".join(agents), "--non-interactive"]) == 0
 
 
 def repo_with_agents(home: Path, *agents: str) -> Path:
-    """An init'd repo plus the named agents registered globally."""
     repo = make_repo(home)
-    install_agents(home, *agents)
+    install_agents(*agents)
     return repo
 
 
 def global_agents() -> list[str]:
-    """The AI agents recorded in the global config (XDG-isolated in tests)."""
     return load_global_config(global_config_dir()).agents
 
 
 def write_rule(
     path: Path,
     rule_id: str,
+    *,
     message: str = "Avoid this.",
     tags: list[str] | None = None,
 ) -> Path:
@@ -99,9 +99,7 @@ def write_rule(
     return path
 
 
-def write_global_rule(
-    home: Path, relpath: str, rule_id: str, tags: list[str] | None = None
-) -> Path:
+def write_global_rule(home: Path, relpath: str, *, rule_id: str, tags: list[str] | None = None) -> Path:
     path = home / "xdg" / "byor" / "rules" / relpath
     return write_rule(path, rule_id, tags=tags)
 
@@ -109,6 +107,7 @@ def write_global_rule(
 def write_package_rule(
     home: Path,
     package: str,
+    *,
     relpath: str,
     rule_id: str,
     tags: list[str] | None = None,
@@ -118,16 +117,12 @@ def write_package_rule(
 
 
 def install_package(repo: Path, name: str) -> None:
-    """Opt `repo` into a global package by recording it in local config."""
     local = load_local_config(repo)
     local.packages.append(name)
     save_local_config(repo, local)
 
 
-def write_global_check(
-    name: str, run: str, extensions: tuple[str, ...] = ("py",)
-) -> None:
-    """Append a check to the global config (the personal, machine-wide checks)."""
+def write_global_check(name: str, run: str, *, extensions: tuple[str, ...] = ("py",)) -> None:
     config_dir = global_config_dir()
     config = load_global_config(config_dir)
     config.checks.append(CheckDef(name=name, extensions=list(extensions), run=run))
@@ -137,24 +132,18 @@ def write_global_check(
 def write_package_check(
     home: Path,
     package: str,
+    *,
     name: str,
     run: str,
     extensions: tuple[str, ...] = ("py",),
 ) -> Path:
-    """Write a one-check checks.yml into a global package bundle."""
     path = home / "xdg" / "byor" / "packages" / package / "checks.yml"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        "checks:\n"
-        f"  - name: {name}\n"
-        f"    extensions: [{', '.join(extensions)}]\n"
-        f"    run: {run}\n"
-    )
+    path.write_text(f"checks:\n  - name: {name}\n    extensions: [{', '.join(extensions)}]\n    run: {run}\n")
     return path
 
 
 def uninstall_package(repo: Path, name: str) -> None:
-    """Drop a repo's opt-in to a global package."""
     local = load_local_config(repo)
     if name in local.packages:
         local.packages.remove(name)
@@ -162,30 +151,21 @@ def uninstall_package(repo: Path, name: str) -> None:
 
 
 def mirror(repo: Path) -> Path:
-    """The generated copy of global rules that ast-grep reads in this repo."""
     return repo / ".byor" / "rules" / "personal" / "global"
 
 
 def package_mirror(repo: Path) -> Path:
-    """The generated copy of installed-package rules ast-grep reads in this repo."""
     return repo / ".byor" / "rules" / "personal" / "packages"
 
 
 def make_editor(directory: Path, content: str) -> str:
-    """An $EDITOR value whose command replaces the edited file with `content`.
-
-    Deliberately multi-word so it exercises the shlex.split contract.
-    """
     source = directory / "editor-replacement.yml"
     source.write_text(content)
-    copy_into_edited_file = (
-        "import shutil, sys; shutil.copyfile(sys.argv[1], sys.argv[2])"
-    )
+    copy_into_edited_file = "import shutil, sys; shutil.copyfile(sys.argv[1], sys.argv[2])"
     return shlex.join([sys.executable, "-c", copy_into_edited_file, str(source)])
 
 
 def substituting_editor(old: str, new: str) -> str:
-    """An $EDITOR whose command replaces `old` with `new` in the edited file."""
     substitute = (
         "import pathlib, sys; path = pathlib.Path(sys.argv[1]); "
         f"path.write_text(path.read_text().replace({old!r}, {new!r}))"
@@ -194,6 +174,5 @@ def substituting_editor(old: str, new: str) -> str:
 
 
 def failing_editor(status: int) -> str:
-    """An $EDITOR that exits nonzero without touching the file."""
     script = f"raise SystemExit({status})"
     return shlex.join([sys.executable, "-c", script])

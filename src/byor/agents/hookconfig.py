@@ -1,27 +1,34 @@
-"""Per-harness post-edit hook configs, one converge-only-ours pipeline.
+"""Manage global hook configuration files for AI agents.
 
-Every harness stores its hooks as a JSON list of entries — at a harness-specific
-key path inside a harness-specific file — where each entry carries a shell
-command. byor owns the entries whose command runs `byor agent-check`, and
-converges them to the current command without touching entries a user added.
-
-Registration is global: byor writes the hook once into the harness's home
-config (`~/.claude/settings.json`, `~/.codex/hooks.json`, ...) so it fires in
-every repo. `HookSpec` captures the edges that differ per harness (file
-location, key path, entry shape, and command string); `install_hook`/
-`uninstall_hook` drive the shared logic.
+BYOR installs exact hook entries into each harness configuration and later verifies that those
+entries still match the current package. This module owns that file shape so install, doctor, and
+self-heal agree on one contract.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from byor.agents.harness import Harness, JsonValue
 from byor.errors import ConfigError
 from byor.io.fsio import write_text_atomic
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from byor.agents.harness import Harness, JsonValue
+
+__all__ = (
+    "HookSpec",
+    "global_hook_dir",
+    "hook_command",
+    "hook_installed",
+    "hook_problem",
+    "install_hook",
+    "uninstall_hook",
+)
 
 # agent-check fails open and exits 0 for every harness except claude-code (which
 # reads exit 2 + stderr), so no shell `|| true` guard is needed on the command.
@@ -30,8 +37,6 @@ BYOR_COMMAND_SIGNATURE = "byor agent-check --stdin-hook"
 
 @dataclass(frozen=True)
 class HookSpec:
-    """The per-harness edges of the shared converge pipeline."""
-
     harness: Harness
     global_relpath: str
     """Path relative to the harness's global config dir."""
@@ -82,27 +87,25 @@ HOOK_SPECS: dict[Harness, HookSpec] = {
 
 
 def install_hook(harness: Harness) -> list[str]:
-    """Converge the harness's byor hook entry into its global config."""
     spec = HOOK_SPECS[harness]
     path = _config_path(spec)
     relpath = _display_relpath(spec)
     if spec.owns_file:
-        return _install_owned_hook(spec, path, relpath)
+        return _install_owned_hook(spec, path, relpath=relpath)
     config = _load_config(path, relpath)
-    entries = _entries(config, spec, relpath)
+    entries = _entries(config, spec, relpath=relpath)
     current = _byor_entry(spec)
     if current in entries:
         return []
     kept = [entry for entry in entries if not _is_byor_entry(entry)]
     if any(_contains_byor_command(entry) for entry in kept):
         return []
-    _set_entries(config, spec, [*kept, current])
+    _set_entries(config, spec, entries=[*kept, current])
     _save_config(path, config)
     return [f"Installed a {harness} post-edit hook in {relpath}"]
 
 
-def _install_owned_hook(spec: HookSpec, path: Path, relpath: str) -> list[str]:
-    """Write a byor-dedicated hook file wholesale; its name (`byor.json`) is ours."""
+def _install_owned_hook(spec: HookSpec, path: Path, *, relpath: str) -> list[str]:
     desired = _owned_config(spec)
     if path.is_file() and _load_config(path, relpath) == desired:
         return []
@@ -112,12 +115,11 @@ def _install_owned_hook(spec: HookSpec, path: Path, relpath: str) -> list[str]:
 
 def _owned_config(spec: HookSpec) -> dict[str, JsonValue]:
     config: dict[str, JsonValue] = dict(spec.root_fields)
-    _set_entries(config, spec, [_byor_entry(spec)])
+    _set_entries(config, spec, entries=[_byor_entry(spec)])
     return config
 
 
 def uninstall_hook(harness: Harness) -> list[str]:
-    """Drop byor-owned entries from the global config; user entries stay."""
     spec = HOOK_SPECS[harness]
     path = _config_path(spec)
     relpath = _display_relpath(spec)
@@ -129,11 +131,11 @@ def uninstall_hook(harness: Harness) -> list[str]:
         path.unlink()
         return [f"Removed the {harness} post-edit hook from {relpath}"]
     config = _load_config(path, relpath)
-    entries = _entries(config, spec, relpath)
+    entries = _entries(config, spec, relpath=relpath)
     kept = [entry for entry in entries if not _is_byor_entry(entry)]
     if len(kept) == len(entries):
         return []
-    _set_entries(config, spec, kept)
+    _set_entries(config, spec, entries=kept)
     if config:
         _save_config(path, config)
     else:
@@ -142,29 +144,30 @@ def uninstall_hook(harness: Harness) -> list[str]:
 
 
 def hook_installed(harness: Harness) -> bool:
-    """Whether a byor-owned entry is present in the harness's global config."""
+    return hook_problem(harness) is None
+
+
+def hook_problem(harness: Harness) -> str | None:
     spec = HOOK_SPECS[harness]
     path = _config_path(spec)
     if not path.is_file():
-        return False
+        return f"the {harness} hook is not installed"
     relpath = _display_relpath(spec)
-    entries = _entries(_load_config(path, relpath), spec, relpath)
-    return any(_contains_byor_command(entry) for entry in entries)
+    entries = _entries(_load_config(path, relpath), spec, relpath=relpath)
+    if _byor_entry(spec) in entries:
+        return None
+    if any(_contains_byor_command(entry) for entry in entries):
+        return f"the {harness} hook is out of date"
+    return f"the {harness} hook is not installed"
 
 
 def hook_command(harness: Harness) -> str:
-    """The shell command an entry runs.
-
-    Global hooks are personal, so there is no teammate guard; claude-code reads
-    exit 2 + stderr (hence the `>&2` redirect), the others read JSON on stdout.
-    """
     spec = HOOK_SPECS[harness]
     base = f"{BYOR_COMMAND_SIGNATURE} {harness}"
     return f"{base} >&2" if spec.stderr_feedback else base
 
 
 def global_hook_dir(harness: Harness, home: Path) -> Path:
-    """The harness's global config directory under the user's home."""
     return home / _GLOBAL_DIRS[harness]
 
 
@@ -186,9 +189,7 @@ def _display_relpath(spec: HookSpec) -> str:
 def _byor_entry(spec: HookSpec) -> dict[str, JsonValue]:
     command = hook_command(spec.harness)
     if spec.nests_command:
-        entry: dict[str, JsonValue] = {
-            "hooks": [{"type": "command", "command": command}]
-        }
+        entry: dict[str, JsonValue] = {"hooks": [{"type": "command", "command": command}]}
     elif spec.typed_entry:
         entry = {"type": "command", "command": command}
     else:
@@ -204,9 +205,11 @@ def _load_config(path: Path, relpath: str) -> dict[str, JsonValue]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
-        raise ConfigError(f"{relpath} is not valid JSON: {error}") from error
+        msg = f"{relpath} is not valid JSON: {error}"
+        raise ConfigError(msg) from error
     if not isinstance(data, dict):
-        raise ConfigError(f"{relpath}: expected a JSON object at the top level")
+        msg = f"{relpath}: expected a JSON object at the top level"
+        raise ConfigError(msg)
     return data
 
 
@@ -215,26 +218,23 @@ def _save_config(path: Path, config: dict[str, JsonValue]) -> None:
     write_text_atomic(path, content)
 
 
-def _entries(
-    config: dict[str, JsonValue], spec: HookSpec, relpath: str
-) -> list[JsonValue]:
+def _entries(config: dict[str, JsonValue], spec: HookSpec, *, relpath: str) -> list[JsonValue]:
     node: JsonValue = config
     for key in spec.key_path:
         if not isinstance(node, dict):
-            raise ConfigError(f"{relpath}: expected '{key}' under a JSON object")
+            msg = f"{relpath}: expected '{key}' under a JSON object"
+            raise ConfigError(msg)
         child = node.get(key)
         if child is None:
             return []
         node = child
     if not isinstance(node, list):
-        raise ConfigError(f"{relpath}: expected {'.'.join(spec.key_path)} to be a list")
+        msg = f"{relpath}: expected {'.'.join(spec.key_path)} to be a list"
+        raise ConfigError(msg)
     return node
 
 
-def _set_entries(
-    config: dict[str, JsonValue], spec: HookSpec, entries: list[JsonValue]
-) -> None:
-    """Write entries at the key path, pruning empty containers it leaves behind."""
+def _set_entries(config: dict[str, JsonValue], spec: HookSpec, *, entries: list[JsonValue]) -> None:
     *parents, leaf = spec.key_path
     node = config
     for key in parents:
@@ -269,11 +269,6 @@ def _descend(config: dict[str, JsonValue], keys: tuple[str, ...]) -> JsonValue:
 
 
 def _is_byor_entry(entry: JsonValue) -> bool:
-    """True when every command in the entry is ours — the shape we install.
-
-    An entry a user mixed their own commands into is user-edited and stays,
-    matching the managed-marker rule for files.
-    """
     commands = _entry_commands(entry)
     return bool(commands) and all(_is_byor_command(command) for command in commands)
 
@@ -283,7 +278,6 @@ def _contains_byor_command(entry: JsonValue) -> bool:
 
 
 def _entry_commands(entry: JsonValue) -> Sequence[JsonValue]:
-    """The command strings in an entry, across the nested and flat shapes."""
     if not isinstance(entry, dict):
         return []
     nested = entry.get("hooks")

@@ -1,30 +1,33 @@
+# Managed by BYOR. Manual edits may be overwritten.
 repos:
   - repo: local
     hooks:
-      - id: ruff-check
-        name: ruff check
-        entry: uv run ruff check --fix
-        language: system
-        types: [python]
-      - id: ruff-format
-        name: ruff format
-        entry: uv run ruff format
-        language: system
-        types: [python]
-      - id: ty
-        name: ty check
-        entry: uv run ty check
-        language: system
-        types: [python]
-        pass_filenames: false
-      - id: ast-grep
+      - id: byor-ast-grep
         name: ast-grep scan
-        entry: uv run ast-grep scan --error
+        entry: uvx --from ast-grep-cli ast-grep scan --error
         language: system
-        pass_filenames: false
-      - id: pytest
-        name: pytest
-        entry: uv run pytest
+      - id: byor-ruff
+        name: ruff
+        entry: uv run .byor/scripts/ruff.sh
         language: system
-        types: [python]
-        pass_filenames: false
+        files: \.(py|pyi)$
+      - id: byor-ty
+        name: ty
+        entry: uv run ty check --output-format concise --no-progress --color never --error all
+        language: system
+        files: \.(py|pyi)$
+      - id: byor-no-suppression-comments
+        name: no-suppression-comments
+        entry: uv run .byor/scripts/no-suppression-comments.py
+        language: system
+        files: \.(py|pyi)$
+      - id: byor-module-contract
+        name: module-contract
+        entry: uv run .byor/scripts/module-contract.py
+        language: system
+        files: \.(py|pyi)$
+      - id: byor-no-thin-docstrings
+        name: no-thin-docstrings
+        entry: uv run .byor/scripts/no-thin-docstrings.py
+        language: system
+        files: \.(py|pyi)$

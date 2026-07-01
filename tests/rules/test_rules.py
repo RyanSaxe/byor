@@ -1,10 +1,17 @@
+"""Exercise ast-grep rule loading and validation.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
+
 from pathlib import Path
 
 import pytest
 from support import write_rule
 
 from byor.config import RepoPaths
-from byor.errors import DuplicateRuleId, RuleValidationError
+from byor.errors import DuplicateRuleIdError, RuleValidationError
 from byor.rules.rules import (
     ByorMetadata,
     Rule,
@@ -93,7 +100,6 @@ def test_load_rule_names_file_on_invalid_yaml(tmp_path: Path) -> None:
 
 
 def test_load_rule_degrades_malformed_metadata_to_defaults(tmp_path: Path) -> None:
-    """ast-grep ignores metadata, so a metadata typo must not break loading."""
     path = tmp_path / "odd-metadata.yml"
     path.write_text(
         "id: odd-metadata\n"
@@ -140,8 +146,8 @@ def test_duplicate_id_within_project_rules_is_an_error() -> None:
         Rule("no-cast", "Python", "msg", Path("b.yml"), ""),
     ]
 
-    with pytest.raises(DuplicateRuleId, match=r"(?s)project rules.*a\.yml.*b\.yml"):
-        check_id_conflicts(duplicated, [], [])
+    with pytest.raises(DuplicateRuleIdError, match=r"(?s)project rules.*a\.yml.*b\.yml"):
+        check_id_conflicts(duplicated, [], canonical_global=[])
 
 
 def test_duplicate_id_within_local_rules_is_an_error() -> None:
@@ -150,8 +156,8 @@ def test_duplicate_id_within_local_rules_is_an_error() -> None:
         Rule("no-cast", "Python", "msg", Path("b.yml"), ""),
     ]
 
-    with pytest.raises(DuplicateRuleId, match="local personal rules"):
-        check_id_conflicts([], duplicated, [])
+    with pytest.raises(DuplicateRuleIdError, match="local personal rules"):
+        check_id_conflicts([], duplicated, canonical_global=[])
 
 
 def test_duplicate_id_within_canonical_global_rules_is_an_error() -> None:
@@ -160,30 +166,30 @@ def test_duplicate_id_within_canonical_global_rules_is_an_error() -> None:
         Rule("no-cast", "Python", "msg", Path("b.yml"), ""),
     ]
 
-    with pytest.raises(DuplicateRuleId, match="global rules"):
-        check_id_conflicts([], [], duplicated)
+    with pytest.raises(DuplicateRuleIdError, match="global rules"):
+        check_id_conflicts([], [], canonical_global=duplicated)
 
 
 def test_project_id_matching_global_id_is_an_override_not_an_error() -> None:
     project = Rule("no-cast", "Python", "msg", Path("project.yml"), "")
     global_rule = Rule("no-cast", "Python", "msg", Path("global.yml"), "")
 
-    assert check_id_conflicts([project], [], [global_rule]) is None
+    assert check_id_conflicts([project], [], canonical_global=[global_rule]) is None
 
 
 def test_local_id_matching_global_id_is_an_override_not_an_error() -> None:
     local = Rule("no-cast", "Python", "msg", Path("local.yml"), "")
     global_rule = Rule("no-cast", "Python", "msg", Path("global.yml"), "")
 
-    assert check_id_conflicts([], [local], [global_rule]) is None
+    assert check_id_conflicts([], [local], canonical_global=[global_rule]) is None
 
 
 def test_project_id_matching_local_id_is_an_error() -> None:
     project = Rule("no-cast", "Python", "msg", Path("project.yml"), "")
     local = Rule("no-cast", "Python", "msg", Path("local.yml"), "")
 
-    with pytest.raises(DuplicateRuleId, match="requires a different ID"):
-        check_id_conflicts([project], [local], [])
+    with pytest.raises(DuplicateRuleIdError, match="requires a different ID"):
+        check_id_conflicts([project], [local], canonical_global=[])
 
 
 def test_scope_rules_dirs_map_to_repo_paths_and_canonical_global_root() -> None:
@@ -191,7 +197,12 @@ def test_scope_rules_dirs_map_to_repo_paths_and_canonical_global_root() -> None:
     global_root = Path("/home/user/.config/byor/rules")
     paths = RepoPaths()
 
-    args = (repo_root, paths, global_root)
-    assert scope_rules_dir("project", *args) == repo_root / ".byor/rules/project"
-    assert scope_rules_dir("local", *args) == repo_root / ".byor/rules/personal/local"
-    assert scope_rules_dir("global", *args) == global_root
+    assert (
+        scope_rules_dir("project", repo_root, paths=paths, global_rules_root=global_root)
+        == repo_root / ".byor/rules/project"
+    )
+    assert (
+        scope_rules_dir("local", repo_root, paths=paths, global_rules_root=global_root)
+        == repo_root / ".byor/rules/personal/local"
+    )
+    assert scope_rules_dir("global", repo_root, paths=paths, global_rules_root=global_root) == global_root

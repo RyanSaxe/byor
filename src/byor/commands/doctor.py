@@ -1,13 +1,18 @@
-"""`byor doctor`: actionable installation health checks."""
+"""Report actionable installation health for BYOR.
+
+The doctor command checks both machine-level integration state and repository state, then renders a
+compact pass/fail report for humans or JSON callers. The checks stay deliberately small so init,
+sync, and install flows can reuse the same health model after they mutate BYOR-managed files.
+"""
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from byor.agents.install import agent_file_problems
 from byor.config import (
@@ -24,12 +29,13 @@ from byor.config import (
     rule_dir_relpaths,
 )
 from byor.errors import (
-    AstGrepNotFound,
+    AstGrepNotFoundError,
     ConfigError,
-    DuplicateRuleId,
-    RepoNotInitialized,
+    DuplicateRuleIdError,
+    RepoNotInitializedError,
     RuleValidationError,
 )
+from byor.io.output import write_line, write_lines
 from byor.io.paths import global_config_dir, home_sgconfig_path, resolve_repo_root
 from byor.io.yamlio import load_yaml_mapping
 from byor.rules.rules import load_rules
@@ -43,11 +49,20 @@ from byor.scaffold.ignore import rule_visibility_ok
 from byor.scan.astgrep import ast_grep_version, resolve_ast_grep
 from byor.scan.checks import effective_checks
 
+if TYPE_CHECKING:
+    import argparse
 
-@dataclass
+__all__ = (
+    "Check",
+    "collect_checks",
+    "quick_doctor_problems",
+    "render_checks",
+    "run_doctor",
+)
+
+
+@dataclass(kw_only=True)
 class Check:
-    """One doctor check, matching the JSON output shape."""
-
     id: str
     ok: bool
     message: str
@@ -59,29 +74,34 @@ def run_doctor(args: argparse.Namespace) -> int:
     ok = all(check.ok for check in checks)
     if args.json:
         payload = {"ok": ok, "checks": [asdict(check) for check in checks]}
-        print(json.dumps(payload, indent=2))
+        write_line(json.dumps(payload, indent=2))
     else:
-        for line in render_checks(checks):
-            print(line)
+        write_lines(render_checks(checks))
     return 0 if ok else 1
 
 
-def collect_checks(repo_root: Path, config_dir: Path, quick: bool) -> list[Check]:
-    """Run the health checks: a global (machine-level) section always, plus a
-    repo section when run inside a byor repo.
+def collect_checks(repo_root: Path, config_dir: Path, *, quick: bool) -> list[Check]:
+    """Collect global and repository health checks.
 
+    A global machine-level section always runs, plus a repo section when run
+    inside a byor repo.
     `quick` skips recursive rule validation (rule parsing, ID uniqueness, sync
     staleness) but keeps the cheap checks.
     """
     global_config = load_global_config(config_dir)
-    checks = _global_checks(config_dir, global_config, quick)
-    checks.extend(_repo_checks(repo_root, config_dir, global_config, quick))
+    checks = _global_checks(config_dir, global_config, quick=quick)
+    checks.extend(
+        _repo_checks(
+            repo_root,
+            config_dir,
+            global_config=global_config,
+            quick=quick,
+        )
+    )
     return checks
 
 
-def _global_checks(
-    config_dir: Path, global_config: GlobalConfig, quick: bool
-) -> list[Check]:
+def _global_checks(config_dir: Path, global_config: GlobalConfig, *, quick: bool) -> list[Check]:
     checks = [
         _ast_grep_check(global_config),
         _home_sgconfig_check(config_dir, global_config),
@@ -94,11 +114,19 @@ def _global_checks(
 
 
 def _repo_checks(
-    repo_root: Path, config_dir: Path, global_config: GlobalConfig, quick: bool
+    repo_root: Path,
+    config_dir: Path,
+    *,
+    global_config: GlobalConfig,
+    quick: bool,
 ) -> list[Check]:
     if not repo_config_path(repo_root).is_file():
         return [
-            Check("repo", True, "not a byor repo; run `byor init` to add project rules")
+            Check(
+                id="repo",
+                ok=True,
+                message="not a byor repo; run `byor init` to add project rules",
+            )
         ]
     repo_config, repo_check = _repo_config_check(repo_root)
     checks = [
@@ -108,17 +136,14 @@ def _repo_checks(
         _rule_visibility_check(repo_root, repo_config.paths),
     ]
     if not quick and repo_check.ok:
-        checks.extend(_rule_checks(repo_root, repo_config.paths, config_dir))
-    extra = _extra_checks_check(repo_root, repo_config, global_config)
+        checks.extend(_rule_checks(repo_root, repo_config.paths, config_dir=config_dir))
+    extra = _extra_checks_check(repo_root, repo_config, global_config=global_config)
     if extra is not None:
         checks.append(extra)
     return checks
 
 
 def quick_doctor_problems(repo_root: Path, config_dir: Path) -> list[str]:
-    """Failing `doctor --quick` checks as printable lines, for the post-action
-    step that init, add, edit, and promote share.
-    """
     return [
         f"doctor: {check.id}: {check.message}"
         for check in collect_checks(repo_root, config_dir, quick=True)
@@ -128,112 +153,123 @@ def quick_doctor_problems(repo_root: Path, config_dir: Path) -> list[str]:
 
 def render_checks(checks: list[Check]) -> list[str]:
     width = max(len(check.id) for check in checks)
-    return [
-        f"{'ok' if check.ok else 'FAIL':<4}  {check.id:<{width}}  {check.message}"
-        for check in checks
-    ]
+    return [f"{'ok' if check.ok else 'FAIL':<4}  {check.id:<{width}}  {check.message}" for check in checks]
 
 
 def _ast_grep_check(global_config: GlobalConfig) -> Check:
     try:
         version = ast_grep_version(resolve_ast_grep(global_config.ast_grep_command))
-    except AstGrepNotFound as error:
-        return Check("ast_grep_found", False, str(error))
-    return Check("ast_grep_found", True, f"ast-grep {version}")
+    except AstGrepNotFoundError as error:
+        return Check(id="ast_grep_found", ok=False, message=str(error))
+    return Check(id="ast_grep_found", ok=True, message=f"ast-grep {version}")
 
 
 def _home_sgconfig_check(config_dir: Path, global_config: GlobalConfig) -> Check:
-    """`~/sgconfig.yml` is what applies global rules in repos with no `.byor/`."""
     path = home_sgconfig_path()
     if not path.is_file():
         return Check(
-            "home_sgconfig",
-            True,
-            "global ast-grep config not set up; run `byor install`",
+            id="home_sgconfig",
+            ok=True,
+            message="global ast-grep config not set up; run `byor install`",
         )
     try:
         data = load_yaml_mapping(path)
     except ConfigError as error:
-        return Check("home_sgconfig", False, str(error))
+        return Check(id="home_sgconfig", ok=False, message=str(error))
     rules_dir = global_rules_dir(config_dir, global_config)
     expected = Path(os.path.relpath(rules_dir, Path.home())).as_posix()
     rule_dirs = data.get("ruleDirs")
     if not isinstance(rule_dirs, list) or expected not in rule_dirs:
         return Check(
-            "home_sgconfig",
-            False,
-            f"~/sgconfig.yml does not list {expected}; run `byor install`",
+            id="home_sgconfig",
+            ok=False,
+            message=f"~/sgconfig.yml does not list {expected}; run `byor install`",
         )
-    return Check("home_sgconfig", True, "~/sgconfig.yml applies your global rules")
+    return Check(
+        id="home_sgconfig",
+        ok=True,
+        message="~/sgconfig.yml applies your global rules",
+    )
 
 
 def _global_rules_check(config_dir: Path, global_config: GlobalConfig) -> Check:
-    """The canonical global rules must parse with unique IDs."""
     rules_dir = global_rules_dir(config_dir, global_config)
     try:
         rules = load_rules(rules_dir)
     except (RuleValidationError, ConfigError) as error:
-        return Check("global_rules", False, str(error))
-    duplicates = sorted(
-        rule_id
-        for rule_id, count in Counter(rule.id for rule in rules).items()
-        if count > 1
-    )
+        return Check(id="global_rules", ok=False, message=str(error))
+    duplicates = sorted(rule_id for rule_id, count in Counter(rule.id for rule in rules).items() if count > 1)
     if duplicates:
         return Check(
-            "global_rules", False, f"duplicate global rule IDs: {', '.join(duplicates)}"
+            id="global_rules",
+            ok=False,
+            message=f"duplicate global rule IDs: {', '.join(duplicates)}",
         )
     noun = "rule" if len(rules) == 1 else "rules"
-    return Check("global_rules", True, f"{len(rules)} global {noun} parse")
+    return Check(
+        id="global_rules",
+        ok=True,
+        message=f"{len(rules)} global {noun} parse",
+    )
 
 
 def _repo_config_check(repo_root: Path) -> tuple[RepoConfig, Check]:
-    """Load the repo config; later checks fall back to defaults when it fails."""
     try:
         config = load_repo_config(repo_root)
-    except (RepoNotInitialized, ConfigError) as error:
-        return RepoConfig(), Check("repo_config", False, str(error))
-    return config, Check("repo_config", True, ".byor/config.yml is valid")
+    except (RepoNotInitializedError, ConfigError) as error:
+        return RepoConfig(), Check(id="repo_config", ok=False, message=str(error))
+    return config, Check(
+        id="repo_config",
+        ok=True,
+        message=".byor/config.yml is valid",
+    )
 
 
 def _sgconfig_check(repo_root: Path, paths: RepoPaths) -> Check:
     sgconfig = repo_root / paths.sgconfig
     if not sgconfig.is_file():
-        return Check("sgconfig", False, f"{paths.sgconfig} is missing; run `byor init`")
+        return Check(
+            id="sgconfig",
+            ok=False,
+            message=f"{paths.sgconfig} is missing; run `byor init`",
+        )
     try:
         data = load_yaml_mapping(sgconfig)
     except ConfigError as error:
-        return Check("sgconfig", False, str(error))
+        return Check(id="sgconfig", ok=False, message=str(error))
     rule_dirs = data.get("ruleDirs")
     if not isinstance(rule_dirs, list):
         return Check(
-            "sgconfig", False, f"{paths.sgconfig}: expected ruleDirs to be a list"
+            id="sgconfig",
+            ok=False,
+            message=f"{paths.sgconfig}: expected ruleDirs to be a list",
         )
     missing = [d for d in rule_dir_relpaths(paths) if d not in rule_dirs]
     if missing:
         return Check(
-            "sgconfig",
-            False,
-            f"{paths.sgconfig} ruleDirs is missing: {', '.join(missing)}",
+            id="sgconfig",
+            ok=False,
+            message=f"{paths.sgconfig} ruleDirs is missing: {', '.join(missing)}",
         )
-    return Check("sgconfig", True, f"{paths.sgconfig} lists all BYOR rule dirs")
+    return Check(
+        id="sgconfig",
+        ok=True,
+        message=f"{paths.sgconfig} lists all BYOR rule dirs",
+    )
 
 
 def _rule_dirs_check(repo_root: Path, paths: RepoPaths) -> Check:
     missing = [d for d in rule_dir_relpaths(paths) if not (repo_root / d).is_dir()]
     if missing:
         return Check(
-            "rule_dirs",
-            False,
-            f"missing rule directories: {', '.join(missing)}; run `byor init`",
+            id="rule_dirs",
+            ok=False,
+            message=f"missing rule directories: {', '.join(missing)}; run `byor init`",
         )
-    return Check("rule_dirs", True, "all rule directories exist")
+    return Check(id="rule_dirs", ok=True, message="all rule directories exist")
 
 
 def _rule_visibility_check(repo_root: Path, paths: RepoPaths) -> Check:
-    """Personal rules are git-ignored; without the .ignore negation files,
-    ast-grep's gitignore-respecting rule discovery would never load them.
-    """
     personal_dirs = (
         paths.personal_local_rules,
         paths.personal_global_rules,
@@ -242,48 +278,61 @@ def _rule_visibility_check(repo_root: Path, paths: RepoPaths) -> Check:
     broken = [d for d in personal_dirs if not rule_visibility_ok(repo_root / d)]
     if broken:
         return Check(
-            "rules_visible",
-            False,
-            f"{', '.join(broken)} lacks the .ignore negations ast-grep needs"
-            " to load git-ignored rules; run `byor init`",
+            id="rules_visible",
+            ok=False,
+            message=(
+                f"{', '.join(broken)} lacks the .ignore negations ast-grep needs"
+                " to load git-ignored rules; run `byor init`"
+            ),
         )
     return Check(
-        "rules_visible", True, "personal rule directories are visible to ast-grep"
+        id="rules_visible",
+        ok=True,
+        message="personal rule directories are visible to ast-grep",
     )
 
 
-def _rule_checks(repo_root: Path, paths: RepoPaths, config_dir: Path) -> list[Check]:
-    """Recursive rule validation: parsing, ID uniqueness, sync staleness."""
+def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path) -> list[Check]:
     try:
         project = load_rules(repo_root / paths.project_rules)
         local = load_rules(repo_root / paths.personal_local_rules)
         canonical = load_canonical_rules(config_dir)
     except (RuleValidationError, ConfigError) as error:
-        return [Check("rules_valid", False, str(error))]
-    checks = [Check("rules_valid", True, "all rule files parse with required fields")]
+        return [Check(id="rules_valid", ok=False, message=str(error))]
+    checks = [
+        Check(
+            id="rules_valid",
+            ok=True,
+            message="all rule files parse with required fields",
+        )
+    ]
     try:
         local_config = load_local_config(repo_root)
         plan = compute_sync_plan(
             project,
             local,
-            local_config.excluded_rule_ids,
-            local_config.excluded_rule_tags,
-            canonical,
+            excluded_rule_ids=local_config.excluded_rule_ids,
+            excluded_tags=local_config.excluded_rule_tags,
+            canonical=canonical,
         )
-    except DuplicateRuleId as error:
-        checks.append(Check("rule_ids_unique", False, str(error)))
+    except DuplicateRuleIdError as error:
+        checks.append(Check(id="rule_ids_unique", ok=False, message=str(error)))
         return checks
-    checks.append(Check("rule_ids_unique", True, "effective rule IDs are unique"))
-    packages_plan, packages_dir = repo_packages_plan(repo_root, canonical)
-    global_stale = (
-        mirror_contents(repo_root / paths.personal_global_rules) != plan.desired
+    checks.append(
+        Check(
+            id="rule_ids_unique",
+            ok=True,
+            message="effective rule IDs are unique",
+        )
     )
+    packages_plan, packages_dir = repo_packages_plan(repo_root, canonical)
+    global_stale = mirror_contents(repo_root / paths.personal_global_rules) != plan.desired
     packages_stale = mirror_contents(packages_dir) != packages_plan.desired
     if global_stale or packages_stale:
         message = "rule copies are stale; run `byor sync`"
-        checks.append(Check("sync_fresh", False, message))
+        checks.append(Check(id="sync_fresh", ok=False, message=message))
     else:
-        checks.append(Check("sync_fresh", True, "rule copies are in sync"))
+        checks.append(Check(id="sync_fresh", ok=True, message="rule copies are in sync"))
     return checks
 
 
@@ -291,45 +340,52 @@ def _registry_check(config_dir: Path, global_config: GlobalConfig) -> Check:
     repos = load_repo_registry(repo_registry_path(config_dir, global_config))
     problems = [f"{repo} no longer exists" for repo in repos if not repo.is_dir()]
     tallies = Counter(repo.resolve() for repo in repos)
-    problems.extend(
-        f"duplicate registry entries for {repo}"
-        for repo, count in sorted(tallies.items())
-        if count > 1
-    )
+    problems.extend(f"duplicate registry entries for {repo}" for repo, count in sorted(tallies.items()) if count > 1)
     if problems:
-        return Check("registered_repos", False, "; ".join(problems))
-    return Check("registered_repos", True, "all registered repository paths exist")
+        return Check(
+            id="registered_repos",
+            ok=False,
+            message="; ".join(problems),
+        )
+    return Check(
+        id="registered_repos",
+        ok=True,
+        message="all registered repository paths exist",
+    )
 
 
 def _extra_checks_check(
-    repo_root: Path, repo_config: RepoConfig, global_config: GlobalConfig
+    repo_root: Path,
+    repo_config: RepoConfig,
+    *,
+    global_config: GlobalConfig,
 ) -> Check | None:
-    """List the extra checks agent-check would run, with origin.
-
-    Informational (always ok); absent when no check is configured so the
-    default doctor output is unchanged.
-    """
     if not repo_config.checks and not global_config.checks:
         return None
-    effective = effective_checks(
-        repo_config, global_config, load_local_config(repo_root)
-    )
+    effective = effective_checks(repo_config, global_config, local_config=load_local_config(repo_root))
     if not effective:
-        return Check("extra_checks", True, "all configured checks are excluded")
+        return Check(
+            id="extra_checks",
+            ok=True,
+            message="all configured checks are excluded",
+        )
     listed = ", ".join(f"{check.name} ({check.origin})" for check in effective)
-    return Check("extra_checks", True, f"checks: {listed}")
+    return Check(id="extra_checks", ok=True, message=f"checks: {listed}")
 
 
 def _agent_files_check(global_config: GlobalConfig) -> Check:
-    """Each globally-registered agent needs its managed files (skill, hook, plugin)."""
     if not global_config.agents:
-        return Check("agent_files", True, "no AI agents configured")
+        return Check(id="agent_files", ok=True, message="no AI agents configured")
     problems = agent_file_problems(global_config.agents)
     if problems:
         return Check(
-            "agent_files",
-            False,
-            f"{'; '.join(problems)}; run `byor install`",
+            id="agent_files",
+            ok=False,
+            message=f"{'; '.join(problems)}; run `byor install`",
         )
     agents = ", ".join(global_config.agents)
-    return Check("agent_files", True, f"agent integrations installed for: {agents}")
+    return Check(
+        id="agent_files",
+        ok=True,
+        message=f"agent integrations installed for: {agents}",
+    )

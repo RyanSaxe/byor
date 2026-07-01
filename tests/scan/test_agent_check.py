@@ -1,4 +1,9 @@
-"""`byor agent-check` against the real ast-grep binary."""
+"""Exercise agent-facing diagnostic rendering.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
 
 import io
 import json
@@ -66,7 +71,6 @@ rule:
 
 @pytest.fixture
 def check_repo(home: Path, capsys: pytest.CaptureFixture[str]) -> Path:
-    """An initialized repo with both rules, init output already flushed."""
     repo = make_repo(home)
     project = repo / ".byor" / "rules" / "project"
     (project / "no-python-cast.yml").write_text(CAST_RULE)
@@ -79,13 +83,13 @@ def agent_check_args(repo: Path, *extra: str) -> list[str]:
     return ["agent-check", "--repo", str(repo), *extra]
 
 
-def add_repo_check(repo: Path, name: str, extensions: list[str], run: str) -> None:
+def add_repo_check(repo: Path, name: str, *, extensions: list[str], run: str) -> None:
     config = load_repo_config(repo)
     config.checks.append(CheckDef(name, extensions, run))
     save_repo_config(repo, config)
 
 
-def add_global_check(home: Path, name: str, extensions: list[str], run: str) -> None:
+def add_global_check(home: Path, name: str, *, extensions: list[str], run: str) -> None:
     config_dir = home / "xdg" / "byor"
     config = load_global_config(config_dir)
     config.checks.append(CheckDef(name, extensions, run))
@@ -93,15 +97,12 @@ def add_global_check(home: Path, name: str, extensions: list[str], run: str) -> 
 
 
 def failing_check_command(repo: Path, message: str) -> str:
-    """A check command that prints `message` and exits nonzero."""
     script = repo / "fail_check.py"
     script.write_text(f"import sys\nprint({message!r})\nsys.exit(1)\n")
     return shlex.join([sys.executable, str(script)])
 
 
-def test_clean_files_exit_zero_with_no_output(
-    check_repo: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_clean_files_exit_zero_with_no_output(check_repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     source = check_repo / "src.py"
     source.write_text("x = 1\n")
 
@@ -110,9 +111,7 @@ def test_clean_files_exit_zero_with_no_output(
     assert capsys.readouterr().out == ""
 
 
-def test_one_diagnostic_renders_the_spec_block(
-    check_repo: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_one_diagnostic_renders_the_spec_block(check_repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     source = check_repo / "src.py"
     source.write_text('from typing import cast\nx = cast(int, "1")\n')
 
@@ -145,7 +144,7 @@ def test_concise_render_keeps_location_severity_and_instruction() -> None:
         instruction="Use the logger instead.",
     )
 
-    assert render_diagnostics([diagnostic], concise=True) == [
+    assert render_diagnostics([diagnostic], style="concise") == [
         "BYOR found 1 issue in AI-written code.",
         "",
         "src.py:2:5  [warning] no-print",
@@ -153,9 +152,7 @@ def test_concise_render_keeps_location_severity_and_instruction() -> None:
     ]
 
 
-def test_concise_flag_trims_the_verbose_block(
-    check_repo: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_concise_flag_trims_the_verbose_block(check_repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     source = check_repo / "src.py"
     source.write_text('from typing import cast\nx = cast(int, "1")\n')
 
@@ -163,15 +160,12 @@ def test_concise_flag_trims_the_verbose_block(
     assert main(args) == 2
 
     assert capsys.readouterr().out == (
-        "BYOR found 1 issue in AI-written code.\n"
-        "\n"
-        "src.py:2:5  [warning] no-python-cast\n"
-        f"{CAST_PROMPT}\n"
+        f"BYOR found 1 issue in AI-written code.\n\nsrc.py:2:5  [warning] no-python-cast\n{CAST_PROMPT}\n"
     )
 
 
 def test_global_concise_setting_applies_without_the_flag(
-    check_repo: Path, home: Path, capsys: pytest.CaptureFixture[str]
+    check_repo: Path, home: Path, *, capsys: pytest.CaptureFixture[str]
 ) -> None:
     config_dir = home / "xdg" / "byor"
     config = load_global_config(config_dir)
@@ -191,30 +185,18 @@ def test_multiline_code_renders_exact_indentation_behind_numbered_gutter(
     check_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     source = check_repo / "src.py"
-    source.write_text(
-        "\n" * 7 + "def call_foo() -> None:\n"
-        "    foo(\n"
-        '        "first",\n'
-        '        "second",\n'
-        "    )\n"
-    )
+    source.write_text("\n" * 7 + 'def call_foo() -> None:\n    foo(\n        "first",\n        "second",\n    )\n')
     project = check_repo / ".byor" / "rules" / "project"
     (project / "no-foo.yml").write_text(FOO_RULE)
 
     assert main(agent_check_args(check_repo, "--files", str(source))) == 2
 
     assert (
-        "Code:\n"
-        "   9 |     foo(\n"
-        '  10 |         "first",\n'
-        '  11 |         "second",\n'
-        "  12 |     )\n"
+        'Code:\n   9 |     foo(\n  10 |         "first",\n  11 |         "second",\n  12 |     )\n'
     ) in capsys.readouterr().out
 
 
-def test_instruction_falls_back_to_message(
-    check_repo: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_instruction_falls_back_to_message(check_repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     source = check_repo / "src.py"
     source.write_text('print("hi")\n')
 
@@ -256,7 +238,7 @@ def test_limit_caps_rendered_diagnostics_and_notes_the_remainder() -> None:
         for line in range(1, 4)
     ]
 
-    rendered = render_diagnostics(diagnostics, concise=True, limit=2)
+    rendered = render_diagnostics(diagnostics, style="concise", limit=2)
 
     # The summary still counts all three; only two are rendered, with a note.
     assert rendered[0] == "BYOR found 3 issues in AI-written code."
@@ -264,11 +246,7 @@ def test_limit_caps_rendered_diagnostics_and_notes_the_remainder() -> None:
     assert "... and 1 more not shown (raise output.max_diagnostics)." in rendered
 
 
-def test_renders_every_diagnostic_without_truncation(
-    check_repo: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Every in-scope diagnostic is rendered: the agent must see the full set,
-    not a truncated sample it could mistake for the whole job."""
+def test_renders_every_diagnostic_without_truncation(check_repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     source = check_repo / "src.py"
     source.write_text("".join(f"v{i} = cast(int, {i})\n" for i in range(21)))
 
@@ -280,9 +258,7 @@ def test_renders_every_diagnostic_without_truncation(
     assert "more diagnostics" not in out
 
 
-def test_json_format_emits_one_issue_per_diagnostic(
-    check_repo: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_json_format_emits_one_issue_per_diagnostic(check_repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     (check_repo / "src.py").write_text('x = cast(int, "1")\n')
 
     # No --files scans the repo.
@@ -313,6 +289,7 @@ def stdin(monkeypatch: pytest.MonkeyPatch, payload: object) -> None:
 def test_stdin_hook_scans_the_edited_file_from_the_claude_payload(
     check_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     source = check_repo / "src.py"
@@ -327,6 +304,7 @@ def test_stdin_hook_scans_the_edited_file_from_the_claude_payload(
 def test_stdin_hook_without_a_file_path_scans_nothing(
     check_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     (check_repo / "src.py").write_text('x = cast(int, "1")\n')
@@ -340,6 +318,7 @@ def test_stdin_hook_without_a_file_path_scans_nothing(
 def test_edit_scope_keeps_only_violations_inside_the_edited_lines(
     check_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     source = check_repo / "src.py"
@@ -360,17 +339,12 @@ def test_edit_scope_keeps_only_violations_inside_the_edited_lines(
 def test_codex_hook_edit_scopes_an_apply_patch_and_emits_its_json(
     check_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     source = check_repo / "src.py"
     source.write_text("a = cast(int, 1)\nb = cast(int, 2)\n")
-    patch = (
-        "*** Begin Patch\n"
-        f"*** Update File: {source}\n"
-        "@@\n"
-        "+b = cast(int, 2)\n"
-        "*** End Patch"
-    )
+    patch = f"*** Begin Patch\n*** Update File: {source}\n@@\n+b = cast(int, 2)\n*** End Patch"
     stdin(monkeypatch, {"tool_name": "apply_patch", "tool_input": {"command": patch}})
 
     assert main(agent_check_args(check_repo, "--stdin-hook", "codex")) == 0
@@ -384,6 +358,7 @@ def test_codex_hook_edit_scopes_an_apply_patch_and_emits_its_json(
 def test_codex_relative_patch_path_resolves_against_the_repo_root(
     check_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     (check_repo / "src.py").write_text("a = cast(int, 1)\n")
@@ -398,14 +373,12 @@ def test_codex_relative_patch_path_resolves_against_the_repo_root(
 
     assert main(agent_check_args(check_repo, "--stdin-hook", "codex")) == 0
 
-    context = json.loads(capsys.readouterr().out)["hookSpecificOutput"][
-        "additionalContext"
-    ]
+    context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert "src.py:1:5" in context
 
 
 def test_hook_mode_is_silent_in_an_uninitialized_repo(
-    home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
 ) -> None:
     bare = home / "bare"
     bare.mkdir()
@@ -419,14 +392,11 @@ def test_hook_mode_is_silent_in_an_uninitialized_repo(
 
 
 def setup_global_rule(home: Path, rule_id: str = "no-python-cast") -> None:
-    """Install a global rule and the home sgconfig that exposes it everywhere."""
-    write_global_rule(home, f"{rule_id}.yml", rule_id)
+    write_global_rule(home, f"{rule_id}.yml", rule_id=rule_id)
     ensure_home_sgconfig(home / "xdg" / "byor" / "rules", home=home)
 
 
-def test_files_mode_applies_global_rules_in_a_repo_with_no_byor(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_files_mode_applies_global_rules_in_a_repo_with_no_byor(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     setup_global_rule(home)
     plain = home / "plain"
     plain.mkdir()
@@ -439,9 +409,7 @@ def test_files_mode_applies_global_rules_in_a_repo_with_no_byor(
     assert "Rule: no-python-cast" in capsys.readouterr().out
 
 
-def test_files_mode_is_silent_without_repo_or_global_rules(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_files_mode_is_silent_without_repo_or_global_rules(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     plain = home / "plain"
     plain.mkdir()
     source = plain / "src.py"
@@ -454,7 +422,7 @@ def test_files_mode_is_silent_without_repo_or_global_rules(
 
 
 def test_hook_mode_applies_global_rules_in_a_repo_with_no_byor(
-    home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
 ) -> None:
     setup_global_rule(home)
     plain = home / "plain"
@@ -472,9 +440,7 @@ def test_hook_mode_applies_global_rules_in_a_repo_with_no_byor(
 def test_failing_check_appends_a_named_section_and_exits_two(
     check_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    add_repo_check(
-        check_repo, "lint", ["py"], failing_check_command(check_repo, "bad style")
-    )
+    add_repo_check(check_repo, "lint", extensions=["py"], run=failing_check_command(check_repo, "bad style"))
     source = check_repo / "src.py"
     source.write_text("x = 1\n")  # clean for ast-grep, so only the check fails
 
@@ -488,11 +454,10 @@ def test_failing_check_appends_a_named_section_and_exits_two(
 def test_failing_check_rides_the_harness_emitter_channel(
     check_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    add_repo_check(
-        check_repo, "lint", ["py"], failing_check_command(check_repo, "bad style")
-    )
+    add_repo_check(check_repo, "lint", extensions=["py"], run=failing_check_command(check_repo, "bad style"))
     source = check_repo / "src.py"
     source.write_text("x = 1\n")  # clean for ast-grep, so only the check fails
     patch = f"*** Begin Patch\n*** Update File: {source}\n@@\n+x = 1\n*** End Patch"
@@ -500,9 +465,7 @@ def test_failing_check_rides_the_harness_emitter_channel(
 
     assert main(agent_check_args(check_repo, "--stdin-hook", "codex")) == 0
 
-    context = json.loads(capsys.readouterr().out)["hookSpecificOutput"][
-        "additionalContext"
-    ]
+    context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert "### lint" in context
     assert "bad style" in context
 
@@ -510,9 +473,7 @@ def test_failing_check_rides_the_harness_emitter_channel(
 def test_check_does_not_run_for_files_outside_its_extensions(
     check_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    add_repo_check(
-        check_repo, "js-lint", ["js"], failing_check_command(check_repo, "js problem")
-    )
+    add_repo_check(check_repo, "js-lint", extensions=["js"], run=failing_check_command(check_repo, "js problem"))
     source = check_repo / "src.py"
     source.write_text("x = 1\n")
 
@@ -521,12 +482,10 @@ def test_check_does_not_run_for_files_outside_its_extensions(
     assert capsys.readouterr().out == ""
 
 
-def test_files_mode_runs_global_checks_in_a_repo_with_no_byor(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_files_mode_runs_global_checks_in_a_repo_with_no_byor(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     plain = home / "plain"
     plain.mkdir()
-    add_global_check(home, "lint", ["py"], failing_check_command(plain, "global check"))
+    add_global_check(home, "lint", extensions=["py"], run=failing_check_command(plain, "global check"))
     source = plain / "src.py"
     source.write_text("x = 1\n")
     capsys.readouterr()
@@ -537,11 +496,11 @@ def test_files_mode_runs_global_checks_in_a_repo_with_no_byor(
 
 
 def test_hook_mode_runs_global_checks_in_a_repo_with_no_byor(
-    home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
 ) -> None:
     plain = home / "plain"
     plain.mkdir()
-    add_global_check(home, "lint", ["py"], failing_check_command(plain, "global check"))
+    add_global_check(home, "lint", extensions=["py"], run=failing_check_command(plain, "global check"))
     source = plain / "src.py"
     source.write_text("x = 1\n")
     stdin(monkeypatch, {"tool_input": {"file_path": str(source)}})
@@ -552,14 +511,10 @@ def test_hook_mode_runs_global_checks_in_a_repo_with_no_byor(
     assert "global check" in capsys.readouterr().out
 
 
-def test_repo_checks_do_not_leak_into_other_repos(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    repo_a = make_repo(home, "a")
-    add_repo_check(
-        repo_a, "lint", ["py"], failing_check_command(repo_a, "repo-a check")
-    )
-    repo_b = make_repo(home, "b")
+def test_repo_checks_do_not_leak_into_other_repos(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo_a = make_repo(home, name="a")
+    add_repo_check(repo_a, "lint", extensions=["py"], run=failing_check_command(repo_a, "repo-a check"))
+    repo_b = make_repo(home, name="b")
     source = repo_b / "src.py"
     source.write_text("x = 1\n")
     capsys.readouterr()
@@ -569,11 +524,9 @@ def test_repo_checks_do_not_leak_into_other_repos(
     assert "repo-a check" not in capsys.readouterr().out
 
 
-def test_whole_repo_mode_runs_checks_without_files(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_whole_repo_mode_runs_checks_without_files(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
-    add_repo_check(repo, "lint", ["py"], failing_check_command(repo, "whole repo"))
+    add_repo_check(repo, "lint", extensions=["py"], run=failing_check_command(repo, "whole repo"))
     capsys.readouterr()
 
     # No --files means scan the whole repository, checks included.
@@ -585,7 +538,7 @@ def test_whole_repo_mode_runs_checks_without_files(
 def test_missing_check_command_warns_and_keeps_diagnostics(
     check_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    add_repo_check(check_repo, "ghost", ["py"], "byor-no-such-command --x")
+    add_repo_check(check_repo, "ghost", extensions=["py"], run="byor-no-such-command --x")
     source = check_repo / "src.py"
     source.write_text('x = cast(int, "1")\n')
 
@@ -599,7 +552,7 @@ def test_missing_check_command_warns_and_keeps_diagnostics(
 
 def commit_violation(repo: Path) -> Path:
     git(repo, "init", "--quiet")
-    return commit_file(repo, "src.py", "a = cast(int, 1)\n")
+    return commit_file(repo, "src.py", content="a = cast(int, 1)\n")
 
 
 def test_diff_scope_silences_committed_violations_file_scope_reports(
@@ -607,16 +560,10 @@ def test_diff_scope_silences_committed_violations_file_scope_reports(
 ) -> None:
     source = commit_violation(check_repo)
 
-    assert (
-        main(agent_check_args(check_repo, "--files", str(source), "--scope", "diff"))
-        == 0
-    )
+    assert main(agent_check_args(check_repo, "--files", str(source), "--scope", "diff")) == 0
     assert capsys.readouterr().out == ""
 
-    assert (
-        main(agent_check_args(check_repo, "--files", str(source), "--scope", "file"))
-        == 2
-    )
+    assert main(agent_check_args(check_repo, "--files", str(source), "--scope", "file")) == 2
     assert "Rule: no-python-cast" in capsys.readouterr().out
 
 
@@ -639,12 +586,11 @@ def test_diff_scope_keeps_uncommitted_lines_and_untracked_files(
 def test_edit_scope_falls_back_to_diff_when_the_edit_cannot_be_located(
     check_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """An edit payload whose text is not in the file drops to diff scope: a
-    committed violation stays silent while an uncommitted one is reported."""
     git(check_repo, "init", "--quiet")
-    source = commit_file(check_repo, "src.py", "a = cast(int, 1)\n")
+    source = commit_file(check_repo, "src.py", content="a = cast(int, 1)\n")
     source.write_text("a = cast(int, 1)\nb = cast(int, 2)\n")  # line 2 uncommitted
     stdin(
         monkeypatch,
@@ -661,10 +607,9 @@ def test_edit_scope_falls_back_to_diff_when_the_edit_cannot_be_located(
 def test_edit_scope_falls_all_the_way_to_file_scope_without_git(
     check_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Edit unlocatable and no git history: diff scope is None too, so the
-    chain reaches file scope and every match is reported."""
     source = check_repo / "src.py"
     source.write_text("a = cast(int, 1)\nb = cast(int, 2)\n")
     stdin(
@@ -680,10 +625,9 @@ def test_edit_scope_falls_all_the_way_to_file_scope_without_git(
 def test_edit_scope_keeps_a_multiline_match_touched_on_an_inner_line(
     check_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A diagnostic spanning several lines is kept when the edit touches any of
-    them, not only its first line."""
     (check_repo / ".byor" / "rules" / "project" / "no-foo.yml").write_text(FOO_RULE)
     source = check_repo / "src.py"
     source.write_text("result = foo(\n    1,\n    2,\n)\n")  # foo(...) spans lines 1-4
@@ -701,15 +645,10 @@ def test_edit_scope_keeps_a_multiline_match_touched_on_an_inner_line(
 def test_diff_scope_in_a_non_git_repo_degrades_to_file_scope(
     check_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """No git history means no diff to scope against, so diff scope reports
-    every match rather than erroring."""
     source = check_repo / "src.py"
     source.write_text('x = cast(int, "1")\n')
 
-    assert (
-        main(agent_check_args(check_repo, "--files", str(source), "--scope", "diff"))
-        == 2
-    )
+    assert main(agent_check_args(check_repo, "--files", str(source), "--scope", "diff")) == 2
 
     assert "Rule: no-python-cast" in capsys.readouterr().out
 
@@ -720,10 +659,7 @@ def test_edit_scope_without_a_hook_payload_is_a_clean_error(
     source = check_repo / "src.py"
     source.write_text("a = cast(int, 1)\n")
 
-    assert (
-        main(agent_check_args(check_repo, "--files", str(source), "--scope", "edit"))
-        == 1
-    )
+    assert main(agent_check_args(check_repo, "--files", str(source), "--scope", "edit")) == 1
 
     captured = capsys.readouterr()
     assert "--scope edit needs a hook payload" in captured.err
@@ -735,25 +671,18 @@ def test_missing_files_are_dropped_silently_under_diff_scope(
 ) -> None:
     missing = check_repo / "gone.py"
 
-    assert (
-        main(agent_check_args(check_repo, "--files", str(missing), "--scope", "diff"))
-        == 0
-    )
+    assert main(agent_check_args(check_repo, "--files", str(missing), "--scope", "diff")) == 0
 
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == ""
 
 
-def test_scan_failure_is_a_clean_tool_error(
-    check_repo: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_scan_failure_is_a_clean_tool_error(check_repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     (check_repo / "sgconfig.yml").write_text("ruleDirs: 5\n")
     (check_repo / "src.py").write_text("x = 1\n")
 
-    assert (
-        main(agent_check_args(check_repo, "--files", str(check_repo / "src.py"))) == 1
-    )
+    assert main(agent_check_args(check_repo, "--files", str(check_repo / "src.py"))) == 1
 
     captured = capsys.readouterr()
     assert "scan` failed" in captured.err
@@ -763,6 +692,7 @@ def test_scan_failure_is_a_clean_tool_error(
 def test_hook_mode_fails_open_on_an_internal_error(
     check_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     # The same broken sgconfig that errors under --files must never block the

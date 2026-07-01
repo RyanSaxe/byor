@@ -1,4 +1,9 @@
-"""The byor skill: rendering the hub + references, global installation, self-heal."""
+"""Exercise managed BYOR skill rendering.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
 
 import re
 from pathlib import Path
@@ -27,17 +32,15 @@ REFERENCES = (
 
 
 def agents_dir(home: Path) -> Path:
-    """The cross-agent skill dir (read by Codex, Copilot, opencode, pi)."""
     return global_skill_dirs(home)[0]
 
 
 def claude_dir(home: Path) -> Path:
-    """The Claude Code skill dir, which reads only its own directory."""
     return global_skill_dirs(home)[1]
 
 
 def test_install_renders_the_whole_tree_into_both_global_locations(home: Path) -> None:
-    install_agents(home)
+    install_agents()
 
     for relpath in ("SKILL.md", *REFERENCES):
         agents_copy = (agents_dir(home) / relpath).read_text()
@@ -56,7 +59,7 @@ def test_install_renders_the_whole_tree_into_both_global_locations(home: Path) -
 
 
 def test_frontmatter_meets_the_cross_agent_standard(home: Path) -> None:
-    install_agents(home)
+    install_agents()
 
     hub = (agents_dir(home) / "SKILL.md").read_text()
     frontmatter = parse_yaml_mapping(hub.split("---\n", 2)[1], source=Path("SKILL.md"))
@@ -71,7 +74,7 @@ def test_frontmatter_meets_the_cross_agent_standard(home: Path) -> None:
 
 
 def test_hub_teaches_the_capture_loop(home: Path) -> None:
-    install_agents(home)
+    install_agents()
     hub = (agents_dir(home) / "SKILL.md").read_text()
 
     assert "byor add --scope" in hub
@@ -86,7 +89,7 @@ def test_hub_teaches_the_capture_loop(home: Path) -> None:
 
 
 def test_patterns_reference_has_primer_and_worked_example(home: Path) -> None:
-    install_agents(home)
+    install_agents()
     patterns = (agents_dir(home) / "references/patterns.md").read_text()
 
     assert "never use print for logging" in patterns
@@ -95,7 +98,7 @@ def test_patterns_reference_has_primer_and_worked_example(home: Path) -> None:
 
 
 def test_checks_reference_teaches_authoring_a_check_script(home: Path) -> None:
-    install_agents(home)
+    install_agents()
     checks = (agents_dir(home) / "references/checks.md").read_text()
 
     assert "Author a check script" in checks
@@ -104,7 +107,7 @@ def test_checks_reference_teaches_authoring_a_check_script(home: Path) -> None:
 
 
 def test_packages_reference_teaches_authoring_a_package(home: Path) -> None:
-    install_agents(home)
+    install_agents()
     packages = (agents_dir(home) / "references/packages.md").read_text()
 
     assert "byor package add" in packages
@@ -113,7 +116,7 @@ def test_packages_reference_teaches_authoring_a_package(home: Path) -> None:
 
 
 def test_profiles_reference_teaches_exclusions_and_profiles(home: Path) -> None:
-    install_agents(home)
+    install_agents()
     profiles = (agents_dir(home) / "references/profiles.md").read_text()
 
     assert "byor exclude" in profiles
@@ -122,7 +125,7 @@ def test_profiles_reference_teaches_exclusions_and_profiles(home: Path) -> None:
 
 
 def test_setup_reference_teaches_onboarding(home: Path) -> None:
-    install_agents(home)
+    install_agents()
     setup = (agents_dir(home) / "references/setup.md").read_text()
 
     assert "byor doctor" in setup
@@ -131,10 +134,8 @@ def test_setup_reference_teaches_onboarding(home: Path) -> None:
     assert "byor/initial-cleanup" in setup  # the optional cleanup pass
 
 
-def test_uninstall_removes_marked_files_and_prunes_dirs(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    install_agents(home)
+def test_uninstall_removes_marked_files_and_prunes_dirs(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    install_agents()
     user_file = claude_dir(home) / "references" / "patterns.md"
     user_file.write_text("my own notes\n")  # no marker: user-owned
 
@@ -149,10 +150,8 @@ def test_uninstall_removes_marked_files_and_prunes_dirs(
 
 
 def test_self_heal_refreshes_a_drifted_reference(home: Path) -> None:
-    """byor owns the skill, so running any command rewrites a managed file that
-    drifted from the package — references included, not just the hub."""
     repo = make_repo(home)
-    install_agents(home)
+    install_agents()
     drifted = agents_dir(home) / "references" / "setup.md"
     drifted.write_text(f"{MANAGED_MARKER}\nstale render\n")
 
@@ -163,10 +162,8 @@ def test_self_heal_refreshes_a_drifted_reference(home: Path) -> None:
 
 
 def test_self_heal_leaves_a_user_owned_file_untouched(home: Path) -> None:
-    """Dropping the marker hands the file to the user; self-heal never clobbers
-    it, the standard ownership escape hatch."""
     repo = make_repo(home)
-    install_agents(home)
+    install_agents()
     owned = agents_dir(home) / "SKILL.md"
     owned.write_text("# our house skill\n")  # no marker: user-owned
 
@@ -176,9 +173,7 @@ def test_self_heal_leaves_a_user_owned_file_untouched(home: Path) -> None:
 
 
 def test_install_writes_the_hook_and_global_skill(home: Path) -> None:
-    """`byor install --agents claude-code` registers a global hook alongside the
-    global skill render under ~/.claude/skills/."""
-    install_agents(home, "claude-code")
+    install_agents("claude-code")
 
     assert (home / ".claude" / "settings.json").is_file()
     assert (claude_dir(home) / "SKILL.md").is_file()

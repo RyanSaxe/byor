@@ -1,21 +1,14 @@
-"""The Pi adapter: a real post-edit extension.
+"""Render the Pi extension integration.
 
-Pi loads global extensions from ~/.pi/agent/extensions/, so byor installs the
-extension once there and it fires in every project. It hooks the `tool_result`
-event for the file-editing tools, runs agent-check on the touched file, and
-appends any diagnostics to the result the model sees. Pi already reads skills
-from ~/.agents/skills/, so the rule-capture skill needs no Pi-specific work. A
-`//` comment marker stands in for the HTML-comment marker, which is not valid
-TypeScript.
-
-It fails safe: the touched path is read from any of several key names, and every
-exit code other than the diagnostics signal is ignored, so an unexpected payload
-or a byor error degrades to a no-op instead of blocking the agent.
+Pi consumes a managed TypeScript extension file that launches BYOR after edits and displays returned
+feedback. This module keeps that generated artifact close to the other agent adapters and markers.
 """
 
 from __future__ import annotations
 
 from byor.io.fsio import MANAGED_NOTICE
+
+__all__ = ()
 
 # Relative to the user's home directory (the global extension location).
 PI_EXTENSION_RELPATH = ".pi/agent/extensions/byor.ts"

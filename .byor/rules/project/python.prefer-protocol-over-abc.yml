@@ -1,0 +1,32 @@
+id: python.prefer-protocol-over-abc
+language: Python
+severity: info
+message: Prefer typing.Protocol over ABC for structural interfaces.
+rule:
+  any:
+  - pattern: import abc
+  - pattern: abc.ABC
+  - pattern: abc.abstractmethod
+  - all:
+    - kind: dotted_name
+    - regex: ^(ABC|abstractmethod)$
+    - inside:
+        all:
+        - kind: import_from_statement
+        - has:
+            field: module_name
+            regex: ^abc$
+metadata:
+  byor:
+    rationale: >
+      The style guide prefers Protocols for interface typing because they reduce
+      inheritance coupling and make dependency injection easier.
+    agent_prompt: >
+      If this is an interface contract, replace ABC inheritance with
+      typing.Protocol. Keep ABC only when nominal inheritance, shared abstract
+      behavior, or framework integration is actually required.
+    tags:
+    - python
+    - typing
+    - style-guide
+    - greenfield

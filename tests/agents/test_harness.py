@@ -1,4 +1,9 @@
-"""Per-harness payload parsers and response emitters."""
+"""Exercise AI harness payload translation.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
 
 import json
 from pathlib import Path
@@ -13,9 +18,7 @@ from byor.agents.harness import (
 
 
 def test_claude_code_parses_file_and_new_string() -> None:
-    raw = json.dumps(
-        {"tool_input": {"file_path": "/repo/src.py", "new_string": "x = 1\n"}}
-    )
+    raw = json.dumps({"tool_input": {"file_path": "/repo/src.py", "new_string": "x = 1\n"}})
 
     assert parse_payload("claude-code", raw) == EditPayload(
         files=[Path("/repo/src.py")], edits={Path("/repo/src.py"): ["x = 1\n"]}
@@ -65,9 +68,7 @@ def test_copilot_captures_create_file_text() -> None:
         }
     )
 
-    assert parse_payload("copilot", raw) == EditPayload(
-        files=[Path("/r/n.py")], edits={Path("/r/n.py"): ["y\n"]}
-    )
+    assert parse_payload("copilot", raw) == EditPayload(files=[Path("/r/n.py")], edits={Path("/r/n.py"): ["y\n"]})
 
 
 def test_copilot_without_a_recognizable_path_scans_nothing() -> None:
@@ -77,15 +78,7 @@ def test_copilot_without_a_recognizable_path_scans_nothing() -> None:
 
 
 def test_codex_parses_the_apply_patch_envelope() -> None:
-    patch = (
-        "*** Begin Patch\n"
-        "*** Update File: src/model.py\n"
-        "@@\n"
-        "-old = 1\n"
-        "+new = 1\n"
-        "+also = 2\n"
-        "*** End Patch"
-    )
+    patch = "*** Begin Patch\n*** Update File: src/model.py\n@@\n-old = 1\n+new = 1\n+also = 2\n*** End Patch"
     raw = json.dumps({"tool_name": "apply_patch", "tool_input": {"command": patch}})
 
     payload = parse_payload("codex", raw)
@@ -95,15 +88,7 @@ def test_codex_parses_the_apply_patch_envelope() -> None:
 
 
 def test_apply_patch_handles_multiple_files_and_pure_deletions() -> None:
-    patch = (
-        "*** Begin Patch\n"
-        "*** Add File: a.py\n"
-        "+first\n"
-        "+second\n"
-        "*** Update File: b.py\n"
-        "-removed\n"
-        "*** End Patch"
-    )
+    patch = "*** Begin Patch\n*** Add File: a.py\n+first\n+second\n*** Update File: b.py\n-removed\n*** End Patch"
 
     added = parse_apply_patch(patch)
 

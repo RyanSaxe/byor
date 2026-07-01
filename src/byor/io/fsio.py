@@ -1,4 +1,9 @@
-"""Atomic text file writes (write temp, flush, rename into place)."""
+"""Write BYOR-managed text files atomically.
+
+Managed files need marker-aware updates that avoid clobbering user-owned content and preserve file
+permissions when rewritten. This module owns those low-level write primitives so command and
+scaffold code can stay declarative.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +12,12 @@ import stat
 import tempfile
 from pathlib import Path
 from typing import Literal
+
+__all__ = (
+    "marked_text_status",
+    "write_marked_text",
+    "write_text_atomic",
+)
 
 NEW_FILE_MODE = 0o666
 
@@ -21,12 +32,7 @@ MarkedWriteResult = Literal["written", "unchanged", "unmarked"]
 MarkedTextStatus = Literal["missing", "unmarked", "unchanged", "drifted"]
 
 
-def marked_text_status(path: Path, content: str, marker: str) -> MarkedTextStatus:
-    """Classify a path against the content a managed write would produce.
-
-    Files without the marker are user-owned; marker-bearing files that differ
-    from `content` have drifted and need a rewrite.
-    """
+def marked_text_status(path: Path, content: str, *, marker: str) -> MarkedTextStatus:
     if not path.is_file():
         return "missing"
     existing = path.read_text(encoding="utf-8")
@@ -37,24 +43,17 @@ def marked_text_status(path: Path, content: str, marker: str) -> MarkedTextStatu
     return "drifted"
 
 
-def write_marked_text(path: Path, content: str, marker: str) -> MarkedWriteResult:
-    """Converge a BYOR-managed file to `content`.
-
-    Files without the marker are user-owned and never touched.
-    """
-    status = marked_text_status(path, content, marker)
-    if status == "unmarked" or status == "unchanged":
-        return status
+def write_marked_text(path: Path, content: str, *, marker: str) -> MarkedWriteResult:
+    status = marked_text_status(path, content, marker=marker)
+    if status == "unmarked":
+        return "unmarked"
+    if status == "unchanged":
+        return "unchanged"
     write_text_atomic(path, content)
     return "written"
 
 
 def write_text_atomic(path: Path, content: str) -> None:
-    """Write via a temp file in the same directory, flush, then rename into place.
-
-    Overwrites keep the destination's existing permissions; new files honor
-    the umask (mkstemp would otherwise leave everything at 0600).
-    """
     path.parent.mkdir(parents=True, exist_ok=True)
     handle_fd, temp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
     try:
@@ -62,8 +61,8 @@ def write_text_atomic(path: Path, content: str) -> None:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
-        os.chmod(temp_name, _destination_mode(path))
-        os.replace(temp_name, path)
+        Path(temp_name).chmod(_destination_mode(path))
+        Path(temp_name).replace(path)
     except BaseException:
         Path(temp_name).unlink(missing_ok=True)
         raise
