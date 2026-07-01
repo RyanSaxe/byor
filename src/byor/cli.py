@@ -398,10 +398,11 @@ def run(args: argparse.Namespace) -> int:
 
 def _self_heal_preamble(args: argparse.Namespace) -> list[str]:
     config_dir = global_config_dir()
-    heal_global(config_dir)
+    messages = heal_global(config_dir)
     repo_root = resolve_repo_root(explicit=args.repo)
     mirror_line = heal_repo(repo_root, config_dir)
-    messages = [mirror_line] if mirror_line is not None else []
+    if mirror_line is not None:
+        messages.append(mirror_line)
     return messages + heal_gate(repo_root)
 
 

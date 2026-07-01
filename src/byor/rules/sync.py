@@ -26,6 +26,7 @@ from byor.config import (
     repo_config_path,
     repo_registry_path,
 )
+from byor.errors import ConfigError
 from byor.io.fsio import MANAGED_MARKER, write_marked_text, write_text_atomic
 from byor.io.paths import global_config_dir, resolve_repo_root, resolve_within
 from byor.rules.rules import (
@@ -321,20 +322,26 @@ def repo_is_stale(repo_root: Path, canonical: CanonicalRules) -> bool:
     return mirror_contents(global_dir) != global_plan.desired or mirror_contents(packages_dir) != packages_plan.desired
 
 
-def heal_global(config_dir: Path) -> None:
-    """Keep machine-level state current with the installed byor, silently.
+def heal_global(config_dir: Path) -> list[str]:
+    """Keep machine-level state current with the installed byor, quietly.
 
     Runs on every command (even outside a repo): refreshes the global skill
     render so a byor upgrade is reflected without a reinstall, and reconverges
     recorded agent hooks/plugins plus `~/sgconfig.yml` so upgrades keep applying
-    everywhere.
+    everywhere. A broken agent config must not fail unrelated commands, so each
+    agent heals independently; the returned warnings name the agents skipped.
     """
     config = load_global_config(config_dir)
     rules_dir = global_rules_dir(config_dir, config)
     if rules_dir.is_dir():
         ensure_home_sgconfig(rules_dir)
+    warnings: list[str] = []
     for agent in config.agents:
-        install_agent(agent)
+        try:
+            install_agent(agent)
+        except ConfigError as error:
+            warnings.append(f"byor: skipping {agent} self-heal: {error} (run 'byor doctor')")
+    return warnings
 
 
 def heal_repo(repo_root: Path, config_dir: Path) -> str | None:
