@@ -154,6 +154,11 @@ def _add_sync_arguments(command: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Report staleness without writing; exit 3 when stale",
     )
+    command.add_argument(
+        "--prune",
+        action="store_true",
+        help="With --all: drop registry entries whose paths no longer exist",
+    )
 
 
 def _add_list_arguments(command: argparse.ArgumentParser) -> None:

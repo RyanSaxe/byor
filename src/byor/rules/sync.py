@@ -23,6 +23,7 @@ from byor.config import (
     load_repo_registry,
     repo_config_path,
     repo_registry_path,
+    save_repo_registry,
 )
 from byor.errors import ByorError
 from byor.io.fsio import prune_empty_dirs, write_text_atomic
@@ -362,6 +363,14 @@ def iter_registered_repos(config_dir: Path) -> Iterator[Path]:
 
 def run_sync(args: argparse.Namespace) -> int:
     config_dir = global_config_dir()
+    if args.prune:
+        if not args.all:
+            msg = "--prune requires --all"
+            raise ByorError(msg)
+        if args.check:
+            msg = "--prune cannot be combined with --check"
+            raise ByorError(msg)
+        _prune_registry(config_dir)
     canonical = load_canonical_rules(config_dir)
     if args.all:
         return _sync_all(config_dir, canonical, check=args.check)
@@ -370,6 +379,23 @@ def run_sync(args: argparse.Namespace) -> int:
         return _report_staleness(repo_root, canonical)
     _sync_and_report(repo_root, canonical)
     return 0
+
+
+def _prune_registry(config_dir: Path) -> None:
+    """Drop registry entries whose paths no longer exist on disk.
+
+    Only nonexistent paths are pruned: existing repos keep their registration,
+    disabled-but-existing ones included, so pruning can never forget a repo the
+    user still has.
+    """
+    registry_path = repo_registry_path(config_dir, load_global_config(config_dir))
+    repos = load_repo_registry(registry_path)
+    removed = [repo for repo in repos if not repo.is_dir()]
+    if not removed:
+        return
+    for repo in removed:
+        sys.stdout.write(f"Pruned {repo} from the registry\n")
+    save_repo_registry(registry_path, [repo for repo in repos if repo.is_dir()])
 
 
 def _sync_all(config_dir: Path, canonical: CanonicalRules, *, check: bool) -> int:

@@ -70,7 +70,8 @@ byor sync --check   # report; exit 3 when stale
 
 `init` registers each repo in `~/.config/byor/repos.yml` (skip with
 `--no-register`); `sync --all` syncs every registered repo, warning and
-skipping paths that no longer exist.
+skipping paths that no longer exist. `byor sync --all --prune` drops those
+dead entries from the registry; existing repos are never pruned.
 
 The mental model: running byor *anything* makes this repo correct;
 `byor doctor` tells you what is wrong without touching it;

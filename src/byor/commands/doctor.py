@@ -459,9 +459,13 @@ def _vendored_scripts_check(repo_root: Path, repo_config: RepoConfig) -> Check |
 
 def _registry_check(config_dir: Path, global_config: GlobalConfig) -> Check:
     repos = load_repo_registry(repo_registry_path(config_dir, global_config))
-    problems = [f"{repo} no longer exists" for repo in repos if not repo.is_dir()]
+    missing = [f"{repo} no longer exists" for repo in repos if not repo.is_dir()]
     tallies = Counter(repo.resolve() for repo in repos)
-    problems.extend(f"duplicate registry entries for {repo}" for repo, count in sorted(tallies.items()) if count > 1)
+    problems = missing + [
+        f"duplicate registry entries for {repo}" for repo, count in sorted(tallies.items()) if count > 1
+    ]
+    if missing:
+        problems.append("run `byor sync --all --prune`")
     if problems:
         return Check(
             id="registered_repos",

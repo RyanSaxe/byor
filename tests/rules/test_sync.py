@@ -22,7 +22,14 @@ from support import (
 )
 
 from byor.cli import main
-from byor.config import load_repo_config, save_repo_config
+from byor.config import (
+    load_global_config,
+    load_repo_config,
+    load_repo_registry,
+    repo_registry_path,
+    save_repo_config,
+)
+from byor.io.paths import global_config_dir
 from byor.rules.sync import mirror_contents, mirror_global_rules
 
 
@@ -340,3 +347,40 @@ def test_sync_all_syncs_registered_repos_and_skips_missing_paths(
     assert f"byor: skipping {gone}: path no longer exists" in captured.err
     assert f"Synced 1 global rule into {first}" in captured.out
     assert f"Synced 1 global rule into {second}" in captured.out
+
+
+def registered_repos() -> list[Path]:
+    config_dir = global_config_dir()
+    return load_repo_registry(repo_registry_path(config_dir, load_global_config(config_dir)))
+
+
+def test_sync_all_prune_drops_only_nonexistent_registry_entries(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    kept = make_repo(home, name="kept")
+    parked = make_repo(home, name="parked")
+    gone = make_repo(home, name="gone")
+    shutil.rmtree(gone)
+    # Disabled-but-existing repos stay registered; only dead paths are pruned.
+    assert main(["disable", str(parked)]) == 0
+    capsys.readouterr()
+
+    assert main(["sync", "--all", "--prune"]) == 0
+
+    captured = capsys.readouterr()
+    assert f"Pruned {gone} from the registry" in captured.out
+    assert "path no longer exists" not in captured.err
+    assert registered_repos() == [kept.resolve(), parked.resolve()]
+
+    # With the dead entry gone, doctor's registry check is green again.
+    assert main(["doctor", "--repo", str(kept)]) == 0
+    assert "ok    registered_repos" in capsys.readouterr().out
+
+
+def test_sync_prune_requires_all_and_refuses_check(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = make_repo(home)
+    capsys.readouterr()
+
+    assert main(["sync", "--repo", str(repo), "--prune"]) == 1
+    assert "--prune requires --all" in capsys.readouterr().err
+
+    assert main(["sync", "--all", "--check", "--prune"]) == 1
+    assert "--prune cannot be combined with --check" in capsys.readouterr().err
