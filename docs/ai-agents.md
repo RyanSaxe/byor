@@ -103,8 +103,10 @@ back to `diff` then `file` when the edit contents cannot be located. Under
 reads that harness's post-edit JSON payload on stdin, normalizes it to the
 edited file(s) and edit text, and replies in the harness's own feedback format
 (claude-code via stderr + exit 2; codex/copilot via a JSON envelope on
-stdout). Codex payloads carry an `apply_patch` envelope, which byor parses
-for the added lines. Payloads without a recognizable file — including malformed
+stdout). A codex payload carries the patch text in `tool_input.command` as an
+`apply_patch` envelope; byor reads the changed files and their added lines
+from its `*** Add File:` / `*** Update File:` sections, following `*** Move
+to:` renames to the destination path. Payloads without a recognizable file — including malformed
 ones — exit 0 without scanning. In a repo with no `.byor/config.yml`, hook mode
 scans the edit against your synced global rules and global checks instead;
 it stays silent only when you have neither (no `~/sgconfig.yml` from

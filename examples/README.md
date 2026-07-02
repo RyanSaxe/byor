@@ -17,7 +17,7 @@ These are ordered from the simplest mechanism to the most expressive:
 | [`no-print`](rules/no-print.yml) | A bare `pattern` with a variadic metavariable (`$$$ARGS`). |
 | [`python.no-typing-cast`](rules/python.no-typing-cast.yml) | A small `any` rule combining import patterns and call patterns with named metavariables (`$TYPE`, `$VALUE`). |
 | [`no-routing-functions`](rules/no-routing-functions.yml) | Relational rules — `any`/`all`, `inside`, `follows`, and `nthChild` with `reverse`, to match pass-through calls or `yield from` as a function's only statement. |
-| [`keyword-only-args`](rules/keyword-only-args.yml) | Function-signature `context` patterns plus constraints, to catch defaulted positional parameters while exempting `self`/`cls` methods. |
+| [`keyword-only-args`](rules/keyword-only-args.yml) | `utils` rules composed with nested `follows` to count sibling nodes — flagging a third positional parameter while exempting `self`/`cls` and anything after a bare `*` or `*args`. |
 | [`no-console-log`](rules/no-console-log.yml) | The same bare `pattern` mechanism in a non-Python language (`language: typescript`). |
 
 Each file's `metadata.byor.agent_prompt` is the directive byor hands an AI agent
