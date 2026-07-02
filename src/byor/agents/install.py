@@ -33,13 +33,11 @@ __all__ = (
     "PluginAgent",
     "agent_file_problems",
     "install_agent",
-    "install_agents",
     "run_hook",
     "uninstall_agent",
 )
 
-# The stdin-hook harnesses: a set for membership, a map for Harness lookup.
-HOOK_HARNESSES: frozenset[str] = frozenset(HARNESS_CHOICES)
+# The stdin-hook harnesses, mapped for Harness lookup by agent name.
 HARNESS_BY_NAME: dict[str, Harness] = {harness: harness for harness in HARNESS_CHOICES}
 
 
@@ -92,13 +90,6 @@ def run_hook(args: argparse.Namespace) -> int:
         save_global_config(config_dir, config)
     write_lines(messages)
     return 0
-
-
-def install_agents(agents: Sequence[str]) -> list[str]:
-    messages: list[str] = []
-    for agent in agents:
-        messages.extend(install_agent(agent))
-    return messages
 
 
 def install_agent(agent: str) -> list[str]:

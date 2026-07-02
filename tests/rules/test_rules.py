@@ -14,7 +14,6 @@ from support import write_rule
 from byor.config import RepoPaths
 from byor.errors import DuplicateRuleIdError, RuleValidationError
 from byor.rules.rules import (
-    ByorMetadata,
     Rule,
     check_id_conflicts,
     discover_rule_files,
@@ -66,22 +65,15 @@ def test_load_rule_parses_byor_metadata(tmp_path: Path) -> None:
 
     assert rule.id == "no-python-cast"
     assert rule.language == "Python"
-    assert rule.severity == "warning"
     assert rule.message == "Avoid typing.cast in Python code."
     assert rule.path == path
-    assert rule.byor == ByorMetadata(
-        rationale="casting hides type model problems.",
-        agent_prompt="Do not use typing.cast here.",
-        docs_url="https://example.com/no-python-cast",
-        tags=["python", "typing"],
-    )
+    assert rule.tags == ["python", "typing"]
 
 
 def test_load_rule_defaults_optional_fields(tmp_path: Path) -> None:
     rule = load_rule(write_rule(tmp_path / "minimal.yml", "minimal"))
 
-    assert rule.severity is None
-    assert rule.byor == ByorMetadata()
+    assert rule.tags == []
 
 
 def test_load_rule_names_file_when_required_fields_missing(tmp_path: Path) -> None:
@@ -110,14 +102,12 @@ def test_load_rule_degrades_malformed_metadata_to_defaults(tmp_path: Path) -> No
         "  pattern: cast($TYPE, $VALUE)\n"
         "metadata:\n"
         "  byor:\n"
-        "    agent_prompt: Keep this prompt.\n"
-        "    rationale: [not, a, string]\n"
         "    tags: python\n"
     )
 
     rule = load_rule(path)
 
-    assert rule.byor == ByorMetadata(agent_prompt="Keep this prompt.")
+    assert rule.tags == []
 
 
 def test_load_rules_parses_every_discovered_file(tmp_path: Path) -> None:

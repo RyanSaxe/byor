@@ -79,9 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
         command.set_defaults(repo=None)
         if name in REPO_COMMANDS:
             command.add_argument("--repo", type=Path, help=REPO_HELP)
-        add_arguments = _COMMAND_ARGUMENTS.get(name)
-        if add_arguments is not None:
-            add_arguments(command)
+        _COMMAND_ARGUMENTS[name](command)
     return parser
 
 
@@ -381,11 +379,7 @@ def run(args: argparse.Namespace) -> int:
         for message in _self_heal_preamble(args):
             # stderr keeps stdout clean for JSON-emitting commands.
             sys.stderr.write(f"{message}\n")
-    handler = _HANDLERS.get(args.command)
-    if handler is None:
-        msg = f"'{args.command}' is not implemented yet"
-        raise ByorError(msg)
-    return handler(args)
+    return _HANDLERS[args.command](args)
 
 
 def _self_heal_preamble(args: argparse.Namespace) -> list[str]:

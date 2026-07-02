@@ -21,7 +21,6 @@ from byor.io.yamlio import load_yaml_mapping, write_yaml_atomic
 __all__ = (
     "ensure_home_sgconfig",
     "ensure_rule_dirs",
-    "remove_home_rule_dir",
 )
 
 BACKUP_TIMESTAMP_FORMAT = "%Y%m%d-%H%M%S"
@@ -73,24 +72,6 @@ def ensure_home_sgconfig(rules_dir: Path, home: Path | None = None) -> str | Non
     rules_dir.mkdir(parents=True, exist_ok=True)
     relpath = Path(os.path.relpath(rules_dir, home)).as_posix()
     return ensure_rule_dirs(home_sgconfig_path(home), [relpath])
-
-
-def remove_home_rule_dir(rules_dir: Path, home: Path | None = None) -> bool:
-    home = home or Path.home()
-    path = home_sgconfig_path(home)
-    if not path.is_file():
-        return False
-    relpath = Path(os.path.relpath(rules_dir, home)).as_posix()
-    data = load_yaml_mapping(path)
-    rule_dirs = data.get("ruleDirs")
-    if not isinstance(rule_dirs, list) or relpath not in rule_dirs:
-        return False
-    rule_dirs.remove(relpath)
-    if not rule_dirs and set(data) == {"ruleDirs"}:
-        path.unlink()
-    else:
-        write_yaml_atomic(path, data)
-    return True
 
 
 def _minimal_sgconfig(rule_dirs: list[str]) -> CommentedMap:

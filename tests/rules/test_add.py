@@ -23,11 +23,18 @@ from support import (
 )
 
 from byor.cli import main
-from byor.rules.rules import ALLOW_EXCEPTIONS_SENTENCE, load_rule
+from byor.io.yamlio import load_yaml_mapping
+from byor.rules.rules import ALLOW_EXCEPTIONS_SENTENCE
 
 
 def add_args(repo: Path, *extra: str) -> list[str]:
     return ["add", "--repo", str(repo), *extra]
+
+
+def written_agent_prompt(path: Path) -> str:
+    prompt = load_yaml_mapping(path)["metadata"]["byor"]["agent_prompt"]
+    assert isinstance(prompt, str)
+    return prompt
 
 
 def test_add_without_source_prints_template_and_hint(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -199,8 +206,8 @@ def test_allow_exceptions_appends_to_an_existing_agent_prompt(home: Path) -> Non
         == 0
     )
 
-    written = load_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml")
-    assert written.byor.agent_prompt == (f"Narrow the type instead. {ALLOW_EXCEPTIONS_SENTENCE}")
+    written = repo / ".byor" / "rules" / "project" / "no-cast.yml"
+    assert written_agent_prompt(written) == (f"Narrow the type instead. {ALLOW_EXCEPTIONS_SENTENCE}")
 
 
 def test_allow_exceptions_seeds_agent_prompt_from_message_when_absent(
@@ -223,8 +230,8 @@ def test_allow_exceptions_seeds_agent_prompt_from_message_when_absent(
         == 0
     )
 
-    written = load_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml")
-    assert written.byor.agent_prompt == f"Avoid this. {ALLOW_EXCEPTIONS_SENTENCE}"
+    written = repo / ".byor" / "rules" / "project" / "no-cast.yml"
+    assert written_agent_prompt(written) == f"Avoid this. {ALLOW_EXCEPTIONS_SENTENCE}"
 
 
 def test_allow_exceptions_with_edit_keeps_the_prefilled_sentence(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -234,9 +241,7 @@ def test_allow_exceptions_with_edit_keeps_the_prefilled_sentence(home: Path, mon
     assert main(add_args(repo, "--scope", "local", "--edit", "--allow-exceptions")) == 0
 
     destination = repo / ".byor" / "rules" / "personal" / "local" / "no-cast.yml"
-    written = load_rule(destination)
-    assert written.byor.agent_prompt is not None
-    assert written.byor.agent_prompt.endswith(ALLOW_EXCEPTIONS_SENTENCE)
+    assert written_agent_prompt(destination).endswith(ALLOW_EXCEPTIONS_SENTENCE)
 
 
 def test_add_warns_on_nonconforming_rule_id(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
