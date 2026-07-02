@@ -36,11 +36,13 @@ the same id still wins — byor says so).
 ## Per-line exceptions
 
 When a single line legitimately violates a rule whose agent_prompt allows
-exceptions, add `# ast-grep-ignore: RULE_ID` at the end of that line, with a
-short comment on the line above explaining why. The hatch is scoped to the
-named rule on that one line — nothing broader: a rule-scoped, explained
-exception is a decision; a blanket suppression (`# noqa`, `# type: ignore`)
-is a hidden one.
+exceptions, add `# ast-grep-ignore: RULE_ID` on its own line directly above
+that line, with a short comment above it explaining why. (ast-grep also honors
+the directive at the end of the offending line, but a formatter that splits
+the line relocates it and silently invalidates the hatch — the line above is
+immune.) The hatch is scoped to the named rule on the one line below —
+nothing broader: a rule-scoped, explained exception is a decision; a blanket
+suppression (`# noqa`, `# type: ignore`) is a hidden one.
 
 Never commit a hatch naming a personal (global or package) rule to a repo
 with a committed gate: the gate's runner does not know that rule, and

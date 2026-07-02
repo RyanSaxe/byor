@@ -227,6 +227,9 @@ def test_allow_exceptions_prefills_the_template(home: Path, capsys: pytest.Captu
     assert main(add_args(repo, "--scope", "project", "--allow-exceptions")) == 0
 
     assert ALLOW_EXCEPTIONS_SENTENCE in capsys.readouterr().out
+    # Pin the placement the sentence teaches: an end-of-line directive gets
+    # relocated (and silently invalidated) when a formatter splits the line.
+    assert "on its own line directly above the offending line" in ALLOW_EXCEPTIONS_SENTENCE
 
 
 def test_allow_exceptions_appends_to_an_existing_agent_prompt(home: Path) -> None:

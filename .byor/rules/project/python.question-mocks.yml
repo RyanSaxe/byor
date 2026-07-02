@@ -40,8 +40,8 @@ metadata:
       injection. Use mocks only when crossing an external boundary, controlling
       time or randomness, simulating failure paths, or avoiding slow or
       unavailable systems. If this is genuinely necessary, add
-      `# ast-grep-ignore: python.question-mocks` at the end of the offending
-      line, with a short comment on the line above explaining why.
+      `# ast-grep-ignore: python.question-mocks` on its own line directly
+      above the offending line, with a short comment above it explaining why.
     tags:
     - python
     - testing
