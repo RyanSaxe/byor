@@ -41,12 +41,14 @@ PRECOMMIT_LINE = "byor agent-check --files <staged files>"
 
 # NUL-separated names piped through xargs -0 keep filenames with spaces
 # (or any other byte) intact; the plain listing only guards emptiness.
+# R is included because rename detection reports a rename-with-edits as
+# status R under the new path, which is exactly the file to check.
 PRECOMMIT_CONTENT = f"""#!/bin/sh
 {SHIM_MARKER}
 command -v byor >/dev/null 2>&1 || exit 0
-files=$(git diff --cached --name-only --diff-filter=ACM)
+files=$(git diff --cached --name-only --diff-filter=ACMR)
 [ -z "$files" ] && exit 0
-git diff --cached --name-only --diff-filter=ACM -z | xargs -0 byor agent-check --files
+git diff --cached --name-only --diff-filter=ACMR -z | xargs -0 byor agent-check --files
 """
 
 

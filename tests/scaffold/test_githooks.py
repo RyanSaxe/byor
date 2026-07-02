@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from support import git, make_repo, write_global_rule
+from support import commit_file, git, make_repo, write_global_rule
 
 from byor.cli import main
 from byor.scaffold.githooks import SHIM_CONTENT, SHIM_LINE, SHIM_MARKER
@@ -98,6 +98,36 @@ def test_precommit_shim_blocks_a_violating_file_whose_name_has_a_space(home: Pat
     hook = repo / ".git" / "hooks" / "pre-commit"
     # Git runs hooks through sh, and Windows cannot exec a shell script
     # directly — invoke the shim the way git does (Git Bash ships sh there).
+    sh = shutil.which("sh")
+    if sh is None:
+        pytest.skip("running the hook requires an `sh` on PATH")
+    result = subprocess.run([sh, str(hook)], cwd=repo, env=env, capture_output=True, text=True, check=False)
+
+    assert result.returncode != 0
+    assert "no-cast" in result.stdout + result.stderr
+
+
+def test_precommit_shim_blocks_a_renamed_and_modified_violating_file(home: Path) -> None:
+    """The shim's --diff-filter used to omit R, skipping staged renames.
+
+    Git's default rename detection turns a rename-with-edits into status R
+    under the new path, so the old ACM filter checked nothing and a violating
+    commit passed unscanned.
+    """
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
+    repo = home / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    clean_lines = "".join(f"keep_{index} = {index}\n" for index in range(10))
+    commit_file(repo, "keep.py", content=clean_lines)
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--private", "--gate"]) == 0
+    git(repo, "mv", "keep.py", "moved.py")
+    (repo / "moved.py").write_text(clean_lines + "from typing import cast\n\nx = cast(int, 1)\n")
+    git(repo, "add", "moved.py")
+    assert git(repo, "diff", "--cached", "--name-status").startswith("R")
+
+    env = {**os.environ, "HOME": str(home), "USERPROFILE": str(home)}
+    hook = repo / ".git" / "hooks" / "pre-commit"
     sh = shutil.which("sh")
     if sh is None:
         pytest.skip("running the hook requires an `sh` on PATH")
