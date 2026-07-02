@@ -312,6 +312,10 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path) -> list
     ]
     try:
         local_config = load_local_config(repo_root)
+    except ConfigError as error:
+        checks.append(Check(id="local_config", ok=False, message=f"{error}; fix .byor/local.yml by hand"))
+        return checks
+    try:
         plan = compute_sync_plan(
             project,
             local,
@@ -329,7 +333,11 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path) -> list
             message="effective rule IDs are unique",
         )
     )
-    packages_plan, packages_dir = repo_packages_plan(repo_root, canonical)
+    try:
+        packages_plan, packages_dir = repo_packages_plan(repo_root, canonical)
+    except (DuplicateRuleIdError, RuleValidationError, ConfigError) as error:
+        checks.append(Check(id="package_rules", ok=False, message=str(error)))
+        return checks
     global_stale = mirror_contents(repo_root / paths.personal_global_rules) != plan.desired
     packages_stale = mirror_contents(packages_dir) != packages_plan.desired
     if global_stale or packages_stale:
@@ -379,7 +387,11 @@ def _extra_checks_check(
 ) -> Check | None:
     if not repo_config.checks and not global_config.checks:
         return None
-    effective = effective_checks(repo_config, global_config, local_config=load_local_config(repo_root))
+    try:
+        local_config = load_local_config(repo_root)
+    except ConfigError as error:
+        return Check(id="extra_checks", ok=False, message=f"{error}; fix .byor/local.yml by hand")
+    effective = effective_checks(repo_config, global_config, local_config=local_config)
     if not effective:
         return Check(
             id="extra_checks",

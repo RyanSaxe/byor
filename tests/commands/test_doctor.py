@@ -209,6 +209,48 @@ def test_doctor_flags_duplicate_project_and_local_ids(home: Path) -> None:
     assert "no-cast" in failed["rule_ids_unique"].message
 
 
+def test_doctor_reports_a_package_id_collision_instead_of_dying(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write_package_rule(home, "pkg-a", relpath="dup.yml", rule_id="dup-id")
+    write_package_rule(home, "pkg-b", relpath="dup.yml", rule_id="dup-id")
+    repo = make_repo(home)
+    install_package(repo, "pkg-a")
+    install_package(repo, "pkg-b")
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 1
+
+    captured = capsys.readouterr()
+    assert "FAIL  package_rules" in captured.out
+    assert "byor exclude" in captured.out
+    # The report still renders instead of one raw escaped error.
+    assert "ok    repo_config" in captured.out
+    assert captured.err == ""
+
+    assert main(["doctor", "--repo", str(repo), "--json"]) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is False
+    assert any(check["id"] == "package_rules" and not check["ok"] for check in payload["checks"])
+
+
+def test_doctor_reports_a_corrupt_local_config_instead_of_dying(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = make_repo(home)
+    (repo / ".byor" / "local.yml").write_text("version: 1\nglobal: [not, a, mapping]\n")
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 1
+
+    captured = capsys.readouterr()
+    assert "FAIL  local_config" in captured.out
+    assert "fix .byor/local.yml by hand" in captured.out
+    assert "ok    repo_config" in captured.out
+    assert captured.err == ""
+
+    assert main(["doctor", "--repo", str(repo), "--json"]) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is False
+    assert any(check["id"] == "local_config" and not check["ok"] for check in payload["checks"])
+
+
 def test_doctor_flags_registered_repos_whose_path_is_gone(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     gone = make_repo(home, name="gone")
