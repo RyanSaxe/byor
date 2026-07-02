@@ -50,7 +50,8 @@ from byor.rules.sync import (
     mirror_contents,
     repo_plans,
 )
-from byor.scaffold.ignore import rule_visibility_ok
+from byor.scaffold.githooks import shim_problems
+from byor.scaffold.ignore import ignore_block_current, rule_visibility_ok
 from byor.scan.astgrep import ast_grep_version, resolve_ast_grep
 from byor.scan.checks import effective_checks
 
@@ -139,6 +140,7 @@ def _repo_checks(
         _sgconfig_check(repo_root, repo_config.paths),
         _rule_dirs_check(repo_root, repo_config.paths),
         _rule_visibility_check(repo_root, repo_config.paths),
+        _ignore_block_check(repo_root),
     ]
     if not quick and repo_check.ok:
         checks.extend(_rule_checks(repo_root, repo_config.paths, config_dir=config_dir))
@@ -148,6 +150,9 @@ def _repo_checks(
         vendored_check = _vendored_scripts_check(repo_root, repo_config)
         if vendored_check is not None:
             checks.append(vendored_check)
+        shims_check = _git_shims_check(repo_root)
+        if shims_check is not None:
+            checks.append(shims_check)
     extra = _extra_checks_check(repo_root, repo_config, global_config=global_config)
     if extra is not None:
         checks.append(extra)
@@ -353,6 +358,32 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path) -> list
     else:
         checks.append(Check(id="sync_fresh", ok=True, message="rule copies are in sync"))
     return checks
+
+
+def _ignore_block_check(repo_root: Path) -> Check:
+    if ignore_block_current(repo_root):
+        return Check(
+            id="ignore_block",
+            ok=True,
+            message="personal rules and .byor/local.yml are git-ignored",
+        )
+    return Check(
+        id="ignore_block",
+        ok=False,
+        message=(
+            "the byor ignore block is gone, so personal rules and .byor/local.yml"
+            " are committable; run `byor init` to restore it"
+        ),
+    )
+
+
+def _git_shims_check(repo_root: Path) -> Check | None:
+    problems = shim_problems(repo_root)
+    if problems is None:
+        return None
+    if problems:
+        return Check(id="git_shims", ok=False, message="; ".join(problems))
+    return Check(id="git_shims", ok=True, message="git hook shims are installed and current")
 
 
 def _gate_check(repo_root: Path, repo_config: RepoConfig) -> Check | None:

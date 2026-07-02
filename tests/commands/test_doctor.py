@@ -3,8 +3,8 @@
 Doctor is byor's read-only diagnosis, so these tests pin the healthy-repo report, the documented
 JSON shape, and a finding for each way an install decays: missing sgconfig or ast-grep, invalid
 rules, duplicate ids, stale gate files or package mirrors, dead registry paths, drifted skill
-renders. It must stay graceful outside a byor repo, and quick mode skips the recursive rule
-validation.
+renders, a removed ignore block, deleted git shims. It must stay graceful outside a byor repo, and
+quick mode skips the recursive rule validation.
 """
 
 import json
@@ -70,6 +70,7 @@ def test_doctor_json_matches_the_spec_shape(home: Path, capsys: pytest.CaptureFi
         "sgconfig",
         "rule_dirs",
         "rules_visible",
+        "ignore_block",
         "rules_valid",
         "rule_ids_unique",
         "sync_fresh",
@@ -101,6 +102,67 @@ def test_doctor_extra_checks_reports_when_all_are_excluded(home: Path, capsys: p
     assert main(["doctor", "--repo", str(repo)]) == 0
 
     assert "all configured checks are excluded" in capsys.readouterr().out
+
+
+def test_doctor_fails_when_the_ignore_block_is_removed(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = make_repo(home)
+    gitignore = repo / ".gitignore"
+    gitignore.write_text("node_modules/\n")
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  ignore_block" in out
+    assert "run `byor init` to restore it" in out
+    # Doctor is read-only: it reports the missing block without rewriting it.
+    assert gitignore.read_text() == "node_modules/\n"
+
+
+def test_doctor_accepts_a_private_ignore_block(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = home / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--private"]) == 0
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 0
+
+    assert "ok    ignore_block" in capsys.readouterr().out
+
+
+def test_doctor_reports_a_deleted_git_shim(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = home / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--git-hooks"]) == 0
+    (repo / ".git" / "hooks" / "post-checkout").unlink()
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  git_shims" in out
+    assert ".git/hooks/post-checkout is missing; run `byor init --git-hooks`" in out
+
+
+def test_doctor_reports_current_git_shims_and_skips_repos_without_them(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = home / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--git-hooks"]) == 0
+    unhooked = make_repo(home, name="unhooked")
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 0
+    out = capsys.readouterr().out
+    assert "ok    git_shims" in out
+    assert "FAIL" not in out
+
+    assert main(["doctor", "--repo", str(unhooked)]) == 0
+    assert "git_shims" not in capsys.readouterr().out
 
 
 def test_doctor_reports_missing_ast_grep_with_the_install_message(

@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 __all__ = (
+    "ignore_block_current",
     "ignore_file",
     "rule_visibility_ok",
     "write_ignore_block",
@@ -73,6 +74,28 @@ def rule_visibility_ok(rules_dir: Path) -> bool:
         return False
     lines = {line.strip() for line in path.read_text(encoding="utf-8").splitlines()}
     return all(pattern in lines for pattern in VISIBILITY_PATTERNS)
+
+
+def ignore_block_current(repo_root: Path) -> bool:
+    """Return True when a current byor ignore block keeps personal state uncommittable.
+
+    A shared setup carries the block in .gitignore; a private setup hides the
+    whole footprint via .git/info/exclude. Either current block keeps personal
+    rules and .byor/local.yml out of commits, so both targets are accepted.
+    The shared target is tried first: it needs no git subprocess.
+    """
+    for private in (False, True):
+        try:
+            path = ignore_file(repo_root, private=private)
+        except ConfigError:
+            continue
+        if not path.is_file():
+            continue
+        content = path.read_text(encoding="utf-8")
+        patterns = PRIVATE_IGNORED_PATTERNS if private else IGNORED_PATTERNS
+        if _with_block(content, patterns) == content:
+            return True
+    return False
 
 
 def ignore_file(repo_root: Path, *, private: bool) -> Path:

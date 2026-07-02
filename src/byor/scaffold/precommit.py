@@ -23,6 +23,8 @@ __all__ = (
 
 CONFIG_RELPATH = ".pre-commit-config.yaml"
 
+# The single marker for both gate files (this config and the CI workflow),
+# so their staleness checks stay in lockstep by construction.
 GATE_MARKER = f"# {MANAGED_NOTICE}"
 AST_GREP_ENTRY = "uvx --from ast-grep-cli ast-grep scan --error"
 

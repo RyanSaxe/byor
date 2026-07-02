@@ -19,11 +19,11 @@ from byor.agents.opencode import (
     OPENCODE_PLUGIN_RELPATH,
 )
 from byor.agents.pi import PI_EXTENSION, PI_EXTENSION_RELPATH, PI_MARKER
+from byor.agents.skill import global_skill_dirs, skill_files
 from byor.config import load_global_config, save_global_config
 from byor.io.fsio import MANAGED_MARKER, marked_text_status, prune_empty_dirs, write_marked_text
 from byor.io.output import write_lines
 from byor.io.paths import global_config_dir
-from byor.rules.skill import global_skill_dirs, skill_files
 
 if TYPE_CHECKING:
     import argparse
