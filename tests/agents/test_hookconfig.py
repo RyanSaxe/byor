@@ -1,8 +1,9 @@
-"""Exercise managed agent hook configuration.
+"""The generalized per-harness hook-config engine (global registration).
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+Most harness configs are user-owned JSON files byor merges one hook entry into, so the cases here
+guard co-existence: idempotent installs, healing stale or user-mixed byor entries, and uninstalls
+that remove only byor's entry while preserving unrelated keys. Copilot instead owns its whole config
+file, which flips the rules to overwrite-and-delete.
 """
 
 import json

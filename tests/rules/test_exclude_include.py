@@ -1,8 +1,9 @@
 """Exercise rule exclusion and inclusion behavior.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+Exclusions are repo-local opt-outs recorded in local config; excluding removes the mirrored copy and
+including restores it, unless a project rule owns the id and keeps it shadowed. Selectors cover
+rules and checks by name or tag, and the command demands exactly one selector and an initialized
+repo.
 """
 
 from pathlib import Path

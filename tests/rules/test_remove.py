@@ -1,8 +1,8 @@
 """Exercise rule removal behavior.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+Removal is scope-aware: deleting a project rule that shadowed a global id lets the global copy sync
+back in, while removing a global rule deletes the canonical file and fans the deletion out to
+registered repos. Unknown rule ids fail cleanly instead of guessing.
 """
 
 from pathlib import Path

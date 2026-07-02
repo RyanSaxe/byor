@@ -1,8 +1,9 @@
-"""Exercise changed-line scope detection.
+"""Line-range scoping: edit location, diff hunks, and overlap.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+edit_ranges locates edited strings inside the current file text — every occurrence, unioned across a
+list of edits, tolerant of CRLF differences, and None as soon as any edit cannot be found, which
+tells the caller to fall back. On the git side, diff_ranges is None for untracked files, before the
+first commit, or outside a repo, and pure deletions contribute no ranges.
 """
 
 from pathlib import Path

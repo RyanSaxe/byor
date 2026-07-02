@@ -1,8 +1,9 @@
-"""Exercise managed BYOR skill rendering.
+"""The byor skill: rendering the hub + references, global installation, self-heal.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+The skill is a rendered tree of marked files installed into both global agent locations, so these
+tests pin the render: frontmatter meeting the cross-agent standard, each reference actually teaching
+its topic. The lifecycle is covered too — uninstall removes marked files and prunes empty dirs, and
+self-heal refreshes a drifted reference but never touches a user-owned file.
 """
 
 import re

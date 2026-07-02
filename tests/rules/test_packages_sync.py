@@ -1,8 +1,8 @@
-"""Exercise package rule sync behavior.
+"""Syncing opt-in packages: their rules mirror in only when installed.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+The packages mirror holds a subdirectory per installed package, and sync keeps it truthful: rules of
+uninstalled or removed packages disappear, and a project rule with the same id overrides the package
+copy. Two installed packages claiming one rule id has no right answer, so it is a hard error.
 """
 
 from pathlib import Path

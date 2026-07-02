@@ -1,8 +1,9 @@
 """Exercise profile command behavior.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+Profiles are named exclusion bundles defined in the global config; applying one translates its
+selectors into this repo's local exclusions and re-syncs the mirror. The tests pin that existing
+exclusions survive, re-application is idempotent, and unknown profiles or an uninitialized repo fail
+cleanly.
 """
 
 from pathlib import Path

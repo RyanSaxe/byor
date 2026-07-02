@@ -1,8 +1,9 @@
 """Exercise rule editing behavior.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+`byor edit` resolves a bare rule id across scopes, preferring project over global, and edits the
+canonical file — a global edit then fans out to registered repos. Fake $EDITOR commands drive the
+sessions; an invalid result must leave the original untouched, an unchanged file is a quiet no-op,
+and an id rename cannot collide with another scope.
 """
 
 from pathlib import Path

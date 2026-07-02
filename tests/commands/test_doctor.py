@@ -1,8 +1,10 @@
 """Exercise doctor health checks.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+Doctor is byor's read-only diagnosis, so these tests pin the healthy-repo report, the documented
+JSON shape, and a finding for each way an install decays: missing sgconfig or ast-grep, invalid
+rules, duplicate ids, stale gate files or package mirrors, dead registry paths, drifted skill
+renders. It must stay graceful outside a byor repo, and quick mode skips the recursive rule
+validation.
 """
 
 import json

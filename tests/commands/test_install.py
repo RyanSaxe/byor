@@ -1,8 +1,8 @@
-"""Exercise global install command behavior.
+"""`byor install`: global, one-time registration of byor's AI integrations.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+install touches only machine-global state — the home sgconfig, the skill render, and the recorded
+agent list — never a repository. The tests pin idempotency (re-running merges agents without
+duplicates) and a clean failure for an unknown agent name.
 """
 
 from pathlib import Path

@@ -1,8 +1,9 @@
-"""Exercise agent hook installation flows.
+"""AI agent adapters and the `byor hook` / `byor install` commands (global).
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+Hook registration is machine-wide, not per repo, so these tests drive the real command flow against
+an isolated home: merging into existing Claude settings without clobbering them, refreshing outdated
+hook commands, and uninstalling only the byor settings group. Doctor coverage lives here too,
+flagging a recorded harness whose hook was removed or drifted.
 """
 
 import json

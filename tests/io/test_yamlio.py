@@ -1,8 +1,8 @@
 """Exercise YAML IO helpers.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+byor edits YAML files users also edit by hand, so the round-trip must preserve their comments and
+key order. Loading is strict about shape: an empty document reads as an empty mapping, while a non-
+mapping top level or invalid YAML raises ConfigError instead of leaking parser internals.
 """
 
 from pathlib import Path

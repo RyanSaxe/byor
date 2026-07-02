@@ -1,8 +1,9 @@
-"""Exercise generated git hook shims.
+"""Git hook shims installed by `byor init --git-hooks`.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+The shims are marked files, so installs are idempotent, outdated shims are rewritten, and an
+unmarked user hook is never touched. Layout quirks get their own cases: a repo with core.hooksPath
+set gets the shim line printed for its own hook manager instead of files, and worktrees install into
+the shared common hooks dir.
 """
 
 import os

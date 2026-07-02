@@ -1,8 +1,10 @@
 """Exercise rule creation behavior.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+`byor add` accepts a rule from a file or an $EDITOR session, or prints the template when given
+neither; the editor flows run real subprocess commands built by the fake-editor helpers in
+support.py. Validation cases pin duplicate-id handling (an error within a scope, a legal override
+across scopes), --allow-exceptions prefilling the standard escape-hatch sentence, and rule-id
+hygiene including path-traversal rejection.
 """
 
 from pathlib import Path

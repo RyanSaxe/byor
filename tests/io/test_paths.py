@@ -1,8 +1,9 @@
 """Exercise BYOR path helpers.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+Two lookups everything else builds on: the global config dir prefers XDG_CONFIG_HOME and falls back
+to ~/.config. Repo-root resolution searches with a fixed precedence — an explicit repo argument
+wins, a .byor config beats a nearer .git dir, then the nearest git dir, then the start directory
+itself.
 """
 
 from pathlib import Path

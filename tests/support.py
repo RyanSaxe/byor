@@ -1,8 +1,9 @@
-"""Provide shared helpers for the BYOR test suite.
+"""Shared helpers for the BYOR test suite, importable via ``pythonpath = ["tests"]``.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+These run the real thing: setup helpers assert `main(...)` exit codes, git helpers shell out with an
+inline throwaway identity, and writers fabricate rules, checks, and packages inside the sandboxed
+home. The editor factories return multi-word $EDITOR commands on purpose, so callers exercise the
+shlex.split contract.
 """
 
 import shlex
@@ -25,6 +26,7 @@ RULE_TEMPLATE = "id: {rule_id}\nlanguage: Python\nmessage: {message}\nrule:\n  p
 NOOP_EDITOR = shlex.join([sys.executable, "-c", "pass"])
 
 
+# Every `command` string anywhere in a parsed harness-config JSON tree.
 def commands_in(node: object) -> list[str]:
     if isinstance(node, dict):
         found: list[str] = []
@@ -39,6 +41,7 @@ def commands_in(node: object) -> list[str]:
     return []
 
 
+# Run git in `repo` with an inline throwaway identity; returns stdout.
 def git(repo: Path, *argv: str) -> str:
     git_executable = shutil.which("git")
     if git_executable is None:
@@ -150,14 +153,18 @@ def uninstall_package(repo: Path, name: str) -> None:
         save_local_config(repo, local)
 
 
+# The generated copy of global rules that ast-grep reads in this repo.
 def mirror(repo: Path) -> Path:
     return repo / ".byor" / "rules" / "personal" / "global"
 
 
+# The generated copy of installed-package rules ast-grep reads in this repo.
 def package_mirror(repo: Path) -> Path:
     return repo / ".byor" / "rules" / "personal" / "packages"
 
 
+# An $EDITOR value whose command replaces the edited file with `content`.
+# Deliberately multi-word so it exercises the shlex.split contract.
 def make_editor(directory: Path, content: str) -> str:
     source = directory / "editor-replacement.yml"
     source.write_text(content)
@@ -165,6 +172,7 @@ def make_editor(directory: Path, content: str) -> str:
     return shlex.join([sys.executable, "-c", copy_into_edited_file, str(source)])
 
 
+# An $EDITOR whose command replaces `old` with `new` in the edited file.
 def substituting_editor(old: str, new: str) -> str:
     substitute = (
         "import pathlib, sys; path = pathlib.Path(sys.argv[1]); "
@@ -173,6 +181,7 @@ def substituting_editor(old: str, new: str) -> str:
     return shlex.join([sys.executable, "-c", substitute])
 
 
+# An $EDITOR that exits nonzero without touching the file.
 def failing_editor(status: int) -> str:
     script = f"raise SystemExit({status})"
     return shlex.join([sys.executable, "-c", script])

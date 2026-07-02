@@ -1,8 +1,9 @@
 """Exercise repository initialization behavior.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+init scaffolds the repo layout and registers it globally, so these tests pin idempotency, sgconfig
+preservation and backup-then-replace, private mode via .git/info/exclude, and the closing quick-
+doctor report. Flag precedence gets its own coverage: explicit flags beat global init defaults,
+which in turn seed the interactive prompts.
 """
 
 import io

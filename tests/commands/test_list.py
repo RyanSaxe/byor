@@ -1,8 +1,9 @@
 """Exercise rule and check listing behavior.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+list is the one view over every origin at once: project, local, global, and installed packages, plus
+configured checks. The tests pin the scope and tag filters, the skip reasons shown for excluded
+global rules, JSON output, the guidance printed when no rules exist, and a clean failure outside an
+initialized repo.
 """
 
 import json
