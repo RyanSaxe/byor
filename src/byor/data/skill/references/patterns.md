@@ -58,3 +58,23 @@ byor add --scope project --from /tmp/no-print-logging.yml
 Verify: write `print("debug")` to `/tmp/byor-rule-check.py`, run
 `ast-grep scan /tmp/byor-rule-check.py` from the repo root, confirm the
 `no-print-logging` diagnostic appears, then delete the file.
+
+## Scope a rule to part of the repo
+
+Rules accept ast-grep's `files:` and `ignores:` glob lists at the top level,
+which is the right tool when a rule is correct for most of the repo but wrong
+for one directory — a CLI's `bin/` legitimately printing while `src/` must
+not, or generated code exempt from style rules:
+
+```yaml
+id: no-console-log-in-src
+language: JavaScript
+files:
+  - src/**
+rule:
+  pattern: console.log($$$ARGS)
+```
+
+Prefer this over `byor exclude`, which disables a rule for the whole repo.
+When an installed package's rule needs path scoping, exclude it and capture a
+path-scoped project rule in its place — say so in the rule's rationale.
