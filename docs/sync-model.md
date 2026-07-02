@@ -35,7 +35,9 @@ Relative paths below the global rules root are preserved
 A global rule is *not* copied when:
 
 - a project rule owns its ID (`overridden by project rule`),
-- a local rule owns its ID (`overridden by local rule`), or
+- a local rule owns its ID (`overridden by local rule`),
+- a surviving installed-package rule owns its ID
+  (`overridden by package rule`), or
 - it is listed in `.byor/local.yml` `excluded_rule_ids`
   (`excluded in .byor/local.yml`), or
 - one of its `metadata.byor.tags` entries is listed in `.byor/local.yml`
@@ -103,8 +105,10 @@ applies.
 `.byor/local.yml` and syncs. The package's rules mirror into
 `.byor/rules/personal/packages/NAME/` — a second generated copy alongside the
 global mirror, kept correct by the same self-heal — and its checks apply. A
-package rule an owned scope already provides (project, local, or a kept global
-rule) is skipped, and two installed packages claiming one ID is a hard error.
+package rule a repo-owned scope already provides (project or local) is
+skipped; a same-ID global rule is skipped instead, because opting into a
+package is an easy avenue to override your global setup. Two installed
+packages claiming one ID is a hard error.
 
 **A fresh clone, before byor is installed.** Tracked `.gitkeep` and
 `.ignore` files keep the rule directories present and ast-grep-visible, so

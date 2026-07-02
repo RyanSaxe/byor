@@ -1,8 +1,9 @@
 """Syncing opt-in packages: their rules mirror in only when installed.
 
 The packages mirror holds a subdirectory per installed package, and sync keeps it truthful: rules of
-uninstalled or removed packages disappear, and a project rule with the same id overrides the package
-copy. Two installed packages claiming one rule id has no right answer, so it is a hard error.
+uninstalled or removed packages disappear, a project rule with the same id overrides the package
+copy, and a package rule overrides the global copy. Two installed packages claiming one rule id has
+no right answer, so it is a hard error.
 """
 
 from pathlib import Path
@@ -11,8 +12,10 @@ import pytest
 from support import (
     install_package,
     make_repo,
+    mirror,
     package_mirror,
     uninstall_package,
+    write_global_rule,
     write_package_rule,
     write_rule,
 )
@@ -62,6 +65,33 @@ def test_project_rule_overrides_a_package_rule_of_the_same_id(home: Path) -> Non
     assert main(["sync", "--repo", str(repo)]) == 0
 
     assert not (package_mirror(repo) / "python-strict" / "no-cast.yml").exists()
+
+
+# Opting into a package is an easy avenue to override your global setup.
+def test_package_rule_overrides_a_global_rule_of_the_same_id(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write_global_rule(home, "shared-id.yml", rule_id="shared-id")
+    write_package_rule(home, "python-strict", relpath="strict.yml", rule_id="shared-id")
+    repo = make_repo(home)
+    install_package(repo, "python-strict")
+    capsys.readouterr()
+
+    assert main(["sync", "--repo", str(repo)]) == 0
+
+    assert (package_mirror(repo) / "python-strict" / "strict.yml").is_file()
+    assert not (mirror(repo) / "shared-id.yml").exists()
+    assert "  shared-id: overridden by package rule" in capsys.readouterr().out
+
+
+def test_excluding_the_package_rule_leaves_neither_copy(home: Path) -> None:
+    write_global_rule(home, "shared-id.yml", rule_id="shared-id")
+    write_package_rule(home, "python-strict", relpath="strict.yml", rule_id="shared-id")
+    repo = make_repo(home)
+    install_package(repo, "python-strict")
+
+    assert main(["exclude", "shared-id", "--repo", str(repo)]) == 0
+
+    assert not (package_mirror(repo) / "python-strict" / "strict.yml").exists()
+    assert not (mirror(repo) / "shared-id.yml").exists()
 
 
 def test_two_packages_with_the_same_rule_id_is_a_hard_error(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
