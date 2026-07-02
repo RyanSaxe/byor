@@ -1,0 +1,3 @@
+# The stock Python .gitignore excludes lib/ (virtualenv layout); this
+# directory holds shared check-script helpers and must stay tracked.
+!lib/

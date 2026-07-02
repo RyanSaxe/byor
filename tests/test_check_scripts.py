@@ -106,6 +106,60 @@ def test_check_script_reports_non_utf8_file_and_keeps_scanning(
     assert expected in completed.stdout
 
 
+PYFILES_COMMAND = (sys.executable, str(SCRIPTS_DIR / "lib" / "pyfiles.py"))
+
+
+def _pyfiles(*args: str, cwd: Path) -> list[str]:
+    completed = subprocess.run(
+        (*PYFILES_COMMAND, *args),
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [entry for entry in completed.stdout.split("\0") if entry]
+
+
+def test_pyfiles_echoes_back_only_python_file_arguments(tmp_path: Path) -> None:
+    (tmp_path / "kept.py").write_text("x = 1\n")
+    (tmp_path / "notes.txt").write_text("not python\n")
+
+    assert _pyfiles("kept.py", "notes.txt", "missing.py", cwd=tmp_path) == ["kept.py"]
+
+
+def test_pyfiles_no_args_discovers_repo_python_files(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    (repo / "tracked.py").write_text("x = 1\n")
+    git(repo, "add", "tracked.py")
+    (repo / "untracked.py").write_text("x = 1\n")
+    (repo / "notes.txt").write_text("not python\n")
+
+    discovered = {Path(entry).name for entry in _pyfiles(cwd=repo)}
+
+    assert discovered == {"tracked.py", "untracked.py"}
+
+
+def test_pyfiles_no_args_respects_gitignore(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    (repo / ".gitignore").write_text("ignored.py\n")
+    (repo / "ignored.py").write_text("x = 1\n")
+
+    assert _pyfiles(cwd=repo) == []
+
+
+def test_pyfiles_nul_delimits_space_containing_filenames(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    (repo / "with space.py").write_text("x = 1\n")
+
+    assert [Path(entry).name for entry in _pyfiles(cwd=repo)] == ["with space.py"]
+
+
 NO_SUPPRESSION_COMMAND = (sys.executable, str(SCRIPTS_DIR / "no-suppression-comments.py"))
 MODULE_CONTRACT_COMMAND = (sys.executable, str(SCRIPTS_DIR / "module-contract.py"))
 
