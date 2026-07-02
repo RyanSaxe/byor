@@ -48,7 +48,7 @@ from byor.rules.sync import (
     compute_sync_plan,
     load_canonical_rules,
     mirror_contents,
-    repo_packages_plan,
+    repo_plans,
 )
 from byor.scaffold.ignore import rule_visibility_ok
 from byor.scan.astgrep import ast_grep_version, resolve_ast_grep
@@ -341,12 +341,12 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path) -> list
         )
     )
     try:
-        packages_plan, packages_dir = repo_packages_plan(repo_root, canonical)
+        plans = repo_plans(repo_root, canonical)
     except (DuplicateRuleIdError, RuleValidationError, ConfigError) as error:
         checks.append(Check(id="package_rules", ok=False, message=str(error)))
         return checks
     global_stale = mirror_contents(repo_root / paths.personal_global_rules) != plan.desired
-    packages_stale = mirror_contents(packages_dir) != packages_plan.desired
+    packages_stale = mirror_contents(plans.packages_dir) != plans.packages_plan.desired
     if global_stale or packages_stale:
         message = "rule copies are stale; run `byor sync`"
         checks.append(Check(id="sync_fresh", ok=False, message=message))

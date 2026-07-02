@@ -48,6 +48,7 @@ __all__ = (
     "CanonicalRules",
     "InstalledPackage",
     "MirrorResult",
+    "RepoPlans",
     "SkippedRule",
     "SyncPlan",
     "compute_packages_plan",
@@ -60,8 +61,7 @@ __all__ = (
     "mirror_contents",
     "mirror_global_rules",
     "repo_is_stale",
-    "repo_packages_plan",
-    "repo_sync_plan",
+    "repo_plans",
     "run_sync",
     "summarize_changes",
     "sync_repo",
@@ -180,7 +180,11 @@ def compute_sync_plan(
     kept, skipped = _effective_canonical(
         project, local, excluded_rule_ids=excluded_rule_ids, excluded_tags=excluded_tags, canonical=canonical
     )
-    desired = {rule.path.relative_to(canonical.root).as_posix(): rule.content for rule in kept}
+    return _global_plan(kept, skipped, root=canonical.root)
+
+
+def _global_plan(kept: list[Rule], skipped: list[SkippedRule], *, root: Path) -> SyncPlan:
+    desired = {rule.path.relative_to(root).as_posix(): rule.content for rule in kept}
     return SyncPlan(desired=desired, skipped=skipped)
 
 
@@ -261,51 +265,56 @@ def mirror_global_rules(mirror_dir: Path, desired: dict[str, str]) -> MirrorResu
     return MirrorResult(written=written, removed=removed)
 
 
-def repo_sync_plan(repo_root: Path, canonical: CanonicalRules) -> tuple[SyncPlan, Path]:
-    paths = load_repo_config(repo_root).paths
-    local_config = load_local_config(repo_root)
-    plan = compute_sync_plan(
-        load_rules(repo_root / paths.project_rules),
-        load_rules(repo_root / paths.personal_local_rules),
-        excluded_rule_ids=local_config.excluded_rule_ids,
-        excluded_tags=local_config.excluded_rule_tags,
-        canonical=canonical,
-    )
-    return plan, resolve_within(repo_root, repo_root / paths.personal_global_rules)
+@dataclass
+class RepoPlans:
+    global_plan: SyncPlan
+    global_dir: Path
+    packages_plan: SyncPlan
+    packages_dir: Path
 
 
-def repo_packages_plan(repo_root: Path, canonical: CanonicalRules) -> tuple[SyncPlan, Path]:
+def repo_plans(repo_root: Path, canonical: CanonicalRules) -> RepoPlans:
+    """Compute the global and packages mirror plans in one pass.
+
+    Loads the repo config, local config, and both rule scopes once and reuses
+    the effective-canonical result for both plans, so a self-heal does not read
+    and parse every rule file twice.
+    """
     paths = load_repo_config(repo_root).paths
     local_config = load_local_config(repo_root)
     project = load_rules(repo_root / paths.project_rules)
     local = load_rules(repo_root / paths.personal_local_rules)
-    kept_global, _ = _effective_canonical(
+    kept, skipped = _effective_canonical(
         project,
         local,
         excluded_rule_ids=local_config.excluded_rule_ids,
         excluded_tags=local_config.excluded_rule_tags,
         canonical=canonical,
     )
-    plan = compute_packages_plan(
+    packages_plan = compute_packages_plan(
         project,
         local,
         local_config=local_config,
-        kept_global_ids={rule.id for rule in kept_global},
+        kept_global_ids={rule.id for rule in kept},
         packages=load_installed_packages(canonical, local_config.packages),
     )
-    return plan, resolve_within(repo_root, repo_root / paths.personal_packages_rules)
+    return RepoPlans(
+        global_plan=_global_plan(kept, skipped, root=canonical.root),
+        global_dir=resolve_within(repo_root, repo_root / paths.personal_global_rules),
+        packages_plan=packages_plan,
+        packages_dir=resolve_within(repo_root, repo_root / paths.personal_packages_rules),
+    )
 
 
 def sync_repo(repo_root: Path, canonical: CanonicalRules) -> tuple[SyncPlan, MirrorResult]:
-    global_plan, global_dir = repo_sync_plan(repo_root, canonical)
-    global_result = mirror_global_rules(global_dir, global_plan.desired)
-    packages_plan, packages_dir = repo_packages_plan(repo_root, canonical)
-    packages_result = mirror_global_rules(packages_dir, packages_plan.desired)
+    plans = repo_plans(repo_root, canonical)
+    global_result = mirror_global_rules(plans.global_dir, plans.global_plan.desired)
+    packages_result = mirror_global_rules(plans.packages_dir, plans.packages_plan.desired)
     # `desired` stays the global mirror alone: it feeds the "N global rules"
     # sync count. Package changes still register through the mirror result.
     plan = SyncPlan(
-        desired=global_plan.desired,
-        skipped=global_plan.skipped + packages_plan.skipped,
+        desired=plans.global_plan.desired,
+        skipped=plans.global_plan.skipped + plans.packages_plan.skipped,
     )
     result = MirrorResult(
         written=global_result.written + packages_result.written,
@@ -315,9 +324,11 @@ def sync_repo(repo_root: Path, canonical: CanonicalRules) -> tuple[SyncPlan, Mir
 
 
 def repo_is_stale(repo_root: Path, canonical: CanonicalRules) -> bool:
-    global_plan, global_dir = repo_sync_plan(repo_root, canonical)
-    packages_plan, packages_dir = repo_packages_plan(repo_root, canonical)
-    return mirror_contents(global_dir) != global_plan.desired or mirror_contents(packages_dir) != packages_plan.desired
+    plans = repo_plans(repo_root, canonical)
+    return (
+        mirror_contents(plans.global_dir) != plans.global_plan.desired
+        or mirror_contents(plans.packages_dir) != plans.packages_plan.desired
+    )
 
 
 def heal_global(config_dir: Path) -> list[str]:
