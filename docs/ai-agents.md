@@ -105,8 +105,10 @@ edited file(s) and edit text, and replies in the harness's own feedback format
 (claude-code via stderr + exit 2; codex/copilot via a JSON envelope on
 stdout). Codex payloads carry an `apply_patch` envelope, which byor parses
 for the added lines. Payloads without a recognizable file — including malformed
-ones — exit 0 without scanning, and hook mode is silent in a repo with no
-`.byor/config.yml`, so a hook can never block the agent loop.
+ones — exit 0 without scanning. In a repo with no `.byor/config.yml`, hook mode
+scans the edit against your synced global rules and global checks instead;
+it stays silent only when you have neither (no `~/sgconfig.yml` from
+`byor install` and no global `checks:`).
 
 ## Extra checks
 
@@ -290,7 +292,8 @@ byor can reliably integrate with, so byor omits them until that changes.
 ### skill
 
 The `byor` skill is a hub `SKILL.md` plus reference files
-(`references/patterns.md`, `references/checks.md`, `references/setup.md`),
+(`references/patterns.md`, `references/checks.md`, `references/setup.md`,
+`references/packages.md`, `references/profiles.md`),
 following the Agent Skills progressive-disclosure pattern so the shared
 rule-authoring guidance lives in one place. It does two things: **capture** (the
 default) and **setup**.
