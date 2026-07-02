@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from byor.io.fsio import MANAGED_NOTICE, write_marked_text
+from byor.io.gitio import default_branch
 from byor.scaffold.precommit import AST_GREP_ENTRY
 
 if TYPE_CHECKING:
@@ -28,13 +29,14 @@ GATE_MARKER = f"# {MANAGED_NOTICE}"
 
 
 def write_ci_workflow(repo_root: Path, checks: list[CheckDef]) -> list[str]:
-    result = write_marked_text(repo_root / WORKFLOW_RELPATH, workflow_text(checks), marker=GATE_MARKER)
+    text = workflow_text(checks, default_branch=default_branch(repo_root))
+    result = write_marked_text(repo_root / WORKFLOW_RELPATH, text, marker=GATE_MARKER)
     if result == "written":
         return [f"Wrote {WORKFLOW_RELPATH}"]
     return []
 
 
-def workflow_text(checks: list[CheckDef]) -> str:
+def workflow_text(checks: list[CheckDef], *, default_branch: str) -> str:
     steps = [
         "      - uses: actions/checkout@v4",
         "      - uses: astral-sh/setup-uv@v6",
@@ -51,7 +53,7 @@ def workflow_text(checks: list[CheckDef]) -> str:
         "on:\n"
         "  pull_request:\n"
         "  push:\n"
-        "    branches: [main]\n"
+        f"    branches: [{default_branch}]\n"
         "jobs:\n"
         "  byor:\n"
         "    runs-on: ubuntu-latest\n"
