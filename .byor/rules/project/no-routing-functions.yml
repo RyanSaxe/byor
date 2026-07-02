@@ -71,7 +71,9 @@ metadata:
       boundary, add real boundary behavior such as validation, translation,
       authorization, retry policy, error handling, or instrumentation. Do not
       preserve a wrapper whose only effect is changing argument order, defaults,
-      or names.
+      or names. If this is genuinely necessary, add `# ast-grep-ignore:
+      no-routing-functions` at the end of the offending line, with a short
+      comment on the line above explaining why.
     tags:
     - python
     - design
