@@ -426,6 +426,16 @@ def test_gate_promote_keeps_both_package_rules_on_a_filename_collision(home: Pat
     assert visible.count("no-cast.yml") == 2
 
 
+def test_gate_promote_message_pluralizes_each_noun(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
+    write_global_check("ruff", "ruff-check")
+    capsys.readouterr()
+
+    gate_repo(home)
+
+    assert "Promoted 1 rule and 1 check into tracked config" in capsys.readouterr().out
+
+
 def test_private_gate_installs_a_local_shim_and_commits_nothing(home: Path) -> None:
     write_global_rule(home, "python/no-cast.yml", rule_id="no-cast")
     repo = gate_repo(home, extra=("--private",))

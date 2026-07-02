@@ -250,5 +250,8 @@ still show in `git status`; init warns when it detects this.
 There is no deinit command yet, so offboarding a private setup is manual:
 delete `.byor/` and the repo-root `sgconfig.yml` (unless the team owns it),
 remove the `Managed by BYOR` block from `.git/info/exclude`, delete any
-`Managed by BYOR` hooks from `.git/hooks/`, and drop the repo's line from
-`~/.config/byor/repos.yml` so `sync --all` and `doctor` stop looking for it.
+`Managed by BYOR` hooks from `.git/hooks/` — including a `pre-commit.legacy`
+left by `pre-commit install`, which carries the marker and must be deleted
+too — and drop the repo's line from `~/.config/byor/repos.yml` (under
+`$XDG_CONFIG_HOME/byor` when that is set) so `sync --all` and `doctor` stop
+looking for it.

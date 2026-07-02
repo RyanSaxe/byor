@@ -257,7 +257,9 @@ def promote_everything(repo_root: Path, config_dir: Path) -> list[str]:
         promoted_checks += 1
     save_repo_config(repo_root, repo_config)
     sync_repo(repo_root, load_canonical_rules(config_dir))
-    return [f"Promoted {rules} rules and {promoted_checks} checks into tracked config"]
+    rules_part = f"{rules} rule{'' if rules == 1 else 's'}"
+    checks_part = f"{promoted_checks} check{'' if promoted_checks == 1 else 's'}"
+    return [f"Promoted {rules_part} and {checks_part} into tracked config"]
 
 
 def _copy_mirror(project_dir: Path, mirror_dir: Path, *, strip_package: bool) -> int:
