@@ -144,11 +144,11 @@ def _hook_diagnostics(
     if not _has_any_rules(repo_root) and not global_config.checks:
         return 0
     payload = _resolved_payload(parse_payload(harness, sys.stdin.read()), repo_root)
-    if not payload.files:
+    if not payload.edits:
         return 0
     diagnostics, outcome = _scan(
         repo_root,
-        payload.files,
+        list(payload.edits),
         scope=_resolve_scope(args, harness),
         payload=payload,
         global_config=global_config,
@@ -343,10 +343,7 @@ def _resolved_payload(payload: EditPayload, repo_root: Path) -> EditPayload:
     def resolve(path: Path) -> Path:
         return path.resolve() if path.is_absolute() else (repo_root / path).resolve()
 
-    return EditPayload(
-        files=[resolve(file) for file in payload.files],
-        edits={resolve(file): contents for file, contents in payload.edits.items()},
-    )
+    return EditPayload(edits={resolve(file): contents for file, contents in payload.edits.items()})
 
 
 def collect_diagnostics(matches: list[ScanMatch], repo_root: Path) -> list[Diagnostic]:

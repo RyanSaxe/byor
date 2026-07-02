@@ -22,9 +22,7 @@ from byor.agents.harness import (
 def test_claude_code_parses_file_and_new_string() -> None:
     raw = json.dumps({"tool_input": {"file_path": "/repo/src.py", "new_string": "x = 1\n"}})
 
-    assert parse_payload("claude-code", raw) == EditPayload(
-        files=[Path("/repo/src.py")], edits={Path("/repo/src.py"): ["x = 1\n"]}
-    )
+    assert parse_payload("claude-code", raw) == EditPayload(edits={Path("/repo/src.py"): ["x = 1\n"]})
 
 
 def test_claude_code_collects_multiedit_and_content_strings() -> None:
@@ -58,7 +56,6 @@ def test_copilot_decodes_stringified_tool_args_and_edit_text() -> None:
 
     payload = parse_payload("copilot", raw)
 
-    assert payload.files == [Path("/repo/m.go")]
     assert payload.edits == {Path("/repo/m.go"): ["x = 1\n"]}
 
 
@@ -70,7 +67,7 @@ def test_copilot_captures_create_file_text() -> None:
         }
     )
 
-    assert parse_payload("copilot", raw) == EditPayload(files=[Path("/r/n.py")], edits={Path("/r/n.py"): ["y\n"]})
+    assert parse_payload("copilot", raw) == EditPayload(edits={Path("/r/n.py"): ["y\n"]})
 
 
 def test_copilot_without_a_recognizable_path_scans_nothing() -> None:
@@ -85,7 +82,6 @@ def test_codex_parses_the_apply_patch_envelope() -> None:
 
     payload = parse_payload("codex", raw)
 
-    assert payload.files == [Path("src/model.py")]
     assert payload.edits == {Path("src/model.py"): ["new = 1\nalso = 2"]}
 
 
