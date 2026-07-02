@@ -107,7 +107,9 @@ stdout). A codex payload carries the patch text in `tool_input.command` as an
 `apply_patch` envelope; byor reads the changed files and their added lines
 from its `*** Add File:` / `*** Update File:` sections, following `*** Move
 to:` renames to the destination path. Payloads without a recognizable file — including malformed
-ones — exit 0 without scanning. In a repo with no `.byor/config.yml`, hook mode
+ones — exit 0 without scanning. Hook mode resolves the repository from the
+edited file, not the session's working directory — an agent editing a file in
+another repo gets that repo's rules (`--repo` still overrides). In a repo with no `.byor/config.yml`, hook mode
 scans the edit against your synced global rules and global checks instead;
 it stays silent only when you have neither (no `~/sgconfig.yml` from
 `byor install` and no global `checks:`). Hook feedback uses the same
