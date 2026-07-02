@@ -60,6 +60,12 @@ class _CommandResult:
     returncode: int
 
 
+class _RuffInvocationError(Exception):
+    def __init__(self, arguments: Sequence[str], result: _CommandResult) -> None:
+        detail = result.stderr.strip() or result.stdout.strip() or "no output"
+        super().__init__(f"`ruff {' '.join(arguments)}` exited with code {result.returncode}:\n{detail}")
+
+
 @dataclass(frozen=True)
 class _RuffDiagnostic:
     filename: str
@@ -87,7 +93,20 @@ class _RuffDiagnostic:
 
 
 def main(argv: Sequence[str]) -> int:
-    targets = list(argv) if argv else ["."]
+    # Findings (including autofixes) exit 1 like the other check scripts;
+    # 2 is reserved for a ruff invocation that could not run at all.
+    try:
+        report = _run_all_passes(list(argv) if argv else ["."])
+    except _RuffInvocationError as error:
+        sys.stdout.write(f"ruff failed to run; fix the invocation problem first:\n{error}\n")
+        return 2
+    if not report:
+        return 0
+    sys.stdout.write(report)
+    return 1
+
+
+def _run_all_passes(targets: list[str]) -> str:
     ruff = _ruff_command()
     env = _plain_output_env()
 
@@ -141,11 +160,7 @@ def main(argv: Sequence[str]) -> int:
         env=env,
     )
 
-    report = _report(fixed, formatted, diagnostics=_dedupe((*normal, *always)))
-    if not report:
-        return 0
-    sys.stdout.write(report)
-    return 2
+    return _report(fixed, formatted, diagnostics=_dedupe((*normal, *always)))
 
 
 def _ruff_command() -> tuple[str, ...]:
@@ -190,20 +205,28 @@ def _ruff_json(
     env: Mapping[str, str],
 ) -> tuple[_RuffDiagnostic, ...]:
     result = _run(command, arguments, env=env)
-    if not result.stdout.strip():
-        return ()
-    try:
-        payload = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return ()
-    if not isinstance(payload, list):
-        return ()
+    payload = _json_list(result.stdout)
+    # `ruff check` exits 0 when clean and 1 with valid JSON when it finds
+    # violations; anything else (bad config, old ruff) is a crash that must not
+    # silently pass the gate.
+    if result.returncode not in (0, 1) or payload is None:
+        raise _RuffInvocationError(arguments, result)
     diagnostics: list[_RuffDiagnostic] = []
     for item in payload:
         diagnostic = _diagnostic_from_json(item)
         if diagnostic is not None:
             diagnostics.append(diagnostic)
     return tuple(diagnostics)
+
+
+def _json_list(text: str) -> list[object] | None:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, list):
+        return None
+    return payload
 
 
 def _diagnostic_from_json(item: object) -> _RuffDiagnostic | None:
@@ -255,16 +278,28 @@ def _report(
     diagnostics: Sequence[_RuffDiagnostic],
 ) -> str:
     parts: list[str] = []
+    errors = _pass_errors(fixed=fixed, formatted=formatted)
+    if errors:
+        parts.append(f"ruff failed to run; fix the invocation problem first:\n{errors}\n")
     fixed_output = _combined_output(fixed).strip()
-    if fixed_output:
+    if fixed.returncode == 0 and fixed_output:
         parts.append(f"Autofixed by ruff (no action needed):\n{fixed_output}\n")
     formatted_output = _combined_output(formatted)
-    if "reformatted" in formatted_output:
+    if formatted.returncode == 0 and "reformatted" in formatted_output:
         parts.append("ruff format reformatted the file(s).\n")
     if diagnostics:
         rendered = "\n".join(diagnostic.concise() for diagnostic in diagnostics)
         parts.append(f"Remaining ruff issues to fix:\n{rendered}\n")
     return "".join(parts)
+
+
+def _pass_errors(*, fixed: _CommandResult, formatted: _CommandResult) -> str:
+    labeled = (("ruff check --fix-only", fixed), ("ruff format", formatted))
+    return "\n".join(
+        f"`{label}` exited with code {result.returncode}:\n{_combined_output(result).strip() or 'no output'}"
+        for label, result in labeled
+        if result.returncode != 0
+    )
 
 
 def _combined_output(result: _CommandResult) -> str:
