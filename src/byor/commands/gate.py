@@ -22,6 +22,7 @@ from byor.config import (
 )
 from byor.errors import ByorError
 from byor.io.fsio import marked_text_status, write_text_atomic
+from byor.io.gitio import default_branch
 from byor.rules.sync import load_canonical_rules, mirror_contents, sync_repo
 from byor.scaffold.ci import WORKFLOW_RELPATH, workflow_text, write_ci_workflow
 from byor.scaffold.githooks import install_precommit_shim
@@ -73,7 +74,7 @@ def stale_gate_files(repo_root: Path, checks: list[CheckDef]) -> list[str]:
     user-owned — regeneration leaves it alone, so it is not stale either.
     """
     desired = {
-        WORKFLOW_RELPATH: workflow_text(checks),
+        WORKFLOW_RELPATH: workflow_text(checks, default_branch=default_branch(repo_root)),
         CONFIG_RELPATH: precommit_config_text(checks),
     }
     return [

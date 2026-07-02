@@ -16,10 +16,10 @@ from byor.cli import main
 from byor.config import load_repo_config
 
 
-def gate_repo(home: Path, *extra: str) -> Path:
+def gate_repo(home: Path, *, extra: tuple[str, ...] = (), branch: str = "main") -> Path:
     repo = home / "repo"
     repo.mkdir()
-    git(repo, "init", "--quiet")
+    git(repo, "init", "--quiet", f"--initial-branch={branch}")
     args = ["init", "--repo", str(repo), "--non-interactive", "--gate", *extra]
     assert main(args) == 0
     return repo
@@ -50,6 +50,13 @@ def test_gate_promotes_rules_and_checks_and_writes_portable_artifacts(
     assert "uvx --from ast-grep-cli ast-grep scan --error" in workflow
     assert "npm install" not in workflow
     assert "ruff-check" in workflow
+
+
+def test_gate_workflow_gates_pushes_to_a_non_main_default_branch(home: Path) -> None:
+    repo = gate_repo(home, branch="trunk")
+
+    workflow = (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
+    assert "on:\n  pull_request:\n  push:\n    branches: [trunk]\n" in workflow
 
 
 def test_gate_self_heals_when_a_check_is_added_later(home: Path) -> None:
@@ -141,7 +148,7 @@ def test_gate_refuses_two_scripts_vendoring_to_the_same_name(
 
 def test_private_gate_installs_a_local_shim_and_commits_nothing(home: Path) -> None:
     write_global_rule(home, "python/no-cast.yml", rule_id="no-cast")
-    repo = gate_repo(home, "--private")
+    repo = gate_repo(home, extra=("--private",))
 
     assert (repo / ".git" / "hooks" / "pre-commit").is_file()
     assert not (repo / ".pre-commit-config.yaml").exists()

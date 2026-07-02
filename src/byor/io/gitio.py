@@ -14,9 +14,23 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 __all__ = (
+    "default_branch",
     "git_output",
     "git_stdout",
 )
+
+
+def default_branch(repo_root: Path) -> str:
+    """Name of the repo's default branch, for enforcement that targets it.
+
+    Prefers origin/HEAD because it is stable across checkouts, so generated
+    files that embed the branch never flap under self-heal; without a remote
+    it falls back to the current branch, and outside git to "main".
+    """
+    origin_head = git_output(repo_root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+    if origin_head is not None:
+        return origin_head.removeprefix("origin/")
+    return git_output(repo_root, "branch", "--show-current") or "main"
 
 
 def git_stdout(repo_root: Path, *args: str) -> str | None:
