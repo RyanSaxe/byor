@@ -141,9 +141,9 @@ and the check commands. pre-commit passes each check its staged matching files
 mirroring byor's two scan modes.
 
 The artifacts are byor-owned build products, like the rule mirror. A committed
-`gate: true` in `.byor/config.yml` marks the repo, and any byor command
-regenerates the CI workflow and the pre-commit config it owns from the current
-committed rules and checks. So the maintainer adds a rule or check with byor as
+`gate: true` in `.byor/config.yml` marks the repo, and any self-healing byor
+command regenerates the CI workflow and the pre-commit config it owns from the
+current committed rules and checks (`byor doctor` only reports them stale). So the maintainer adds a rule or check with byor as
 usual and the gate refreshes itself; teammates only ever run it, and need
 nothing byor. byor owns each file by its marker header (the whole file, not a
 block within it): a pre-existing, unmarked `.pre-commit-config.yaml` is never
@@ -159,8 +159,8 @@ byor's whole footprint.
 A teammate can commit a project rule whose ID matches one of your synced
 global copies. After `git pull`, the repo contains duplicate IDs and
 `ast-grep scan`/LSP are hard-broken (ast-grep refuses to run on duplicate
-IDs) until sync removes the now-overridden copy. Any byor command heals it —
-but editor-only sessions never run byor.
+IDs) until sync removes the now-overridden copy. Any self-healing byor command
+heals it (doctor reports it) — but editor-only sessions never run byor.
 
 That gap is closed by opt-in git hook shims: `byor init --git-hooks` (or
 answering yes when `byor init` asks) installs `post-merge` and `post-checkout`

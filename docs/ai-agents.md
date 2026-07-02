@@ -328,10 +328,11 @@ no single one is read by every harness:
 
 byor owns both renders, like the OpenCode plugin or the generated rule copies.
 It writes them from the packaged skill tree (`byor/data/skill/`) and keeps them
-current with the **same self-heal that runs on every byor command**: any file
+current with the **same self-heal that runs on most byor commands**: any file
 (hub or reference) that drifts from the installed byor's skill is silently
-rewritten, so the skill can never go stale against a changed CLI, and there is no
-refresh command to remember.
+rewritten, so there is no refresh command to remember. The exception is
+`byor doctor`, which is read-only — it reports a drifted render as an
+`agent_files` failure instead of rewriting it.
 
 To take a render over, **remove its byor marker**: byor then leaves that file
 alone (the standard ownership escape hatch), and you maintain it. The frontmatter
