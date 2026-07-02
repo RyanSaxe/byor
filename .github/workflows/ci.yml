@@ -48,6 +48,19 @@ jobs:
       - run: uv sync --locked
       - run: uv run pytest --cov=byor --cov-report=term-missing --cov-fail-under=90
 
+  # The packaged agent integrations (src/byor/data/agents/*.ts) are real
+  # TypeScript sources, not opaque strings: prettier and tsc must pass so a
+  # formatting or type break in the shipped plugins fails CI.
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npx --yes prettier@3.6.2 --check "src/byor/data/**/*.ts"
+      - run: npx --yes -p typescript@5.9.3 tsc -p tsconfig.json
+
   # byor eats its own dogfood: its committed project rules gate its CI.
   rules:
     runs-on: ubuntu-latest
