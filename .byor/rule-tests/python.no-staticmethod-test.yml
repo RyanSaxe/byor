@@ -1,0 +1,18 @@
+id: python.no-staticmethod
+valid:
+  # A module-level function is the preferred home for stateless behavior.
+  - |
+    def normalize(name):
+        return name.strip().lower()
+  # classmethods participate in the class contract.
+  - |
+    class User:
+        @classmethod
+        def build(cls, name):
+            return cls(name)
+invalid:
+  - |
+    class User:
+        @staticmethod
+        def normalize(name):
+            return name.strip().lower()

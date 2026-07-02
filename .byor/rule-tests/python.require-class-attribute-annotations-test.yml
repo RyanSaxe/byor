@@ -1,0 +1,52 @@
+id: python.require-class-attribute-annotations
+valid:
+  # Annotated class attributes are the contract this rule wants.
+  - |
+    class Config:
+        timeout: int = 30
+  # Enum members must not be annotated (ty flags that as an error), so enum
+  # bodies are exempt — including dotted and mixin base spellings.
+  - |
+    class Color(Enum):
+        RED = 1
+  - |
+    class Color(enum.Enum):
+        GREEN = 2
+  - |
+    class Perm(IntFlag):
+        READ = 1
+  - |
+    class Mode(str, Enum):
+        FAST = "fast"
+  - |
+    class Name(StrEnum):
+        A = "a"
+  # Assignments inside methods are locals, not class attributes.
+  - |
+    class Config:
+        def load(self):
+            timeout = 30
+            return timeout
+  # Classes defined inside functions are exempt.
+  - |
+    def factory():
+        class Inner:
+            hidden = 1
+
+        return Inner
+invalid:
+  - |
+    class Config:
+        timeout = 30
+  # A non-enum base does not exempt the body.
+  - |
+    class Derived(Base):
+        timeout = 30
+  # Tuple unpacking and chained assignment cannot carry annotations:
+  # restructure them into separate annotated assignments.
+  - |
+    class Point:
+        x, y = 1, 2
+  - |
+    class Point:
+        x = y = 0

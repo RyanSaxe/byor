@@ -1,0 +1,20 @@
+id: python.no-importlib
+valid:
+  # importlib.resources and importlib.metadata are the sanctioned exceptions,
+  # in any import form.
+  - import importlib.resources
+  - import importlib.metadata
+  - from importlib.resources import files
+  - from importlib.metadata import version
+  - from importlib import resources
+  - from importlib import metadata
+  - from importlib.resources.abc import Traversable
+invalid:
+  - import importlib
+  - import importlib.util
+  - import importlib.machinery
+  - from importlib import import_module
+  - from importlib import reload
+  - from importlib import *
+  - from importlib.util import spec_from_file_location
+  - from importlib.machinery import SourceFileLoader

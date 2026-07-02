@@ -1,0 +1,22 @@
+id: python.prefer-protocol-over-abc
+valid:
+  # collections.abc is the containers module, not the ABC machinery.
+  - from collections.abc import Sequence
+  # Protocol is the preferred interface mechanism.
+  - from typing import Protocol
+invalid:
+  - import abc
+  # Aliasing the module does not hide it.
+  - import abc as abstract_helpers
+  - from abc import ABC
+  # Aliasing the class does not hide it either.
+  - from abc import ABC as AbstractBase
+  - from abc import ABCMeta
+  - from abc import abstractmethod as required
+  # Qualified uses without a from-import.
+  - |
+    class Repository(abc.ABC):
+        pass
+  - |
+    class Repository(metaclass=abc.ABCMeta):
+        pass
