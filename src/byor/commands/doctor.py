@@ -409,10 +409,15 @@ def _vendored_scripts_check(repo_root: Path, repo_config: RepoConfig) -> Check |
         return None
     relpaths = transitive_vendored_scripts(repo_root, direct)
     invoked = directly_invoked_vendored_scripts(repo_config.checks)
+    transitive_only = set(relpaths) - set(direct)
     problems = [
         problem
         for relpath in relpaths
-        for problem in vendored_script_problems(repo_root, relpath, executable_required=relpath in invoked)
+        for problem in vendored_script_problems(
+            repo_root,
+            relpath,
+            executable_required=relpath in invoked or relpath in transitive_only,
+        )
     ]
     if problems:
         return Check(id="vendored_scripts", ok=False, message="; ".join(problems))
