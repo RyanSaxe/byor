@@ -63,9 +63,20 @@ VISIBILITY_FILE_CONTENT = (
 )
 
 
-def write_rule_visibility_file(rules_dir: Path) -> MarkedWriteResult:
+def write_rule_visibility_file(rules_dir: Path, *, force: bool = False) -> MarkedWriteResult:
+    """Write the `.ignore` negations that keep git-ignored rules visible to ast-grep.
+
+    An unmarked `.ignore` is normally user-owned and left alone. `force` — used
+    for the wholly byor-owned mirror directories — reclaims even an unmarked
+    file, but only when it fails `rule_visibility_ok`: a user file that already
+    keeps the rules visible is doing its job and stays.
+    """
     rules_dir.mkdir(parents=True, exist_ok=True)
-    return write_marked_text(rules_dir / ".ignore", VISIBILITY_FILE_CONTENT, marker=VISIBILITY_MARKER)
+    result = write_marked_text(rules_dir / ".ignore", VISIBILITY_FILE_CONTENT, marker=VISIBILITY_MARKER)
+    if result == "unmarked" and force and not rule_visibility_ok(rules_dir):
+        write_text_atomic(rules_dir / ".ignore", VISIBILITY_FILE_CONTENT)
+        return "written"
+    return result
 
 
 def rule_visibility_ok(rules_dir: Path) -> bool:

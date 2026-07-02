@@ -105,3 +105,23 @@ def test_unmarked_visibility_file_is_preserved(tmp_path: Path) -> None:
 
     assert (tmp_path / ".ignore").read_text() == "!*.yml\n"
     assert rule_visibility_ok(tmp_path) is False  # missing !*.yaml
+
+
+# Mirror directories are wholly byor-owned, so a user `.ignore` that hides the
+# rules from ast-grep is reclaimed there — otherwise doctor's rules_visible
+# remediation could never converge.
+def test_force_rewrites_a_user_owned_visibility_file_that_hides_rules(tmp_path: Path) -> None:
+    (tmp_path / ".ignore").write_text("# my own ignore file\n")
+
+    assert write_rule_visibility_file(tmp_path, force=True) == "written"
+
+    assert rule_visibility_ok(tmp_path) is True
+
+
+def test_force_preserves_a_user_owned_visibility_file_that_works(tmp_path: Path) -> None:
+    content = "my-extra-pattern\n!*.yml\n!*.yaml\n"
+    (tmp_path / ".ignore").write_text(content)
+
+    assert write_rule_visibility_file(tmp_path, force=True) == "unmarked"
+
+    assert (tmp_path / ".ignore").read_text() == content

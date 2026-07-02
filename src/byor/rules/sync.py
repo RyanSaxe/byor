@@ -251,7 +251,7 @@ def mirror_global_rules(mirror_dir: Path, desired: dict[str, str]) -> MirrorResu
     the `.ignore` file that keeps the git-ignored copies visible to ast-grep,
     which the mirror restores because the directory is wholly byor-owned.
     """
-    write_rule_visibility_file(mirror_dir)
+    write_rule_visibility_file(mirror_dir, force=True)
     actual = mirror_contents(mirror_dir)
     removed = 0
     # Remove before writing: after a case-only rename, a case-insensitive

@@ -69,6 +69,23 @@ def test_scope_all_appends_skipped_global_rules_with_reasons(home: Path, capsys:
     assert "skipped  no-wrap  excluded in .byor/local.yml\n" in out
 
 
+# The docs point at `byor list --scope all` as the way to see exclusions, but
+# skipped package rules only surfaced in `byor sync` output.
+def test_scope_all_appends_skipped_package_rules(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write_package_rule(home, "pkg1", relpath="no-foo.yml", rule_id="pkg-no-foo")
+    repo = make_repo(home)
+    install_package(repo, "pkg1")
+    assert main(["exclude", "pkg-no-foo", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+
+    assert main(["list", "--repo", str(repo), "--scope", "all"]) == 0
+
+    out = capsys.readouterr().out
+    assert "skipped" in out
+    assert "pkg-no-foo" in out
+    assert "excluded in .byor/local.yml" in out
+
+
 def test_scope_filters_to_one_origin(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     populate(home, repo)

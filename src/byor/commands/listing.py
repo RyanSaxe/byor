@@ -116,7 +116,20 @@ def collect_rules(repo_root: Path, scope: ListScope) -> list[ListedRule]:
 
 
 def collect_skipped(repo_root: Path, config_dir: Path) -> list[SkippedRule]:
-    return repo_plans(repo_root, load_canonical_rules(config_dir)).global_plan.skipped
+    """Global and package rules the sync plans skip, without duplicate rows.
+
+    The docs point at `--scope all` as the way to see what is excluded, so
+    package skips must show up too. A rule excluded by ID or tag can be
+    skipped in both plans with the same reason; identical rows collapse.
+    """
+    plans = repo_plans(repo_root, load_canonical_rules(config_dir))
+    seen: set[tuple[str, str]] = set()
+    skipped: list[SkippedRule] = []
+    for rule in plans.global_plan.skipped + plans.packages_plan.skipped:
+        if (rule.id, rule.reason) not in seen:
+            seen.add((rule.id, rule.reason))
+            skipped.append(rule)
+    return skipped
 
 
 def collect_checks(repo_root: Path, config_dir: Path) -> list[ListedCheck]:

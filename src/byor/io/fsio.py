@@ -38,6 +38,10 @@ def marked_text_status(path: Path, content: str, *, marker: str) -> MarkedTextSt
     if not path.is_file():
         return "missing"
     existing = path.read_text(encoding="utf-8")
+    if not existing:
+        # A zero-byte file has no user content to protect: treat it as missing
+        # so a truncated managed file self-heals instead of festering.
+        return "missing"
     if marker not in existing:
         return "unmarked"
     if existing == content:

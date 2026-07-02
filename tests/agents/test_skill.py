@@ -150,6 +150,21 @@ def test_uninstall_removes_marked_files_and_prunes_dirs(home: Path, capsys: pyte
     assert "skill" not in global_agents()
 
 
+# Files a byor upgrade renamed or removed used to linger with the managed
+# marker forever, feeding agents stale guidance while doctor stayed green.
+def test_install_removes_stale_managed_skill_files(home: Path) -> None:
+    install_agents()
+    stale = agents_dir(home) / "references" / "old-guidance.md"
+    stale.write_text(f"{MANAGED_MARKER}\nsuperseded advice\n")
+    user_owned = agents_dir(home) / "references" / "team-notes.md"
+    user_owned.write_text("my own notes\n")  # no marker: user-owned
+
+    install_agents("skill")
+
+    assert not stale.exists()
+    assert user_owned.read_text() == "my own notes\n"
+
+
 def test_self_heal_refreshes_a_drifted_reference(home: Path) -> None:
     repo = make_repo(home)
     install_agents()
