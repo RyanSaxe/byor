@@ -46,6 +46,8 @@ FAIL_OPEN_ERRORS = (Exception,)
 
 Scope = Literal["edit", "diff", "file"]
 DiagnosticStyle = Literal["verbose", "concise"]
+Audience = Literal["agent", "human"]
+"""Who reads the findings: a harness hook feeds an agent; --files faces a human."""
 
 
 @dataclass
@@ -98,6 +100,7 @@ def _run_files(
             diagnostics,
             style="concise" if concise else "verbose",
             limit=global_config.output_max_diagnostics,
+            audience="human",
         ):
             sys.stdout.write(f"{line}\n")
         for section in outcome.failures:
@@ -226,6 +229,7 @@ def _render_feedback(
             diagnostics,
             style="concise" if concise else "verbose",
             limit=limit,
+            audience="agent",
         )
         + outcome.failures
     )
@@ -380,10 +384,11 @@ def render_diagnostics(
     *,
     style: DiagnosticStyle = "verbose",
     limit: int | None = None,
+    audience: Audience,
 ) -> list[str]:
     if not diagnostics:
         return []
-    header = [_summary_line(diagnostics)]
+    header = [_summary_line(diagnostics, audience=audience)]
     shown = diagnostics if limit is None else diagnostics[:limit]
     body = _render_concise(shown) if style == "concise" else _render_verbose(shown)
     hidden = len(diagnostics) - len(shown)
@@ -392,10 +397,13 @@ def render_diagnostics(
     return header + body
 
 
-def _summary_line(diagnostics: list[Diagnostic]) -> str:
+def _summary_line(diagnostics: list[Diagnostic], *, audience: Audience) -> str:
     total = len(diagnostics)
     noun = "issue" if total == 1 else "issues"
-    return f"BYOR found {total} {noun} in AI-written code."
+    # Agents key on the hook-mode wording exactly; a human running --files
+    # (e.g. from the pre-commit gate) did not just write AI code.
+    suffix = " in AI-written code" if audience == "agent" else ""
+    return f"BYOR found {total} {noun}{suffix}."
 
 
 def _render_verbose(diagnostics: list[Diagnostic]) -> list[str]:

@@ -118,8 +118,9 @@ def test_one_diagnostic_renders_the_spec_block(check_repo: Path, capsys: pytest.
 
     assert main(agent_check_args(check_repo, "--files", str(source))) == 2
 
+    # A human (e.g. the pre-commit gate) invoked --files: no agent phrasing.
     assert capsys.readouterr().out == (
-        "BYOR found 1 issue in AI-written code.\n"
+        "BYOR found 1 issue.\n"
         "\n"
         "src.py:2:5\n"
         "Rule: no-python-cast\n"
@@ -145,7 +146,7 @@ def test_concise_render_keeps_location_severity_and_instruction() -> None:
         instruction="Use the logger instead.",
     )
 
-    assert render_diagnostics([diagnostic], style="concise") == [
+    assert render_diagnostics([diagnostic], style="concise", audience="agent") == [
         "BYOR found 1 issue in AI-written code.",
         "",
         "src.py:2:5  [warning] no-print",
@@ -160,9 +161,7 @@ def test_concise_flag_trims_the_verbose_block(check_repo: Path, capsys: pytest.C
     args = agent_check_args(check_repo, "--files", str(source), "--concise")
     assert main(args) == 2
 
-    assert capsys.readouterr().out == (
-        f"BYOR found 1 issue in AI-written code.\n\nsrc.py:2:5  [warning] no-python-cast\n{CAST_PROMPT}\n"
-    )
+    assert capsys.readouterr().out == (f"BYOR found 1 issue.\n\nsrc.py:2:5  [warning] no-python-cast\n{CAST_PROMPT}\n")
 
 
 def test_global_concise_setting_applies_without_the_flag(
@@ -239,7 +238,7 @@ def test_limit_caps_rendered_diagnostics_and_notes_the_remainder() -> None:
         for line in range(1, 4)
     ]
 
-    rendered = render_diagnostics(diagnostics, style="concise", limit=2)
+    rendered = render_diagnostics(diagnostics, style="concise", limit=2, audience="agent")
 
     # The summary still counts all three; only two are rendered, with a note.
     assert rendered[0] == "BYOR found 3 issues in AI-written code."
@@ -254,7 +253,7 @@ def test_renders_every_diagnostic_without_truncation(check_repo: Path, capsys: p
     assert main(agent_check_args(check_repo, "--files", str(source))) == 2
 
     out = capsys.readouterr().out
-    assert out.startswith("BYOR found 21 issues in AI-written code.\n")
+    assert out.startswith("BYOR found 21 issues.\n")
     assert out.count("Rule: no-python-cast") == 21
     assert "more diagnostics" not in out
 
@@ -303,7 +302,10 @@ def test_stdin_hook_scans_the_edited_file_from_the_claude_payload(
 
     assert main(agent_check_args(check_repo, "--stdin-hook", "claude-code")) == 2
 
-    assert "Rule: no-python-cast" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    # Agents key on this exact hook-mode header; --files says "BYOR found N issues."
+    assert "BYOR found 1 issue in AI-written code.\n" in out
+    assert "Rule: no-python-cast" in out
 
 
 def test_stdin_hook_without_a_file_path_scans_nothing(
