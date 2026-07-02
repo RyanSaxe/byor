@@ -23,15 +23,15 @@ from byor.commands.install import run_install
 from byor.commands.listing import run_list
 from byor.commands.package import run_package
 from byor.commands.profile import run_profile
-from byor.errors import ByorError
-from byor.io.paths import global_config_dir, resolve_repo_root
-from byor.rules.commands import (
+from byor.commands.rules import (
     run_add,
     run_edit,
     run_exclusion,
     run_promote,
     run_remove,
 )
+from byor.errors import ByorError
+from byor.io.paths import global_config_dir, resolve_repo_root
 from byor.rules.sync import heal_global, heal_repo, run_sync
 from byor.scan.agent_check import run_agent_check
 
