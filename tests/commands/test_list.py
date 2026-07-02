@@ -13,6 +13,7 @@ import pytest
 from support import (
     install_package,
     make_repo,
+    write_global_check,
     write_global_rule,
     write_package_rule,
     write_rule,
@@ -212,6 +213,34 @@ def test_list_fails_cleanly_outside_an_initialized_repo(home: Path, capsys: pyte
     captured = capsys.readouterr()
     assert "byor init" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_list_scope_global_works_outside_a_repo(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    canonical = write_global_rule(home, "python/no-cast.yml", rule_id="no-cast")
+    plain = home / "plain"
+    plain.mkdir()
+    capsys.readouterr()
+
+    assert main(["list", "--repo", str(plain), "--scope", "global"]) == 0
+
+    captured = capsys.readouterr()
+    assert f"global  no-cast  {canonical}" in captured.out
+    assert captured.err == ""
+
+
+def test_list_scope_all_outside_a_repo_notes_the_omitted_scopes(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
+    write_global_check("ty", "uv run ty check")
+    plain = home / "plain"
+    plain.mkdir()
+    capsys.readouterr()
+
+    assert main(["list", "--repo", str(plain), "--scope", "all"]) == 0
+
+    captured = capsys.readouterr()
+    assert "no-cast" in captured.out
+    assert "check/global  ty" in captured.out
+    assert "not a byor repo" in captured.err
 
 
 def test_effective_listing_includes_installed_package_rules(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
