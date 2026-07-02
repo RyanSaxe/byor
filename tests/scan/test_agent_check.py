@@ -390,6 +390,95 @@ def test_codex_relative_patch_path_resolves_against_the_repo_root(
     assert "src.py:1:5" in context
 
 
+def test_hook_mode_resolves_the_repo_from_the_edited_file_not_cwd(
+    check_repo: Path,
+    home: Path,
+    *,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A session in repo A editing a file in repo B must apply B's rules, not A's.
+
+    Repo resolution used to start at the session cwd, so the cwd repo's rules
+    and checks ran against the other repo's file while that repo's own
+    error-severity rule stayed silent.
+    """
+    other = make_repo(home, name="other")
+    (other / ".byor" / "rules" / "project" / "no-print.yml").write_text(PRINT_RULE)
+    add_repo_check(check_repo, "cwd-lint", extensions=["py"], run=failing_check_command(check_repo, "cwd repo check"))
+    source = other / "src.py"
+    source.write_text('print("hi")\n')
+    monkeypatch.chdir(check_repo)
+    stdin(monkeypatch, {"tool_input": {"file_path": str(source)}})
+    capsys.readouterr()
+
+    assert main(["agent-check", "--stdin-hook", "claude-code"]) == 2
+
+    out = capsys.readouterr().out
+    assert "Rule: no-print" in out
+    assert "cwd repo check" not in out
+
+
+def test_hook_mode_stays_silent_for_a_file_outside_any_repo(
+    check_repo: Path,
+    home: Path,
+    *,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    outside = home / "elsewhere"
+    outside.mkdir()
+    source = outside / "src.py"
+    source.write_text('x = cast(int, "1")\n')
+    monkeypatch.chdir(check_repo)
+    stdin(monkeypatch, {"tool_input": {"file_path": str(source)}})
+
+    assert main(["agent-check", "--stdin-hook", "claude-code"]) == 0
+
+    assert capsys.readouterr().out == ""
+
+
+def test_hook_mode_stays_silent_for_a_nonexistent_file(
+    check_repo: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ghost = check_repo / "missing" / "ghost.py"
+    monkeypatch.chdir(check_repo)
+    stdin(monkeypatch, {"tool_input": {"file_path": str(ghost)}})
+
+    assert main(["agent-check", "--stdin-hook", "claude-code"]) == 0
+
+    assert capsys.readouterr().out == ""
+
+
+def test_hook_mode_explicit_repo_flag_beats_file_based_resolution(
+    check_repo: Path,
+    home: Path,
+    *,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    outside = home / "elsewhere"
+    outside.mkdir()
+    source = outside / "src.py"
+    source.write_text('x = cast(int, "1")\n')
+    stdin(monkeypatch, {"tool_input": {"file_path": str(source)}})
+
+    assert main(agent_check_args(check_repo, "--stdin-hook", "claude-code")) == 2
+
+    assert "Rule: no-python-cast" in capsys.readouterr().out
+
+
 def test_hook_mode_is_silent_in_an_uninitialized_repo(
     home: Path,
     # monkeypatch isolates process state (env, cwd, stdio): an external boundary

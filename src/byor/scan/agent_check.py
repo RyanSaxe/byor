@@ -62,13 +62,12 @@ class Diagnostic:
 
 
 def run_agent_check(args: argparse.Namespace) -> int:
-    repo_root = resolve_repo_root(explicit=args.repo)
     harness: Harness | None = args.stdin_hook
     if harness is not None:
-        return _run_hook(args, repo_root, harness=harness)
+        return _run_hook(args, harness=harness)
     return _run_files(
         args,
-        repo_root,
+        resolve_repo_root(explicit=args.repo),
         files=list(args.files),
         scope=_resolve_scope(args, None),
     )
@@ -107,7 +106,7 @@ def _run_files(
     return DIAGNOSTICS_EXIT_CODE if has_findings else 0
 
 
-def _run_hook(args: argparse.Namespace, repo_root: Path, *, harness: Harness) -> int:
+def _run_hook(args: argparse.Namespace, *, harness: Harness) -> int:
     """Run the fail-open `--stdin-hook HARNESS` path.
 
     Any internal byor error is caught and reported on stderr but still exits 0,
@@ -116,7 +115,7 @@ def _run_hook(args: argparse.Namespace, repo_root: Path, *, harness: Harness) ->
     """
     # fail-open: a byor bug must never block the agent loop
     try:
-        return _hook_diagnostics(args, repo_root, harness=harness)
+        return _hook_diagnostics(args, harness=harness)
     except FAIL_OPEN_ERRORS as error:
         # Still exit 0 (never block), but leave a breadcrumb so "byor couldn't
         # run" is distinguishable from "byor found nothing". Hook stderr is not
@@ -126,26 +125,25 @@ def _run_hook(args: argparse.Namespace, repo_root: Path, *, harness: Harness) ->
         return 0
 
 
-def _hook_diagnostics(
-    args: argparse.Namespace,
-    repo_root: Path,
-    *,
-    harness: Harness,
-) -> int:
+def _hook_diagnostics(args: argparse.Namespace, *, harness: Harness) -> int:
     """Parse the payload, scan, and emit per harness.
 
-    Global hooks fire in every repo. A byor-init'd repo scopes against its own
-    rules; any other repo applies your global rules via the home sgconfig and any
-    user-owned global checks. With none of those in play there is nothing to
-    check, so byor stays silent (exit 0) without reading stdin or shelling out.
+    Global hooks fire in every repo, and an agent session can edit a file
+    outside its cwd's repository, so the repo is resolved from the payload's
+    edited file rather than the cwd. A byor-init'd repo scopes against its own
+    rules; any other repo applies your global rules via the home sgconfig and
+    any user-owned global checks. With none of those in play there is nothing
+    to check, so byor stays silent (exit 0) without shelling out.
     """
     config_dir = global_config_dir()
     global_config = load_global_config(config_dir)
-    if not _has_any_rules(repo_root) and not global_config.checks:
-        return 0
-    payload = _resolved_payload(parse_payload(harness, sys.stdin.read()), repo_root)
+    payload = parse_payload(harness, sys.stdin.read())
     if not payload.edits:
         return 0
+    repo_root = _hook_repo_root(explicit=args.repo, payload=payload)
+    if not _has_any_rules(repo_root) and not global_config.checks:
+        return 0
+    payload = _resolved_payload(payload, repo_root)
     diagnostics, outcome = _scan(
         repo_root,
         list(payload.edits),
@@ -337,6 +335,19 @@ def _edit_ranges_for(file: Path, payload: EditPayload) -> list[Range] | None:
     if not contents:
         return None
     return edit_ranges(file.read_text(encoding="utf-8"), contents)
+
+
+def _hook_repo_root(*, explicit: Path | None, payload: EditPayload) -> Path:
+    """Resolve the repo whose rules govern the edited file.
+
+    A hook fires with the session's cwd, which need not contain the file the
+    agent edited; starting from the first absolute edited path applies that
+    file's own repo rules and keeps the cwd repo's out. Relative paths (codex
+    patches) fall back to cwd resolution, since only the invoking repo can
+    anchor them. An explicit --repo still wins inside resolve_repo_root.
+    """
+    start = next((file.parent for file in payload.edits if file.is_absolute()), None)
+    return resolve_repo_root(explicit=explicit, start=start)
 
 
 def _resolved_payload(payload: EditPayload, repo_root: Path) -> EditPayload:
