@@ -5,6 +5,7 @@ message: Verify this mock or monkeypatch is necessary.
 rule:
   any:
   - pattern: import unittest.mock
+  - pattern: import unittest.mock as $ALIAS
   - pattern: from unittest.mock import $$$MOCK_NAMES
   - all:
     - kind: dotted_name
@@ -15,9 +16,20 @@ rule:
         - has:
             field: module_name
             regex: ^unittest$
+        # stopBy reaches through aliased_import: from unittest import mock as m
+        stopBy: end
   - all:
     - kind: parameters > identifier
     - regex: ^monkeypatch$
+  # Typed forms nest the identifier one level deeper than parameters.
+  - all:
+    - kind: typed_parameter > identifier
+    - regex: ^monkeypatch$
+  - all:
+    - kind: typed_default_parameter
+    - has:
+        field: name
+        regex: ^monkeypatch$
 metadata:
   byor:
     rationale: >

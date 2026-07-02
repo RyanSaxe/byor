@@ -27,6 +27,8 @@ from byor.errors import ConfigError
 
 
 @pytest.fixture(autouse=True)
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
 def isolated_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     home = tmp_path / "home"
     home.mkdir()

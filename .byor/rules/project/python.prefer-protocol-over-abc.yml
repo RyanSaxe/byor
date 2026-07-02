@@ -5,17 +5,21 @@ message: Prefer typing.Protocol over ABC for structural interfaces.
 rule:
   any:
   - pattern: import abc
+  - pattern: import abc as $ALIAS
   - pattern: abc.ABC
+  - pattern: abc.ABCMeta
   - pattern: abc.abstractmethod
   - all:
     - kind: dotted_name
-    - regex: ^(ABC|abstractmethod)$
+    - regex: ^(ABC|ABCMeta|abstractmethod)$
     - inside:
         all:
         - kind: import_from_statement
         - has:
             field: module_name
             regex: ^abc$
+        # stopBy reaches through aliased_import: from abc import ABC as Base
+        stopBy: end
 metadata:
   byor:
     rationale: >
