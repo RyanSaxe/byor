@@ -15,7 +15,7 @@ import pytest
 from support import commit_file, git, make_repo, write_global_rule
 
 from byor.cli import main
-from byor.scaffold.githooks import SHIM_CONTENT, SHIM_LINE, SHIM_MARKER
+from byor.scaffold.githooks import SHIM_CONTENT, SHIM_LINE, SHIM_MARKER, shim_problems
 
 
 def git_repo(home: Path) -> Path:
@@ -63,6 +63,27 @@ def test_outdated_marked_shim_is_updated(home: Path) -> None:
     assert main(["init", "--repo", str(repo), "--non-interactive", "--git-hooks"]) == 0
 
     assert stale.read_text() == SHIM_CONTENT
+
+
+def test_chmod_minus_x_shim_is_reported_and_reinstall_restores_the_bit(home: Path) -> None:
+    """Git silently skips a non-executable hook, so the bit is part of health.
+
+    The writer used to chmod only on content changes, so reinstall could not
+    heal a stripped bit, and shim_problems never looked at it: a chmod -x'd
+    shim reported healthy while git ignored it.
+    """
+    repo = git_repo(home)
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--git-hooks"]) == 0
+    hook = repo / ".git" / "hooks" / "post-merge"
+    hook.chmod(0o644)
+    if os.access(hook, os.X_OK):
+        pytest.skip("cannot clear the exec bit on this platform")
+
+    assert ".git/hooks/post-merge is not executable; run `byor init --git-hooks`" in (shim_problems(repo) or [])
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--git-hooks"]) == 0
+    assert os.access(hook, os.X_OK)
+    assert not shim_problems(repo)
 
 
 def test_core_hooks_path_repo_gets_the_line_instead_of_files(home: Path, capsys: pytest.CaptureFixture[str]) -> None:

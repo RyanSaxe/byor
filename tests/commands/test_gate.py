@@ -308,9 +308,14 @@ def test_gate_refuses_two_scripts_vendoring_to_case_variant_names(
 
 
 # A gate repo whose only extra check runs a vendored copy of ~/fix.sh.
-# monkeypatch isolates process state (env, cwd, stdio): an external boundary
-# ast-grep-ignore: python.question-mocks
-def script_check_repo(home: Path, monkeypatch: pytest.MonkeyPatch, *, content: str = "#!/bin/sh\necho one\n") -> Path:
+def script_check_repo(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    content: str = "#!/bin/sh\necho one\n",
+) -> Path:
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
     (home / "fix.sh").write_text(content)

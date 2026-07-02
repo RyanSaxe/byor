@@ -246,9 +246,12 @@ def test_allow_exceptions_seeds_agent_prompt_from_message_when_absent(
     assert written_agent_prompt(written) == f"Avoid this. {ALLOW_EXCEPTIONS_SENTENCE}"
 
 
-# monkeypatch isolates process state (env, cwd, stdio): an external boundary
-# ast-grep-ignore: python.question-mocks
-def test_allow_exceptions_with_edit_keeps_the_prefilled_sentence(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_allow_exceptions_with_edit_keeps_the_prefilled_sentence(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     repo = make_repo(home)
     monkeypatch.setenv("EDITOR", substituting_editor("REPLACE_ME", "no-cast"))
 

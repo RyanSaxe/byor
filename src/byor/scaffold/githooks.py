@@ -7,6 +7,7 @@ user hook content.
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 from byor.errors import ConfigError
@@ -114,6 +115,15 @@ def shim_problems(repo_root: Path) -> list[str] | None:
         )
     if precommit_status == "drifted":
         problems.append(".git/hooks/pre-commit is outdated; run `byor init --private --gate`")
+    # Git silently skips a hook without the exec bit, so a chmod -x'd shim is
+    # as broken as a deleted one; reinstall restores the bit.
+    remedies = dict.fromkeys(SHIM_HOOK_NAMES, "byor init --git-hooks") | {"pre-commit": "byor init --private --gate"}
+    statuses = {**sync_statuses, "pre-commit": precommit_status}
+    problems.extend(
+        f".git/hooks/{name} is not executable; run `{remedies[name]}`"
+        for name, status in statuses.items()
+        if status in marked and not os.access(hooks_dir / name, os.X_OK)
+    )
     return problems
 
 
@@ -124,9 +134,11 @@ def _install_shim(hook: Path, content: str, *, line: str) -> list[str]:
             f".git/hooks/{hook.name} exists without the BYOR marker; add this line to it:",
             f"  {line}",
         ]
+    # Restore the exec bit even on an unchanged shim: a chmod -x'd hook is
+    # silently skipped by git, so reinstall must heal the bit, not just bytes.
+    hook.chmod(hook.stat().st_mode | 0o111)
     if result == "unchanged":
         return []
-    hook.chmod(hook.stat().st_mode | 0o111)
     return [f"Installed .git/hooks/{hook.name}"]
 
 
