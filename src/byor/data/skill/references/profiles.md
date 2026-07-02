@@ -38,10 +38,15 @@ the same id still wins — byor says so).
 When a single line legitimately violates a rule whose agent_prompt allows
 exceptions, add `# ast-grep-ignore: RULE_ID` at the end of that line, with a
 short comment on the line above explaining why. The hatch is scoped to the
-named rule on that one line — nothing broader. byor's no-suppression check
-deliberately permits this comment while banning `# noqa` and `# type: ignore`:
-a rule-scoped, explained exception is a decision; a blanket suppression is a
-hidden one.
+named rule on that one line — nothing broader: a rule-scoped, explained
+exception is a decision; a blanket suppression (`# noqa`, `# type: ignore`)
+is a hidden one.
+
+Never commit a hatch naming a personal (global or package) rule to a repo
+with a committed gate: the gate's runner does not know that rule, and
+ast-grep treats an unknown-rule suppression as an error
+(`unused-suppression`) by design, so the hatch itself fails CI. Promote the
+rule to project scope first (`byor promote`), then suppress it.
 
 ## Profiles: a reusable bundle of exclusions
 

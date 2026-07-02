@@ -74,6 +74,13 @@ standard sentence:
 > If this is genuinely necessary, add `# ast-grep-ignore: <rule-id>` at the end
 > of the offending line, with a short comment on the line above explaining why.
 
+In a repo with a committed gate (see [sync-model.md](sync-model.md)), only
+suppress rules the repo commits. The gate's runner knows nothing about your
+personal global or package rules, and ast-grep treats a suppression naming an
+unknown rule as an error (`unused-suppression`) — so committing that hatch
+fails the build by design. Promote the rule to project scope first, then
+suppress it.
+
 ## Rule IDs
 
 Rule IDs must be unique across the three repo rule directories combined, and
