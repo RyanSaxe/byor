@@ -385,9 +385,12 @@ def _sync_all(config_dir: Path, canonical: CanonicalRules, *, check: bool) -> in
 
 
 def _sync_and_report(repo_root: Path, canonical: CanonicalRules) -> None:
-    plan, _ = sync_repo(repo_root, canonical)
+    plan, result = sync_repo(repo_root, canonical)
     sys.stdout.write(f"Synced {_count(len(plan.desired), 'global rule')} into {repo_root}\n")
-    if plan.skipped:
+    # A steady-state sync (the post-merge/post-checkout shims run one on every
+    # pull) must not repeat the skip list forever: skips print only when this
+    # sync changed the mirrors; `byor list` keeps them visible on demand.
+    if plan.skipped and result.changed:
         sys.stdout.write(f"Skipped {_count(len(plan.skipped), 'global rule')}:\n")
         for skipped in plan.skipped:
             sys.stdout.write(f"  {skipped.id}: {skipped.reason}\n")
