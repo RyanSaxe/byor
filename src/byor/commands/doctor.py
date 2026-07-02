@@ -43,9 +43,8 @@ from byor.errors import (
 from byor.io.output import write_line, write_lines
 from byor.io.paths import global_config_dir, home_sgconfig_path, resolve_repo_root
 from byor.io.yamlio import load_yaml_mapping
-from byor.rules.rules import load_rules
+from byor.rules.rules import check_id_conflicts, load_rules
 from byor.rules.sync import (
-    compute_sync_plan,
     load_canonical_rules,
     mirror_contents,
     repo_plans,
@@ -323,18 +322,12 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path) -> list
         )
     ]
     try:
-        local_config = load_local_config(repo_root)
+        load_local_config(repo_root)
     except ConfigError as error:
         checks.append(Check(id="local_config", ok=False, message=f"{error}; fix .byor/local.yml by hand"))
         return checks
     try:
-        plan = compute_sync_plan(
-            project,
-            local,
-            excluded_rule_ids=local_config.excluded_rule_ids,
-            excluded_tags=local_config.excluded_rule_tags,
-            canonical=canonical,
-        )
+        check_id_conflicts(project, local, canonical_global=canonical.rules)
     except DuplicateRuleIdError as error:
         checks.append(Check(id="rule_ids_unique", ok=False, message=str(error)))
         return checks
@@ -350,7 +343,7 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path) -> list
     except (DuplicateRuleIdError, RuleValidationError, ConfigError) as error:
         checks.append(Check(id="package_rules", ok=False, message=str(error)))
         return checks
-    global_stale = mirror_contents(repo_root / paths.personal_global_rules) != plan.desired
+    global_stale = mirror_contents(repo_root / paths.personal_global_rules) != plans.global_plan.desired
     packages_stale = mirror_contents(plans.packages_dir) != plans.packages_plan.desired
     if global_stale or packages_stale:
         message = "rule copies are stale; run `byor sync`"

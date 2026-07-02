@@ -33,6 +33,16 @@ These write to the untracked `.byor/local.yml`, so they are personal to the
 user's checkout. `byor include` reverses them (a project or local rule that owns
 the same id still wins — byor says so).
 
+## Per-line exceptions
+
+When a single line legitimately violates a rule whose agent_prompt allows
+exceptions, add `# ast-grep-ignore: RULE_ID` at the end of that line, with a
+short comment on the line above explaining why. The hatch is scoped to the
+named rule on that one line — nothing broader. byor's no-suppression check
+deliberately permits this comment while banning `# noqa` and `# type: ignore`:
+a rule-scoped, explained exception is a decision; a blanket suppression is a
+hidden one.
+
 ## Profiles: a reusable bundle of exclusions
 
 A profile is a named template in the global config (`~/.config/byor/config.yml`)

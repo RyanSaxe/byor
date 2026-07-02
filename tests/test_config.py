@@ -85,6 +85,22 @@ def test_repo_config_rejects_a_check_with_an_unparseable_run(tmp_path: Path) -> 
         load_repo_config(tmp_path)
 
 
+def test_repo_config_round_trips_fail_on_and_omits_the_default(tmp_path: Path) -> None:
+    save_repo_config(tmp_path, RepoConfig(fail_on="error"))
+    assert load_repo_config(tmp_path).fail_on == "error"
+
+    save_repo_config(tmp_path, RepoConfig())
+    assert "fail_on" not in (tmp_path / ".byor" / "config.yml").read_text()
+
+
+def test_repo_config_rejects_an_unknown_fail_on(tmp_path: Path) -> None:
+    (tmp_path / ".byor").mkdir()
+    (tmp_path / ".byor" / "config.yml").write_text("version: 1\nfail_on: sometimes\n")
+
+    with pytest.raises(ConfigError, match="'all' or 'error'"):
+        load_repo_config(tmp_path)
+
+
 def test_local_config_defaults_when_file_absent(tmp_path: Path) -> None:
     assert load_local_config(tmp_path) == LocalConfig()
 

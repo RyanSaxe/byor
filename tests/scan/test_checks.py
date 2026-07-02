@@ -138,6 +138,8 @@ def test_check_skips_files_whose_extension_does_not_match(tmp_path: Path) -> Non
     assert outcome.failures == []
 
 
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
 def test_run_command_expands_a_leading_tilde_to_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     home = tmp_path / "home"
     scripts = home / ".config" / "byor" / "scripts"

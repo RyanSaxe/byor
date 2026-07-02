@@ -87,6 +87,8 @@ def test_add_global_rule_fans_out_to_registered_repos(home: Path, capsys: pytest
     assert f"Synced 1 updated global rule into {second}" in out
 
 
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
 def test_add_edit_writes_the_edited_template(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = make_repo(home)
     content = RULE_TEMPLATE.format(rule_id="my-rule", message="No.")
@@ -99,7 +101,12 @@ def test_add_edit_writes_the_edited_template(home: Path, monkeypatch: pytest.Mon
 
 
 def test_add_edit_aborts_when_template_left_unedited(
-    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     repo = make_repo(home)
     monkeypatch.setenv("EDITOR", NOOP_EDITOR)
@@ -112,7 +119,12 @@ def test_add_edit_aborts_when_template_left_unedited(
 
 
 def test_add_edit_aborts_when_editor_fails(
-    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     repo = make_repo(home)
     monkeypatch.setenv("EDITOR", failing_editor(3))
@@ -234,6 +246,8 @@ def test_allow_exceptions_seeds_agent_prompt_from_message_when_absent(
     assert written_agent_prompt(written) == f"Avoid this. {ALLOW_EXCEPTIONS_SENTENCE}"
 
 
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
 def test_allow_exceptions_with_edit_keeps_the_prefilled_sentence(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = make_repo(home)
     monkeypatch.setenv("EDITOR", substituting_editor("REPLACE_ME", "no-cast"))

@@ -12,7 +12,10 @@ metadata:
       a class is being used as a namespace.
     agent_prompt: >
       Move this behavior to a module-level function unless it is genuinely part
-      of the class contract or is required by a framework API.
+      of the class contract or is required by a framework API. If this is
+      genuinely necessary, add `# ast-grep-ignore: python.no-staticmethod` at
+      the end of the offending line, with a short comment on the line above
+      explaining why.
     tags:
     - python
     - oop

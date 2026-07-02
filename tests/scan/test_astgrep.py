@@ -34,6 +34,8 @@ def fake_executable(path: Path, *, script: str = 'echo "ast-grep 9.9.9"') -> Pat
 
 
 @pytest.fixture
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
 def bin_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     """Provide an initially empty PATH with $BYOR_AST_GREP unset.
 
@@ -50,6 +52,8 @@ def bin_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 
 @requires_sh
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
 def test_env_override_wins_over_path(bin_dir: Path, monkeypatch: pytest.MonkeyPatch, *, tmp_path: Path) -> None:
     fake_executable(bin_dir / "ast-grep")
     override = fake_executable(tmp_path / "elsewhere" / "my-sg")
@@ -90,7 +94,10 @@ def test_resolution_falls_through_to_a_real_ast_grep(bin_dir: Path) -> None:
 @requires_sh
 @pytest.mark.usefixtures("bin_dir")
 def test_resolution_falls_back_to_the_interpreter_dir_when_not_on_path(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     venv_bin = tmp_path / "venv-bin"
     bundled = fake_executable(venv_bin / "ast-grep")
@@ -101,7 +108,12 @@ def test_resolution_falls_back_to_the_interpreter_dir_when_not_on_path(
 
 @requires_sh
 def test_env_override_is_honored_or_fails_without_path_fallthrough(
-    bin_dir: Path, monkeypatch: pytest.MonkeyPatch, *, tmp_path: Path
+    bin_dir: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    tmp_path: Path,
 ) -> None:
     # $BYOR_AST_GREP wins when set; a non-ast-grep override does
     # not silently fall through to a valid ast-grep on PATH.
