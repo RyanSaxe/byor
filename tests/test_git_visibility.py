@@ -1,8 +1,9 @@
-"""Exercise rule visibility inside real git repositories.
+"""Personal rules in a real git repository, against the real ast-grep binary.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+ast-grep's rule discovery respects gitignore, so the git-ignored personal rule copies need the
+`.ignore` negation files to stay loadable while staying invisible to `git status`. These tests prove
+both halves with real git and real ast-grep: scans see synced global, package, and local rules, and
+sync restores a deleted visibility file.
 """
 
 import subprocess

@@ -1,8 +1,9 @@
 """Exercise BYOR ignore-file scaffolding.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+Shared mode appends a managed block to .gitignore — idempotent, healed if edited — while private
+mode writes .git/info/exclude, resolving the real location inside a worktree. The `.ignore`
+visibility file is the subtle part: it negates the gitignore patterns so ast-grep can still load the
+ignored personal rule copies.
 """
 
 from pathlib import Path

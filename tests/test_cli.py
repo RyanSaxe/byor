@@ -1,8 +1,9 @@
 """Exercise the BYOR command-line entry point.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+Thin smoke coverage of the argparse surface: --help exits zero, --version prints the installed
+package version and matches byor.__version__, and an unknown command exits nonzero. One parsing
+detail is pinned because downstream behavior depends on it: agent-check --concise defaults to false
+and the flag flips it.
 """
 
 import importlib.metadata

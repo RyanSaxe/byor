@@ -1,8 +1,8 @@
-"""Exercise the Pi extension integration.
+"""The Pi adapter: a post-edit TypeScript extension (global registration).
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+Pi mirrors the OpenCode shape: a marker-bearing extension file byor owns, marker-scoped uninstall,
+and doctor-flagged drift that install repairs. One extra contract is pinned here — the extension
+must read the skill from the shared agents location rather than a Pi-specific copy.
 """
 
 from pathlib import Path

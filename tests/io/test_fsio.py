@@ -1,8 +1,8 @@
 """Exercise atomic and managed file writes.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+write_text_atomic underpins every file byor owns, so the contract is pinned precisely: parents
+created, the destination replaced atomically, and no temp file left behind on the way. Permission
+behavior matters too — an overwrite preserves the existing mode while a fresh file honors the umask.
 """
 
 import os

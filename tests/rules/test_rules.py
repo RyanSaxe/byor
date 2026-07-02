@@ -1,8 +1,9 @@
 """Exercise ast-grep rule loading and validation.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+The loader discovers YAML files recursively in sorted order and parses byor metadata leniently:
+optional fields default, malformed metadata degrades rather than fails, and errors name the
+offending file. Duplicate-id semantics carry the sync model — duplicates within one scope are
+errors, project or local over global is an override, but project versus local is a conflict.
 """
 
 from pathlib import Path

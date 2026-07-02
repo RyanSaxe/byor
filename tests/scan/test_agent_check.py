@@ -1,8 +1,9 @@
-"""Exercise agent-facing diagnostic rendering.
+"""`byor agent-check` against the real ast-grep binary.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+This is the end-to-end surface agents see, so the tests run the real ast-grep and pin the rendered
+diagnostic block, grouping, limits, JSON output, and the named sections failing checks append. Scope
+narrowing gets the deepest coverage — stdin hook payloads per harness, edit scope falling back to
+diff scope and then file scope — plus the global-rules-only behavior in repos that never ran init.
 """
 
 import io

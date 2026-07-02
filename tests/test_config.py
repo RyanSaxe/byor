@@ -1,8 +1,9 @@
 """Exercise BYOR configuration loading and persistence.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+Every config layer — repo, local, global — must round-trip through save and load while preserving
+user comments and unknown keys, and default cleanly when its file is absent. The rejection cases are
+the contract's teeth: unsupported versions, wrongly typed fields, and malformed checks or profiles
+raise instead of degrading, and repo registration is idempotent.
 """
 
 from pathlib import Path

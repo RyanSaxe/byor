@@ -1,8 +1,8 @@
-"""Exercise the OpenCode plugin integration.
+"""The OpenCode adapter: post-edit plugin (global registration).
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+OpenCode has no hook-config JSON to merge into; byor writes a plugin file it owns outright,
+identified by an embedded marker. The marker is the ownership contract: uninstall removes only
+marker-bearing files, and doctor flags a missing or drifted plugin that a re-install repairs.
 """
 
 from pathlib import Path

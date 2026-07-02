@@ -1,8 +1,10 @@
 """Exercise global rule sync behavior.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+Sync mirrors canonical global rules into the repo — preserving relative paths, updating changed
+copies, pruning deletions — while leaving non-YAML files alone and refusing a mirror path outside
+the repo. Exclusions and same-id project or local rules suppress copies, --check reports staleness
+without writing, and every command self-heals a stale repo on entry, skipping agents whose config is
+broken.
 """
 
 import shutil

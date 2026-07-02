@@ -26,6 +26,8 @@ def home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 @pytest.fixture(autouse=True)
 def clean_git_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    # GIT_* vars leak in when pytest itself runs inside a git hook (pre-commit)
+    # and would redirect the nested git calls tests make at tmp repos.
     for name in list(os.environ):
         if name.startswith("GIT_"):
             monkeypatch.delenv(name)

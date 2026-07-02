@@ -1,8 +1,9 @@
-"""Exercise package command behavior.
+"""The `byor package` command: list available packages and install one.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+Packages are opt-in bundles that live in the global config dir but apply only where installed. `add`
+must record the opt-in in local config, sync the package rules into the mirror, and make the package
+checks effective — idempotently, with unknown names rejected alongside the list of available
+packages.
 """
 
 from pathlib import Path

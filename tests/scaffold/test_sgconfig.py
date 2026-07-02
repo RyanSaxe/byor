@@ -1,8 +1,9 @@
 """Exercise sgconfig scaffold behavior.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+sgconfig.yml may predate byor, so scaffolding edits conservatively: create when missing, append only
+the missing ruleDirs entries while preserving user content, and replace wholesale only after a
+timestamped backup. The home sgconfig gets the same treatment, including removal that deletes a
+byor-owned file but keeps user entries.
 """
 
 from pathlib import Path

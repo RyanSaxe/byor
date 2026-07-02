@@ -1,8 +1,9 @@
-"""Exercise configured check command execution.
+"""Merge precedence, exclusion, and execution for extra checks.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+Effective checks merge by name with repo above package above global, and local exclusions can
+disable one by name or tag. Execution details each get a case: extension filtering (extensionless
+means every file), a leading tilde expanding to home, and missing or uninvocable commands warning
+without crashing the scan.
 """
 
 import shlex

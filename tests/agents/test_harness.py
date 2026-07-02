@@ -1,8 +1,10 @@
-"""Exercise AI harness payload translation.
+"""Per-harness payload parsers and response emitters.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+Every harness wraps an edit in a different JSON envelope: Claude Code tool_input fields, Copilot
+stringified tool arguments, Codex apply_patch text. These tests pin both directions — extracting the
+edited file and strings from each payload, and emitting diagnostics the way each harness expects
+(exit codes, wrapper JSON, Copilot's 10 kB cap with multibyte safety). Malformed payloads must fail
+open to an empty result so a broken hook never blocks an edit.
 """
 
 import json

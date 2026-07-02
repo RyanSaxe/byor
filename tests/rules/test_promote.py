@@ -1,8 +1,9 @@
 """Exercise rule promotion behavior.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+Promotion moves a rule toward wider scope: local to project moves the file preserving its relative
+path, while global or package to project copies without touching the canonical rule or exclusions.
+Overwriting a destination demands --replace, and `promote --check` vendors a global or package check
+into repo config unless it already is one.
 """
 
 from pathlib import Path

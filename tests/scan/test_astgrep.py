@@ -1,8 +1,10 @@
 """Exercise ast-grep executable resolution and parsing.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+Resolution prefers an explicitly configured command, honors the env override ahead of PATH, prefers
+ast-grep over sg while skipping candidates that are not really ast-grep, and falls back to the
+interpreter's bin dir for the bundled install; a missing binary must raise the exact install
+message. Scan parsing is pinned too: matches carry byor metadata, multi-line matches report their
+end line, and failures surface ast-grep's own message.
 """
 
 import sys

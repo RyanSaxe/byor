@@ -1,8 +1,10 @@
-"""Exercise BYOR gate scaffold generation.
+"""`byor init --gate`: distribute a byor-free blocking gate to the team.
 
-These tests document the public behavior expected from the surrounding package area. Keeping that
-intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
-implementation checks.
+The gate must run for contributors who never installed byor, so generation vendors everything the
+pre-commit config needs into the repo — including home-directory check scripts, whose references get
+rewritten and whose name collisions are refused. It also self-heals when checks are added later,
+keeps out of an existing pre-commit config, and supports a private variant that installs a local
+shim and commits nothing.
 """
 
 from pathlib import Path
