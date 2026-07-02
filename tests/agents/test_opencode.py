@@ -14,6 +14,14 @@ from byor.agents.opencode import OPENCODE_MARKER, OPENCODE_PLUGIN, OPENCODE_PLUG
 from byor.cli import main
 
 
+def test_plugin_renders_the_packaged_source_without_placeholders() -> None:
+    # The plugin ships as a packaged .ts file; rendering substitutes every
+    # {{...}} placeholder so the installed artifact is plain TypeScript.
+    assert OPENCODE_PLUGIN.startswith(OPENCODE_MARKER + "\n")
+    assert "{{" not in OPENCODE_PLUGIN
+    assert OPENCODE_PLUGIN.endswith("\n")
+
+
 def test_install_writes_the_plugin(home: Path) -> None:
     repo_with_agents(home, "opencode")
 
