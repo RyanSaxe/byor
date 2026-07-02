@@ -104,9 +104,12 @@ def shim_findings(repo_root: Path) -> ShimFindings | None:
     counting a marker `pre-commit install` displaced to pre-commit.legacy).
     A marked sync shim implies its post-merge/post-checkout partner, so a deleted
     partner is a problem; the standalone pre-commit shim can only be checked for
-    drift. Unmarked hooks are user-owned and never compared, but a displaced
-    marker is a problem and, when the marked sync shims prove the repo opted
-    into byor hooks, an unmarked pre-commit earns an informational note.
+    drift. Unmarked hooks are user-owned and never compared. A marker displaced
+    to pre-commit.legacy is a note while the chained shim is current — init
+    refuses to reclaim pre-commit's unmarked hook, so a problem could never
+    converge — and a problem once it drifts. When the marked sync shims prove
+    the repo opted into byor hooks, an unmarked pre-commit earns an
+    informational note.
     """
     if not (repo_root / ".git").exists():
         return None
@@ -133,18 +136,31 @@ def shim_findings(repo_root: Path) -> ShimFindings | None:
         )
     if precommit_status == "drifted":
         problems.append(".git/hooks/pre-commit is outdated; run `byor init --private --gate`")
-    if displaced:
+    if displaced and legacy_status == "unchanged":
+        notes.append(
+            "pre-commit hook was displaced to pre-commit.legacy by `pre-commit install`;"
+            " the gate still chains and is current;"
+            " run `uvx pre-commit uninstall` to restore byor's shim (removes pre-commit's own hooks)"
+        )
+    elif displaced:
         problems.append(
-            ".git/hooks/pre-commit was displaced to pre-commit.legacy by `pre-commit install`;"
-            " the gate still chains via .legacy but byor no longer manages it;"
-            " run `byor init --private --gate` to reclaim or keep as-is"
+            ".git/hooks/pre-commit.legacy is an outdated byor shim that pre-commit still chains;"
+            " run `uvx pre-commit uninstall` then `byor init --private --gate`,"
+            " or delete .git/hooks/pre-commit.legacy"
         )
     elif precommit_status == "unmarked":
         notes.append("pre-commit hook is user-owned; byor is not managing a commit gate here")
     # Git silently skips a hook without the exec bit, so a chmod -x'd shim is
     # as broken as a deleted one; reinstall restores the bit.
-    remedies = dict.fromkeys(SHIM_HOOK_NAMES, "byor init --git-hooks") | {"pre-commit": "byor init --private --gate"}
+    remedies = dict.fromkeys(SHIM_HOOK_NAMES, "byor init --git-hooks") | {
+        "pre-commit": "byor init --private --gate",
+        "pre-commit.legacy": "chmod +x .git/hooks/pre-commit.legacy",
+    }
     statuses = {**sync_statuses, "pre-commit": precommit_status}
+    if displaced and legacy_status == "unchanged":
+        # pre-commit runs the chained .legacy hook only when os.access(X_OK)
+        # passes and silently skips it otherwise, so the bit is part of health.
+        statuses["pre-commit.legacy"] = legacy_status
     problems.extend(
         f".git/hooks/{name} is not executable; run `{remedies[name]}`"
         for name, status in statuses.items()
