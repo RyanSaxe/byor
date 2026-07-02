@@ -523,6 +523,40 @@ def test_doctor_flags_a_drifted_skill_render(home: Path, capsys: pytest.CaptureF
     assert skill.read_text() == edited
 
 
+def test_doctor_notes_a_gate_repo_without_a_local_pre_commit_hook(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The CI leg still enforces, so a never-installed local hook is an
+    # informational ok-row, not a failure.
+    repo = home / "gated"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 0
+
+    out = capsys.readouterr().out
+    assert "ok    gate_hook" in out
+    assert "run `uvx pre-commit install`" in out
+
+    # Any pre-commit hook file counts as active: the row disappears.
+    (repo / ".git" / "hooks" / "pre-commit").write_text("#!/bin/sh\nexec pre-commit run\n")
+    assert main(["doctor", "--repo", str(repo)]) == 0
+    assert "gate_hook" not in capsys.readouterr().out
+
+
+def test_doctor_says_nothing_about_the_pre_commit_hook_in_a_non_gate_repo(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 0
+
+    assert "gate_hook" not in capsys.readouterr().out
+
+
 def test_doctor_flags_stale_gate_files(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = home / "gated"
     repo.mkdir()

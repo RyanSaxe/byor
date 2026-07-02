@@ -54,6 +54,21 @@ def test_gate_promotes_rules_and_checks_and_writes_portable_artifacts(
     assert "ruff-check" in workflow
 
 
+def test_gate_prints_the_pre_commit_install_hint_until_a_hook_exists(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Nothing installs the framework hook for the user: without this hint the
+    # gate looks green while enforcing nothing on local commits.
+    repo = gate_repo(home)
+
+    assert "run `uvx pre-commit install`" in capsys.readouterr().out
+
+    # Any pre-commit hook file counts as active; its internals are not inspected.
+    (repo / ".git" / "hooks" / "pre-commit").write_text("#!/bin/sh\nexec pre-commit run\n")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+    assert "uvx pre-commit install" not in capsys.readouterr().out
+
+
 def test_gate_workflow_gates_pushes_to_a_non_main_default_branch(home: Path) -> None:
     repo = gate_repo(home, branch="trunk")
 

@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from byor.agents.install import agent_file_problems
 from byor.commands.gate import (
     directly_invoked_vendored_scripts,
+    precommit_hook_installed,
     referenced_vendored_scripts,
     stale_gate_files,
     transitive_vendored_scripts,
@@ -54,6 +55,7 @@ from byor.rules.sync import (
 )
 from byor.scaffold.githooks import shim_findings
 from byor.scaffold.ignore import ignore_block_current, rule_visibility_ok
+from byor.scaffold.precommit import CONFIG_RELPATH
 from byor.scan.astgrep import ast_grep_version, resolve_ast_grep
 from byor.scan.checks import effective_checks
 
@@ -149,6 +151,9 @@ def _repo_checks(
         gate_check = _gate_check(repo_root, repo_config)
         if gate_check is not None:
             checks.append(gate_check)
+        gate_hook_check = _gate_hook_check(repo_root, repo_config)
+        if gate_hook_check is not None:
+            checks.append(gate_hook_check)
         vendored_check = _vendored_scripts_check(repo_root, repo_config)
         if vendored_check is not None:
             checks.append(vendored_check)
@@ -403,6 +408,24 @@ def _gate_check(repo_root: Path, repo_config: RepoConfig) -> Check | None:
             message=f"gate files are stale: {', '.join(stale)}; run `byor init --gate`",
         )
     return Check(id="gate_files", ok=True, message="gate files match the configured checks")
+
+
+def _gate_hook_check(repo_root: Path, repo_config: RepoConfig) -> Check | None:
+    """Add an informational row when a gate repo never ran `pre-commit install`.
+
+    The CI leg still enforces, so a missing local hook is ok-severity, in the
+    style of the user-owned-hook note. Any pre-commit hook file present is
+    assumed active; its internals are never verified.
+    """
+    if not repo_config.gate or not (repo_root / CONFIG_RELPATH).is_file():
+        return None
+    if precommit_hook_installed(repo_root) is not False:
+        return None
+    return Check(
+        id="gate_hook",
+        ok=True,
+        message="local pre-commit gate not installed; run `uvx pre-commit install` (CI still enforces)",
+    )
 
 
 def _vendored_scripts_check(repo_root: Path, repo_config: RepoConfig) -> Check | None:

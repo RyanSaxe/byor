@@ -23,7 +23,7 @@ from byor.config import (
 )
 from byor.errors import ByorError
 from byor.io.fsio import MANAGED_NOTICE, marked_text_status, write_text_atomic
-from byor.io.gitio import default_branch
+from byor.io.gitio import default_branch, git_output
 from byor.rules.sync import load_canonical_rules, mirror_contents, sync_repo
 from byor.scaffold.ci import WORKFLOW_RELPATH, workflow_text, write_ci_workflow
 from byor.scaffold.githooks import install_precommit_shim
@@ -39,6 +39,7 @@ __all__ = (
     "directly_invoked_vendored_scripts",
     "heal_gate",
     "install_gate",
+    "precommit_hook_installed",
     "promote_everything",
     "referenced_vendored_scripts",
     "regenerate_gate",
@@ -46,6 +47,29 @@ __all__ = (
     "transitive_vendored_scripts",
     "vendored_script_problems",
 )
+
+# `byor init --gate` writes the pre-commit config, but only `pre-commit
+# install` makes it run locally — without this line a green-looking gate
+# silently enforces nothing on commit.
+PRECOMMIT_INSTALL_HINT = (
+    "The local pre-commit gate is inactive until you run `uvx pre-commit install` (CI still enforces)"
+)
+
+
+def precommit_hook_installed(repo_root: Path) -> bool | None:
+    """Whether a pre-commit hook file exists in the repo's git hooks directory.
+
+    Any hook file present is assumed active — inspecting its internals to
+    prove it is really the pre-commit framework's would be guesswork. None
+    means there is no hooks directory to look in (not a git repo).
+    """
+    if not (repo_root / ".git").exists():
+        return None
+    hooks = git_output(repo_root, "rev-parse", "--git-path", "hooks")
+    if hooks is None:
+        return None
+    return ((repo_root / hooks) / "pre-commit").is_file()
+
 
 VENDORED_SCRIPTS_DIR = ".byor/scripts"
 HOME_SCRIPTS_SOURCE_DIR = "~/.config/byor/scripts"
@@ -73,7 +97,10 @@ def install_gate(repo_root: Path, config_dir: Path, *, private: bool) -> list[st
     if repo_config.gate_branch is None:
         repo_config.gate_branch = default_branch(repo_root)
     save_repo_config(repo_root, repo_config)
-    return messages + regenerate_gate(repo_root)
+    messages += regenerate_gate(repo_root)
+    if precommit_hook_installed(repo_root) is not True:
+        messages.append(PRECOMMIT_INSTALL_HINT)
+    return messages
 
 
 def regenerate_gate(repo_root: Path) -> list[str]:
