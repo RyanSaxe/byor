@@ -7,6 +7,7 @@ the shared common hooks dir.
 """
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -95,7 +96,12 @@ def test_precommit_shim_blocks_a_violating_file_whose_name_has_a_space(home: Pat
     # The subprocess resolves ~ from the environment, so point it at the sandbox.
     env = {**os.environ, "HOME": str(home), "USERPROFILE": str(home)}
     hook = repo / ".git" / "hooks" / "pre-commit"
-    result = subprocess.run([str(hook)], cwd=repo, env=env, capture_output=True, text=True, check=False)
+    # Git runs hooks through sh, and Windows cannot exec a shell script
+    # directly — invoke the shim the way git does (Git Bash ships sh there).
+    sh = shutil.which("sh")
+    if sh is None:
+        pytest.skip("running the hook requires an `sh` on PATH")
+    result = subprocess.run([sh, str(hook)], cwd=repo, env=env, capture_output=True, text=True, check=False)
 
     assert result.returncode != 0
     assert "no-cast" in result.stdout + result.stderr
