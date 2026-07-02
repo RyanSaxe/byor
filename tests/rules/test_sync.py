@@ -201,6 +201,8 @@ def test_init_syncs_existing_global_rules(home: Path, capsys: pytest.CaptureFixt
 
 def test_any_command_self_heals_a_stale_repo(
     home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
     monkeypatch: pytest.MonkeyPatch,
     *,
     capsys: pytest.CaptureFixture[str],

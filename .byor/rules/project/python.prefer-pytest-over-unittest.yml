@@ -6,19 +6,21 @@ rule:
   any:
   - all:
     - kind: dotted_name
-    - regex: ^unittest$
+    - regex: ^unittest(\.case)?$
     - inside:
         kind: import_statement
         stopBy: end
   - all:
     - kind: dotted_name
-    - regex: ^(TestCase|main|skip|skipIf|skipUnless|expectedFailure)$
+    - regex: ^(TestCase|IsolatedAsyncioTestCase|main|skip|skipIf|skipUnless|expectedFailure)$
     - inside:
         all:
         - kind: import_from_statement
         - has:
             field: module_name
-            regex: ^unittest$
+            regex: ^unittest(\.case)?$
+        # stopBy reaches through aliased_import: from unittest import TestCase as TC
+        stopBy: end
 metadata:
   byor:
     rationale: >
