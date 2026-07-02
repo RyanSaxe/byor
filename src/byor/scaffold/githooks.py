@@ -38,12 +38,14 @@ SHIM_CONTENT = f"""#!/bin/sh
 # byor is absent, so it never blocks a contributor who has not installed it.
 PRECOMMIT_LINE = "byor agent-check --files <staged files>"
 
+# NUL-separated names piped through xargs -0 keep filenames with spaces
+# (or any other byte) intact; the plain listing only guards emptiness.
 PRECOMMIT_CONTENT = f"""#!/bin/sh
 {SHIM_MARKER}
 command -v byor >/dev/null 2>&1 || exit 0
 files=$(git diff --cached --name-only --diff-filter=ACM)
 [ -z "$files" ] && exit 0
-byor agent-check --files $files
+git diff --cached --name-only --diff-filter=ACM -z | xargs -0 byor agent-check --files
 """
 
 

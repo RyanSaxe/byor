@@ -54,3 +54,4 @@ checks:
       - documentation
       - style-guide
 gate: true
+gate_branch: main
