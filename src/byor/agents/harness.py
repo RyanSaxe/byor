@@ -113,8 +113,10 @@ def parse_apply_patch(text: str) -> dict[str, list[str]]:
 
     Reads the `*** Add File:` / `*** Update File:` sections of the patch and
     collects each section's added (`+`) lines, joined into one edit string per
-    file. Files with no added lines (pure deletions) map to an empty list, so
-    the caller still scopes them by diff.
+    section; repeated sections for one file merge their strings. A `*** Move
+    to:` rename re-keys the section to its destination, where the file lives
+    after the patch applies. Files with no added lines (pure deletions or
+    renames) map to an empty list, so the caller still scopes them by diff.
     """
     added: dict[str, list[str]] = {}
     current: str | None = None
@@ -126,10 +128,18 @@ def parse_apply_patch(text: str) -> dict[str, list[str]]:
             current, plus_lines = target, []
             added.setdefault(target, [])
             continue
+        if current is not None and line.startswith(_MOVE_MARKER):
+            moved = added.pop(current)
+            current = line[len(_MOVE_MARKER) :].strip()
+            added.setdefault(current, []).extend(moved)
+            continue
         if current is not None and line.startswith("+"):
             plus_lines.append(line[1:])
     _flush_patch_section(added, current, plus_lines=plus_lines)
     return added
+
+
+_MOVE_MARKER = "*** Move to: "
 
 
 def _patch_file_header(line: str) -> str | None:
@@ -141,7 +151,7 @@ def _patch_file_header(line: str) -> str | None:
 
 def _flush_patch_section(added: dict[str, list[str]], current: str | None, *, plus_lines: list[str]) -> None:
     if current is not None and plus_lines:
-        added[current] = ["\n".join(plus_lines)]
+        added[current].append("\n".join(plus_lines))
 
 
 def _emit_claude_code(rendered: str) -> tuple[str, int]:

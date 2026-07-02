@@ -93,6 +93,44 @@ def test_apply_patch_handles_multiple_files_and_pure_deletions() -> None:
     assert added == {"a.py": ["first\nsecond"], "b.py": []}
 
 
+def test_apply_patch_move_to_keys_added_lines_to_the_destination() -> None:
+    # The old path no longer exists after the rename applies, so feedback
+    # keyed to it would be dropped from the scan entirely.
+    rename_with_edit = (
+        "*** Begin Patch\n*** Update File: src/old.py\n*** Move to: src/new.py\n@@\n-x = 1\n+print(z)\n*** End Patch"
+    )
+    pure_rename = "*** Begin Patch\n*** Update File: src/old.py\n*** Move to: src/new.py\n*** End Patch"
+
+    assert parse_apply_patch(rename_with_edit) == {"src/new.py": ["print(z)"]}
+    assert parse_apply_patch(pure_rename) == {"src/new.py": []}
+
+
+def test_codex_rename_payload_scans_the_destination_file() -> None:
+    patch = "*** Begin Patch\n*** Update File: old.py\n*** Move to: new.py\n@@\n+print(z)\n*** End Patch"
+    raw = json.dumps({"tool_name": "apply_patch", "tool_input": {"command": patch}})
+
+    assert parse_payload("codex", raw) == EditPayload(edits={Path("new.py"): ["print(z)"]})
+
+
+def test_apply_patch_merges_repeated_update_sections_for_one_file() -> None:
+    patch = (
+        "*** Begin Patch\n"
+        "*** Update File: a.py\n"
+        "@@\n"
+        "+first_added = 1\n"
+        "*** Update File: b.py\n"
+        "+b = 2\n"
+        "*** Update File: a.py\n"
+        "@@\n"
+        "+second_added = 3\n"
+        "*** End Patch"
+    )
+
+    added = parse_apply_patch(patch)
+
+    assert added == {"a.py": ["first_added = 1", "second_added = 3"], "b.py": ["b = 2"]}
+
+
 def test_malformed_payloads_fail_open_to_an_empty_result() -> None:
     for harness in ("claude-code", "codex", "copilot"):
         assert parse_payload(harness, "{not json") == EditPayload()
