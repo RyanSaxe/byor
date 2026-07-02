@@ -31,6 +31,11 @@ adds them; re-running it is safe and idempotent.
 shared with a team — global/personal rules work everywhere without it. Ask once
 whether the user wants repo-scoped or team-shared rules; if not, skip init.
 
+When the user wants repo-scoped rules but the team has not adopted byor, offer
+`byor init --private`: it hides byor's whole footprint from git (untracked
+`.byor/` and `sgconfig.yml`, ignored via `.git/info/exclude`), so nothing byor
+lands in the team's history.
+
 If profiles are configured, offer to initialize with one. Profiles are
 user-defined templates that write repo-local rule/check exclusions; they are
 not runtime modes. List them before asking:

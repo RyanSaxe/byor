@@ -228,12 +228,27 @@ teammate's clone ignores stray personal byor files too — the config, project
 rules, and `sgconfig.yml` stay tracked and shared.
 
 `byor init --private` is for using byor on a repo the team has not adopted it
-for. Instead of `.gitignore` it writes an all-encompassing block to
-`.git/info/exclude` — `.byor/` and `sgconfig.yml` — so nothing byor creates is
-tracked and `git status` stays clean. Because the project rule directory is now
-git-ignored too, init writes the `.ignore` visibility file into *every* rule
-directory (not just the personal ones), keeping all rules loadable by ast-grep.
+for. Everything byor creates stays untracked, so `git status` stays clean and
+nothing byor lands in a commit:
+
+- `.byor/` — config, rule directories, and local state, ignored as a unit.
+- `sgconfig.yml` at the repo root, so ast-grep still discovers the rules.
+- An ignore block covering both of the above, written to `.git/info/exclude`
+  instead of `.gitignore` — `.git/` itself is never tracked.
+- With `--git-hooks` or `--gate`: shims under `.git/hooks/` (post-merge and
+  post-checkout for sync; pre-commit for the private gate above) — also
+  inside `.git/`.
+
+Because the project rule directory is now git-ignored too, init writes the
+`.ignore` visibility file into *every* rule directory (not just the personal
+ones), keeping all rules loadable by ast-grep.
 
 `.git/info/exclude` only affects untracked files, so if `sgconfig.yml` is
 already committed (the team uses ast-grep independently), byor's edits to it
 still show in `git status`; init warns when it detects this.
+
+There is no deinit command yet, so offboarding a private setup is manual:
+delete `.byor/` and the repo-root `sgconfig.yml` (unless the team owns it),
+remove the `Managed by BYOR` block from `.git/info/exclude`, delete any
+`Managed by BYOR` hooks from `.git/hooks/`, and drop the repo's line from
+`~/.config/byor/repos.yml` so `sync --all` and `doctor` stop looking for it.
