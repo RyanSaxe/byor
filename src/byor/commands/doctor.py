@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 from byor.agents.install import agent_file_problems
 from byor.commands.gate import (
+    directly_invoked_vendored_scripts,
     referenced_vendored_scripts,
     stale_gate_files,
     transitive_vendored_scripts,
@@ -398,13 +399,11 @@ def _vendored_scripts_check(repo_root: Path, repo_config: RepoConfig) -> Check |
     if not direct:
         return None
     relpaths = transitive_vendored_scripts(repo_root, direct)
-    # Only scripts named in a check's run command are (potentially) invoked
-    # directly; a transitively referenced script runs through its caller, so
-    # the exec bit is not required for it.
+    invoked = directly_invoked_vendored_scripts(repo_config.checks)
     problems = [
         problem
         for relpath in relpaths
-        for problem in vendored_script_problems(repo_root, relpath, executable_required=relpath in direct)
+        for problem in vendored_script_problems(repo_root, relpath, executable_required=relpath in invoked)
     ]
     if problems:
         return Check(id="vendored_scripts", ok=False, message="; ".join(problems))

@@ -14,6 +14,7 @@ from support import git, install_package, write_global_check, write_global_rule,
 
 from byor.cli import main
 from byor.config import CheckDef, load_repo_config, save_repo_config
+from byor.scaffold.precommit import AST_GREP_CLI_VERSION
 
 
 def gate_repo(home: Path, *, extra: tuple[str, ...] = (), branch: str = "main") -> Path:
@@ -38,7 +39,8 @@ def test_gate_promotes_rules_and_checks_and_writes_portable_artifacts(
     assert config.gate is True
 
     precommit = (repo / ".pre-commit-config.yaml").read_text()
-    assert "uvx --from ast-grep-cli ast-grep scan --error" in precommit
+    # The gate pins ast-grep so enforcement never drifts with upstream releases.
+    assert f"uvx --from ast-grep-cli=={AST_GREP_CLI_VERSION} ast-grep scan --error" in precommit
     assert "ruff-check" in precommit
     # A check's extensions become a pre-commit files filter (byor-faithful scoping).
     assert r"files: \.(py)$" in precommit
@@ -47,7 +49,7 @@ def test_gate_promotes_rules_and_checks_and_writes_portable_artifacts(
     # Push runs are limited to the default branch so PR branches are not gated twice.
     assert "on:\n  pull_request:\n  push:\n    branches: [main]\n" in workflow
     assert "astral-sh/setup-uv@v6" in workflow
-    assert "uvx --from ast-grep-cli ast-grep scan --error" in workflow
+    assert f"uvx --from ast-grep-cli=={AST_GREP_CLI_VERSION} ast-grep scan --error" in workflow
     assert "npm install" not in workflow
     assert "ruff-check" in workflow
 
@@ -78,6 +80,21 @@ def test_gate_workflow_branch_is_stable_across_checkouts(home: Path) -> None:
     assert main(["doctor", "--repo", str(repo)]) == 0
 
 
+# Doctor's drift remediation says "run `byor init --gate`", which users run
+# from whatever branch they are on; re-recording gate_branch there resurrected
+# the CI branch flap the recorded value exists to prevent.
+def test_rerunning_init_gate_keeps_the_recorded_branch(home: Path) -> None:
+    repo = gate_repo(home)
+    git(repo, "commit", "--allow-empty", "-q", "-m", "init")
+    git(repo, "checkout", "-q", "-b", "feature")
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+
+    assert load_repo_config(repo).gate_branch == "main"
+    workflow = (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
+    assert "branches: [main]" in workflow
+
+
 def test_gate_without_a_recorded_branch_falls_back_to_detection(home: Path) -> None:
     repo = gate_repo(home, branch="trunk")
     config = load_repo_config(repo)
@@ -102,8 +119,8 @@ def test_gate_fail_on_error_drops_the_error_flag_from_both_files(home: Path) -> 
 
     precommit = (repo / ".pre-commit-config.yaml").read_text()
     workflow = (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
-    assert "entry: uvx --from ast-grep-cli ast-grep scan\n" in precommit
-    assert "- run: uvx --from ast-grep-cli ast-grep scan\n" in workflow
+    assert f"entry: uvx --from ast-grep-cli=={AST_GREP_CLI_VERSION} ast-grep scan\n" in precommit
+    assert f"- run: uvx --from ast-grep-cli=={AST_GREP_CLI_VERSION} ast-grep scan\n" in workflow
     assert "--error" not in precommit
     assert "--error" not in workflow
     # Doctor's staleness view renders from the same setting.
@@ -428,3 +445,25 @@ def test_gate_does_not_clobber_an_existing_precommit_config(home: Path, capsys: 
 
     assert (repo / ".pre-commit-config.yaml").read_text() == "repos: []\n"
     assert "already exists" in capsys.readouterr().out
+
+
+# The pre-commit writer already printed adoption guidance; the CI writer used
+# to no-op silently, leaving the user with gate: true and no CI enforcement.
+def test_gate_does_not_clobber_an_existing_ci_workflow_but_prints_guidance(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_global_rule(home, "python/no-cast.yml", rule_id="no-cast")
+    repo = home / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    workflow = repo / ".github" / "workflows" / "byor-gate.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text("name: my own gate\n")
+    capsys.readouterr()
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+
+    assert workflow.read_text() == "name: my own gate\n"
+    out = capsys.readouterr().out
+    assert ".github/workflows/byor-gate.yml already exists" in out
+    assert "ast-grep scan" in out

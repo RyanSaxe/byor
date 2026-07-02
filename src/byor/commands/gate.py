@@ -36,6 +36,7 @@ from byor.scaffold.precommit import (
 from byor.scan.checks import load_effective_checks
 
 __all__ = (
+    "directly_invoked_vendored_scripts",
     "heal_gate",
     "install_gate",
     "promote_everything",
@@ -66,8 +67,11 @@ def install_gate(repo_root: Path, config_dir: Path, *, private: bool) -> list[st
     messages = promote_everything(repo_root, config_dir)
     repo_config = load_repo_config(repo_root)
     repo_config.gate = True
-    # Record the branch once so regeneration never flaps across checkouts.
-    repo_config.gate_branch = default_branch(repo_root)
+    # Record the branch once so regeneration never flaps across checkouts —
+    # a re-run (say, from doctor's remediation) must not re-detect it from
+    # whatever feature branch happens to be checked out.
+    if repo_config.gate_branch is None:
+        repo_config.gate_branch = default_branch(repo_root)
     save_repo_config(repo_root, repo_config)
     return messages + regenerate_gate(repo_root)
 
@@ -90,6 +94,13 @@ def referenced_vendored_scripts(checks: list[CheckDef]) -> list[str]:
         token for check in checks for token in shlex.split(check.run) if token.startswith(f"{VENDORED_SCRIPTS_DIR}/")
     ]
     return list(dict.fromkeys(relpaths))
+
+
+# Vendored scripts a check invokes as its command's argv[0]. Only these need
+# the exec bit: interpreter arguments (`sh .byor/scripts/x.sh`) run without it.
+def directly_invoked_vendored_scripts(checks: list[CheckDef]) -> set[str]:
+    argv0s = {shlex.split(check.run)[0] for check in checks}
+    return {token for token in argv0s if token.startswith(f"{VENDORED_SCRIPTS_DIR}/")}
 
 
 # A `.byor/scripts/...` reference inside a vendored script's own text, the shape
@@ -139,7 +150,10 @@ def vendored_script_problems(repo_root: Path, relpath: str, *, executable_requir
         return [f"{relpath} is missing; restore it or drop its check from .byor/config.yml"]
     problems: list[str] = []
     if executable_required and not os.access(path, os.X_OK):
-        problems.append(f"{relpath} is not executable; run `chmod +x {relpath}`")
+        # chmod fixes this machine; the index mode is what teammates check out.
+        problems.append(
+            f"{relpath} is not executable; run `chmod +x {relpath}` and `git update-index --chmod=+x {relpath}`"
+        )
     source = _vendored_source(path)
     if source is not None and source.is_file():
         expected = _expected_vendored_text(path.name, source, repo_root=repo_root)

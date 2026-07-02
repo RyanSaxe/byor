@@ -442,6 +442,50 @@ def test_doctor_flags_a_missing_vendored_script(
     assert not (repo / ".byor" / "scripts" / "fix.sh").exists()
 
 
+# The docs bless naming the interpreter in `run` instead of setting the exec
+# bit; doctor used to false-FAIL that documented shape.
+def test_doctor_accepts_a_non_executable_interpreter_invoked_vendored_script(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    (home / "lint.sh").write_text("echo hi\n")
+    write_global_check("linter", "sh ~/lint.sh")
+    repo = home / "gated"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+    vendored = repo / ".byor" / "scripts" / "lint.sh"
+    vendored.chmod(0o644)
+
+    assert main(["doctor", "--repo", str(repo)]) == 0
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="os.access(X_OK) is vacuous on Windows")
+def test_doctor_flags_a_non_executable_directly_invoked_vendored_script(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = gated_script_repo(home, monkeypatch)
+    (repo / ".byor" / "scripts" / "fix.sh").chmod(0o644)
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  vendored_scripts" in out
+    assert "chmod +x .byor/scripts/fix.sh" in out
+    # chmod alone does not survive a Windows checkout: the git index mode does.
+    assert "git update-index --chmod=+x .byor/scripts/fix.sh" in out
+
+
 # A vendored runner that calls a second vendored script hid that dependency
 # from doctor, which only tokenized check.run: delete the helper and doctor
 # stayed green while the committed gate broke.
