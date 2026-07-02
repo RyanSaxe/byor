@@ -17,7 +17,8 @@ EOF
   [ "$#" -eq 0 ] && exit 0
 fi
 
-fixed=$(uvx ruff check --fix-only --show-fixes "$@" 2>/dev/null) # apply + summarize
+# F401 stays unfixable: autofixing it deletes a just-added import before the agent's next edit adds its usage.
+fixed=$(uvx ruff check --fix-only --show-fixes --unfixable F401 "$@" 2>/dev/null) # apply + summarize
 reformatted=""
 case "$(uvx ruff format "$@" 2>&1)" in
 *reformatted*) reformatted="ruff format reformatted the file(s)." ;;

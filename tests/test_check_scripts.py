@@ -268,6 +268,32 @@ def test_example_ruff_sh_whole_repo_scan_survives_space_containing_filenames(tmp
     assert completed.stdout == ""
 
 
+def test_example_ruff_sh_reports_an_unused_import_without_deleting_it(tmp_path: Path) -> None:
+    # The fix pass must never autofix F401: at hook time it deleted a
+    # just-added import before the agent's next edit added its usage.
+    sh = shutil.which("sh")
+    if sh is None:
+        pytest.skip("running the example check script requires an `sh` on PATH")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    (repo / "ruff.toml").write_text("")
+    content = "import os\n"
+    (repo / "code.py").write_text(content)
+
+    completed = subprocess.run(
+        (sh, str(EXAMPLE_RUFF_SH)),
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    assert "F401" in completed.stdout
+    assert (repo / "code.py").read_text() == content
+
+
 GOOD_MODULE_DOCSTRING = (
     '"""Serve as a fixture module for the module contract tests.\n'
     "\n"
