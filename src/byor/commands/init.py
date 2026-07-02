@@ -33,10 +33,11 @@ from byor.config import (
     save_repo_config,
     save_repo_registry,
 )
-from byor.errors import RepoNotInitializedError
+from byor.errors import ByorError, RepoNotInitializedError
 from byor.io.gitio import git_output
 from byor.io.output import write_line, write_lines
 from byor.io.paths import display_path, global_config_dir, resolve_repo_root
+from byor.rules.rules import discover_rule_files
 from byor.rules.sync import load_canonical_rules, summarize_changes, sync_repo
 from byor.scaffold.githooks import install_git_shims
 from byor.scaffold.ignore import (
@@ -45,6 +46,7 @@ from byor.scaffold.ignore import (
     write_rule_visibility_file,
 )
 from byor.scaffold.sgconfig import ensure_rule_dirs
+from byor.scan.astgrep import resolve_ast_grep, scan_files
 
 if TYPE_CHECKING:
     import argparse
@@ -108,9 +110,36 @@ def initialize_repo(repo_root: Path, config_dir: Path, *, options: InitOptions) 
         messages.append(f"Synced {summarize_changes(sync_result)}")
     if options.gate:
         messages.extend(install_gate(repo_root, config_dir, private=options.private))
+        note = _existing_violations_note(repo_root, config_dir)
+        if note is not None:
+            messages.append(note)
     # Run doctor --quick, surfacing only the problems it finds.
     messages.extend(quick_doctor_problems(repo_root, config_dir))
     return messages
+
+
+def _existing_violations_note(repo_root: Path, config_dir: Path) -> str | None:
+    """Tell the gate installer what the repo already violates, in one line.
+
+    A lead who sees the gate land green can otherwise commit pre-existing
+    violations unknowingly. One whole-repo scan; silent when the repo has no
+    rules yet, when it is clean, or when the scan cannot run (doctor reports
+    that on its own).
+    """
+    paths = load_repo_config(repo_root).paths
+    if not any(discover_rule_files(repo_root / rules_dir) for rules_dir in rule_dir_relpaths(paths)):
+        return None
+    try:
+        executable = resolve_ast_grep(load_global_config(config_dir).ast_grep_command)
+        matches = scan_files(executable, repo_root, files=[]).matches
+    except ByorError:
+        return None
+    if not matches:
+        return None
+    files = len({match.file for match in matches})
+    violations_part = f"{len(matches)} existing violation{'' if len(matches) == 1 else 's'}"
+    files_part = f"{files} file{'' if files == 1 else 's'}"
+    return f"{violations_part} across {files_part}; run `byor agent-check` to see them"
 
 
 def _bootstrap_global_dir(config_dir: Path) -> GlobalConfig:

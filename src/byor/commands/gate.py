@@ -21,9 +21,10 @@ from byor.config import (
     repo_config_path,
     save_repo_config,
 )
-from byor.errors import ByorError
+from byor.errors import ByorError, ConfigError
 from byor.io.fsio import MANAGED_NOTICE, marked_text_status, write_text_atomic
 from byor.io.gitio import default_branch, git_output
+from byor.io.yamlio import parse_yaml_mapping
 from byor.rules.sync import load_canonical_rules, mirror_contents, sync_repo
 from byor.scaffold.ci import WORKFLOW_RELPATH, workflow_text, write_ci_workflow
 from byor.scaffold.githooks import install_precommit_shim
@@ -275,22 +276,29 @@ def promote_everything(repo_root: Path, config_dir: Path) -> list[str]:
     vendored: dict[str, Path] = {}
     repo_config.checks = [_vendor_check(repo_root, check, vendored=vendored) for check in repo_config.checks]
     names = {check.name for check in repo_config.checks}
-    promoted_checks = 0
+    promoted_checks: list[str] = []
     for effective in load_effective_checks(repo_root, config_dir):
         if effective.origin == "repo" or effective.name in names:
             continue
         repo_config.checks.append(_vendor_check(repo_root, effective.definition, vendored=vendored))
         names.add(effective.name)
-        promoted_checks += 1
+        promoted_checks.append(effective.name)
     save_repo_config(repo_root, repo_config)
     sync_repo(repo_root, load_canonical_rules(config_dir))
-    rules_part = f"{rules} rule{'' if rules == 1 else 's'}"
-    checks_part = f"{promoted_checks} check{'' if promoted_checks == 1 else 's'}"
+    rules_part = _promoted_part("rule", rules)
+    checks_part = _promoted_part("check", promoted_checks)
     return [f"Promoted {rules_part} and {checks_part} into tracked config"]
 
 
-def _copy_mirror(project_dir: Path, mirror_dir: Path, *, strip_package: bool) -> int:
-    written = 0
+# "2 rules (a, b)": the count keeps the shape scannable, the ids say exactly
+# what init just committed to the repo's tracked config.
+def _promoted_part(noun: str, names: list[str]) -> str:
+    count = f"{len(names)} {noun}{'' if len(names) == 1 else 's'}"
+    return f"{count} ({', '.join(names)})" if names else count
+
+
+def _copy_mirror(project_dir: Path, mirror_dir: Path, *, strip_package: bool) -> list[str]:
+    written: list[str] = []
     for relpath, content in mirror_contents(mirror_dir).items():
         dest_rel = relpath.split("/", 1)[1] if strip_package and "/" in relpath else relpath
         destination = project_dir / dest_rel
@@ -301,8 +309,18 @@ def _copy_mirror(project_dir: Path, mirror_dir: Path, *, strip_package: bool) ->
             destination = project_dir / (relpath if strip_package else f"global/{relpath}")
         if not destination.exists():
             write_text_atomic(destination, content)
-            written += 1
+            written.append(_rule_id_of(content, fallback=destination.stem))
     return written
+
+
+# The rule's declared id; mirrored rules already validated, so the filename
+# stem fallback only covers content that decayed on disk since the sync.
+def _rule_id_of(content: str, *, fallback: str) -> str:
+    try:
+        declared = parse_yaml_mapping(content, source=Path("<mirrored rule>")).get("id")
+    except ConfigError:
+        return fallback
+    return declared if isinstance(declared, str) else fallback
 
 
 def _exists_with_other_content(destination: Path, content: str) -> bool:

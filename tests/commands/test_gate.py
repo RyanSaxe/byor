@@ -448,7 +448,42 @@ def test_gate_promote_message_pluralizes_each_noun(home: Path, capsys: pytest.Ca
 
     gate_repo(home)
 
-    assert "Promoted 1 rule and 1 check into tracked config" in capsys.readouterr().out
+    assert "Promoted 1 rule (no-cast) and 1 check (ruff) into tracked config" in capsys.readouterr().out
+
+
+def test_gate_promote_message_lists_the_promoted_ids(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
+    write_global_rule(home, "no-print.yml", rule_id="no-print")
+    capsys.readouterr()
+
+    gate_repo(home)
+
+    assert "Promoted 2 rules (no-cast, no-print) and 0 checks into tracked config" in capsys.readouterr().out
+
+
+def test_gate_reports_existing_violations_after_install(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
+    repo = home / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    (repo / "bad.py").write_text("value = cast(int, 1)\nother = cast(str, 2)\n")
+    capsys.readouterr()
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+
+    out = capsys.readouterr().out
+    assert "2 existing violations across 1 file; run `byor agent-check` to see them" in out
+
+
+def test_gate_says_nothing_about_violations_when_the_repo_is_clean(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
+    capsys.readouterr()
+
+    gate_repo(home)
+
+    assert "existing violation" not in capsys.readouterr().out
 
 
 def test_private_gate_installs_a_local_shim_and_commits_nothing(home: Path) -> None:
