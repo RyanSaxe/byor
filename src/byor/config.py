@@ -10,6 +10,7 @@ from __future__ import annotations
 import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 from ruamel.yaml.comments import CommentedMap
 
@@ -86,6 +87,8 @@ class RepoConfig:
     """Whether byor keeps a byor-free pre-commit + CI gate regenerated for this repo."""
     gate_branch: str | None = None
     """Default branch recorded at gate install so regenerated CI never flaps across checkouts."""
+    fail_on: Literal["all", "error"] = "all"
+    """Gate strictness: 'all' escalates every rule to blocking; 'error' blocks on error-severity rules only."""
 
 
 @dataclass
@@ -200,6 +203,7 @@ def load_repo_config(repo_root: Path) -> RepoConfig:
         checks=_check_defs(data, path),
         gate=_bool(data, "gate", path=path, default=False),
         gate_branch=_optional_string(data, "gate_branch", path=path),
+        fail_on=_fail_on(data, path),
     )
 
 
@@ -226,6 +230,10 @@ def save_repo_config(repo_root: Path, config: RepoConfig) -> None:
         data["gate_branch"] = config.gate_branch
     else:
         data.pop("gate_branch", None)
+    if config.fail_on == "all":
+        data.pop("fail_on", None)
+    else:
+        data["fail_on"] = config.fail_on
     write_yaml_atomic(path, data)
 
 
@@ -394,6 +402,16 @@ def _bool(section: CommentedMap, key: str, *, path: Path, default: bool) -> bool
         msg = f"{path}: expected '{key}' to be a boolean"
         raise ConfigError(msg)
     return value
+
+
+def _fail_on(data: CommentedMap, path: Path) -> Literal["all", "error"]:
+    value = _string(data, "fail_on", default="all", path=path)
+    if value == "all":
+        return "all"
+    if value == "error":
+        return "error"
+    msg = f"{path}: expected 'fail_on' to be 'all' or 'error'"
+    raise ConfigError(msg)
 
 
 def _optional_string(section: CommentedMap, key: str, *, path: Path) -> str | None:

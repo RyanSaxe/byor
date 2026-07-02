@@ -133,12 +133,23 @@ jobs:
 everything** — every effective global and package rule into `.byor/rules/project/`,
 every global and package check into `.byor/config.yml`, and any check that runs
 a `~/` script into a committed copy under `.byor/scripts/` with the command
-repointed. The emitted artifacts then run
+repointed. Each vendored copy carries a provenance marker recording its source:
+self-heal re-vendors the copy when that source changes on your machine, and
+removing the marker makes the copy user-owned, never rewritten. The emitted
+artifacts then run
 `uvx --from ast-grep-cli ast-grep scan --error` and each check directly, so the
 whole gate enforces with **no byor and no `~/.config/byor`** — just uv, ast-grep,
 and the check commands. pre-commit passes each check its staged matching files
 (via a `files:` filter from `extensions`); CI runs each check whole-repo,
-mirroring byor's two scan modes.
+mirroring byor's two scan modes. The workflow gates pushes to the branch
+recorded as `gate_branch` in `.byor/config.yml` at install time, so
+regenerating from a feature-branch checkout never rewrites it.
+
+`fail_on` in `.byor/config.yml` sets how strict the gate is. The default,
+`fail_on: all`, appends `--error` so every rule blocks regardless of severity.
+`fail_on: error` runs a bare `ast-grep scan`: only error-severity rules block,
+while warnings and infos still print. Both gate files render from the same
+setting, and doctor's staleness check respects it.
 
 The artifacts are byor-owned build products, like the rule mirror. A committed
 `gate: true` in `.byor/config.yml` marks the repo, and any self-healing byor
