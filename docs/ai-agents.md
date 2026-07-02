@@ -41,7 +41,7 @@ Exit codes:
 Text output groups by file and sorts by line, then rule ID:
 
 ```text
-BYOR found 1 issue in AI-written code.
+BYOR found 1 issue.
 
 src/example.py:3:9
 Rule: python.no-typing-cast
@@ -66,7 +66,7 @@ the agent on every matching edit, while keeping the guidance it needs to
 self-correct:
 
 ```text
-BYOR found 1 issue in AI-written code.
+BYOR found 1 issue.
 
 src/example.py:3:9  [warning] python.no-typing-cast
 Do not use typing.cast here. Fix the type by narrowing, changing the signature, introducing a protocol, or restructuring the value flow. Keep a cast only when the needed invariant cannot be expressed by Python's type system. If this is genuinely necessary, add `# ast-grep-ignore: python.no-typing-cast` at the end of the offending line, with a short comment on the line above explaining the type-system limitation.
@@ -110,7 +110,9 @@ to:` renames to the destination path. Payloads without a recognizable file — i
 ones — exit 0 without scanning. In a repo with no `.byor/config.yml`, hook mode
 scans the edit against your synced global rules and global checks instead;
 it stays silent only when you have neither (no `~/sgconfig.yml` from
-`byor install` and no global `checks:`).
+`byor install` and no global `checks:`). Hook feedback uses the same
+rendering, but its summary line reads `BYOR found N issues in AI-written
+code.` — there the diagnostics describe the agent's own edit.
 
 ## Extra checks
 
