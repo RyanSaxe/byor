@@ -42,6 +42,8 @@ def test_gate_promotes_rules_and_checks_and_writes_portable_artifacts(
     assert r"files: \.(py)$" in precommit
 
     workflow = (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
+    # Push runs are limited to the default branch so PR branches are not gated twice.
+    assert "on:\n  pull_request:\n  push:\n    branches: [main]\n" in workflow
     assert "astral-sh/setup-uv@v6" in workflow
     assert "uvx --from ast-grep-cli ast-grep scan --error" in workflow
     assert "npm install" not in workflow
@@ -92,6 +94,47 @@ def test_gate_rewrites_vendored_home_script_dependencies(home: Path, monkeypatch
     assert runner.is_file()
     assert helper.is_file()
     assert runner.read_text() == ('#!/usr/bin/env zsh\nexec ".byor/scripts/helper.py" "$@"\n')
+
+
+def test_gate_vendors_subdirectory_script_references(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    scripts = home / ".config" / "byor" / "scripts"
+    (scripts / "sub").mkdir(parents=True)
+    (scripts / "runner.sh").write_text('#!/usr/bin/env zsh\nexec "${HOME}/.config/byor/scripts/sub/tool.py" "$@"\n')
+    (scripts / "sub" / "tool.py").write_text("#!/usr/bin/env python3\nprint('ok')\n")
+    write_global_check("runner", "~/.config/byor/scripts/runner.sh")
+
+    repo = gate_repo(home)
+
+    runner = repo / ".byor" / "scripts" / "runner.sh"
+    assert (repo / ".byor" / "scripts" / "sub" / "tool.py").is_file()
+    assert runner.read_text() == ('#!/usr/bin/env zsh\nexec ".byor/scripts/sub/tool.py" "$@"\n')
+
+
+def test_gate_refuses_two_scripts_vendoring_to_the_same_name(
+    home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    (home / "fix.sh").write_text("#!/bin/sh\necho direct\n")
+    scripts = home / ".config" / "byor" / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "runner.sh").write_text('#!/bin/sh\nexec "${HOME}/.config/byor/scripts/fix.sh"\n')
+    (scripts / "fix.sh").write_text("#!/bin/sh\necho nested\n")
+    write_global_check("fixer", "~/fix.sh")
+    write_global_check("runner", "~/.config/byor/scripts/runner.sh")
+    repo = home / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    capsys.readouterr()
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 1
+
+    assert "rename one of the scripts" in capsys.readouterr().err
 
 
 def test_private_gate_installs_a_local_shim_and_commits_nothing(home: Path) -> None:

@@ -1,23 +1,36 @@
 id: python.no-importlib
 language: Python
 severity: warning
-message: Avoid importlib in Python code.
+message: Avoid importlib's dynamic import machinery in Python code.
 rule:
   any:
-    - pattern: import importlib
-    - pattern: import importlib as $ALIAS
-    - pattern: from importlib import $$$NAMES
+    - all:
+        - pattern: import importlib
+        - not:
+            pattern: import importlib.$SUB
+    - all:
+        - pattern: import importlib as $ALIAS
+        - not:
+            pattern: import importlib.$SUB as $ALIAS
+    - pattern: from importlib import import_module
+    - pattern: from importlib import import_module as $ALIAS
+    - pattern: from importlib import reload
+    - pattern: from importlib import reload as $ALIAS
 metadata:
   byor:
     rationale: >
-      importlib makes imports dynamic and harder for agents, type checkers,
-      linters, and reviewers to reason about. Most code should use explicit
-      top-level imports and straightforward fallback branches instead.
+      Dynamic module loading (import_module, reload, the bare importlib module)
+      makes imports harder for agents, type checkers, linters, and reviewers to
+      reason about. importlib.resources and importlib.metadata are static,
+      legitimate stdlib APIs for package data and versions, so they stay
+      allowed.
     agent_prompt: >
-      Do not use importlib here. Prefer explicit top-level imports, including
-      normal try/except import fallbacks for optional standard-library support.
-      If truly dynamic plugin loading is required, ask for review before adding
-      an exception.
+      Do not use importlib's dynamic import machinery (import_module, reload,
+      or the bare importlib module) here. Prefer explicit top-level imports,
+      including normal try/except import fallbacks for optional
+      standard-library support. importlib.resources and importlib.metadata are
+      fine. If truly dynamic plugin loading is required, ask for review before
+      adding an exception.
     tags:
       - python
       - style-guide

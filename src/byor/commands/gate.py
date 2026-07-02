@@ -20,6 +20,7 @@ from byor.config import (
     repo_config_path,
     save_repo_config,
 )
+from byor.errors import ByorError
 from byor.io.fsio import write_text_atomic
 from byor.rules.sync import load_canonical_rules, mirror_contents, sync_repo
 from byor.scaffold.ci import write_ci_workflow
@@ -35,9 +36,10 @@ __all__ = (
 )
 
 VENDORED_SCRIPTS_DIR = ".byor/scripts"
+HOME_SCRIPTS_SOURCE_DIR = "~/.config/byor/scripts"
 HOME_SCRIPT_PATTERN = re.compile(
     r"(?P<path>(?:\$\{HOME\}|\$HOME|~)/\.config/byor/scripts/"
-    r"(?P<name>[A-Za-z0-9_.-]+))"
+    r"(?P<name>[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*))"
 )
 
 
@@ -79,10 +81,11 @@ def promote_everything(repo_root: Path, config_dir: Path) -> list[str]:
     repo_config = load_repo_config(repo_root)
     names = {check.name for check in repo_config.checks}
     promoted_checks = 0
+    vendored: dict[str, Path] = {}
     for effective in load_effective_checks(repo_root, config_dir):
         if effective.origin == "repo" or effective.name in names:
             continue
-        repo_config.checks.append(_vendor_check(repo_root, effective.definition))
+        repo_config.checks.append(_vendor_check(repo_root, effective.definition, vendored=vendored))
         names.add(effective.name)
         promoted_checks += 1
     save_repo_config(repo_root, repo_config)
@@ -101,44 +104,65 @@ def _copy_mirror(project_dir: Path, mirror_dir: Path, *, strip_package: bool) ->
     return written
 
 
-def _vendor_check(repo_root: Path, check: CheckDef) -> CheckDef:
+def _vendor_check(repo_root: Path, check: CheckDef, *, vendored: dict[str, Path]) -> CheckDef:
     tokens = shlex.split(check.run)
     rewritten: list[str] = []
     changed = False
     for token in tokens:
         source = Path(token).expanduser() if token.startswith("~/") else None
         if source is not None and source.is_file():
-            rewritten.append(_vendor_script(repo_root, source, seen=set()))
+            rewritten.append(_vendor_script(repo_root, source, vendored=vendored))
             changed = True
         else:
             rewritten.append(token)
     return replace(check, run=shlex.join(rewritten)) if changed else check
 
 
-def _vendor_script(repo_root: Path, source: Path, *, seen: set[Path]) -> str:
-    destination = repo_root / VENDORED_SCRIPTS_DIR / source.name
-    destination.parent.mkdir(parents=True, exist_ok=True)
+def _vendor_script(repo_root: Path, source: Path, *, vendored: dict[str, Path]) -> str:
+    """Copy `source` into the repo's vendored scripts dir and return its relpath.
+
+    `vendored` maps each destination relpath to the source that produced it: it
+    makes re-vendoring the same script idempotent (and recursion-safe) while a
+    second, different source claiming the same destination is a hard error.
+    """
     resolved = source.resolve()
-    if resolved in seen:
-        return f"{VENDORED_SCRIPTS_DIR}/{source.name}"
-    seen.add(resolved)
+    relpath = f"{VENDORED_SCRIPTS_DIR}/{_vendored_name(resolved)}"
+    already = vendored.get(relpath)
+    if already == resolved:
+        return relpath
+    if already is not None:
+        msg = f"cannot vendor {source} to {relpath}: {already} is already vendored there; rename one of the scripts"
+        raise ByorError(msg)
+    vendored[relpath] = resolved
+    destination = repo_root / relpath
+    destination.parent.mkdir(parents=True, exist_ok=True)
     try:
         content = source.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         shutil.copyfile(source, destination)
     else:
-        content = _rewrite_vendored_script_content(repo_root, content, seen=seen)
+        content = _rewrite_vendored_script_content(repo_root, content, vendored=vendored)
         write_text_atomic(destination, content)
     destination.chmod(destination.stat().st_mode | 0o111)
-    return f"{VENDORED_SCRIPTS_DIR}/{source.name}"
+    return relpath
 
 
-def _rewrite_vendored_script_content(repo_root: Path, content: str, *, seen: set[Path]) -> str:
+def _vendored_name(resolved: Path) -> str:
+    # A script under ~/.config/byor/scripts/ keeps its subpath so nested
+    # references stay portable; anything else flattens to its basename.
+    scripts_home = Path(HOME_SCRIPTS_SOURCE_DIR).expanduser().resolve()
+    try:
+        return resolved.relative_to(scripts_home).as_posix()
+    except ValueError:
+        return resolved.name
+
+
+def _rewrite_vendored_script_content(repo_root: Path, content: str, *, vendored: dict[str, Path]) -> str:
     def replace_match(match: re.Match[str]) -> str:
         raw_path = match.group("path")
         source = Path(os.path.expandvars(raw_path)).expanduser()
         if not source.is_file():
             return raw_path
-        return _vendor_script(repo_root, source, seen=seen)
+        return _vendor_script(repo_root, source, vendored=vendored)
 
     return HOME_SCRIPT_PATTERN.sub(replace_match, content)

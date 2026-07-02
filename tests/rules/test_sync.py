@@ -9,7 +9,7 @@ import shutil
 from pathlib import Path
 
 import pytest
-from support import make_repo, mirror, write_global_rule, write_rule
+from support import install_agents, make_repo, mirror, write_global_rule, write_rule
 
 from byor.cli import main
 from byor.config import load_repo_config, save_repo_config
@@ -207,6 +207,22 @@ def test_any_command_self_heals_a_stale_repo(
 
     main(["list"])
     assert "byor: synced" not in capsys.readouterr().err
+
+
+def test_self_heal_skips_an_agent_with_a_broken_config(
+    home: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = make_repo(home)
+    install_agents("claude-code")
+    (home / ".claude" / "settings.json").write_text("{not json")
+    capsys.readouterr()
+
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    err = capsys.readouterr().err
+    assert "byor: skipping claude-code self-heal" in err
+    assert "run 'byor doctor'" in err
 
 
 def test_sync_all_syncs_registered_repos_and_skips_missing_paths(

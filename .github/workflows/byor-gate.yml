@@ -1,6 +1,9 @@
 # Managed by BYOR. Manual edits may be overwritten.
 name: byor gate
-on: [push, pull_request]
+on:
+  pull_request:
+  push:
+    branches: [main]
 jobs:
   byor:
     runs-on: ubuntu-latest

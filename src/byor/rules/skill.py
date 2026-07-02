@@ -7,10 +7,15 @@ markdown packaging details.
 
 from __future__ import annotations
 
+from importlib.resources import files
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from byor.io.fsio import MANAGED_MARKER
 from byor.rules.rules import ALLOW_EXCEPTIONS_SENTENCE
+
+if TYPE_CHECKING:
+    from importlib.resources.abc import Traversable
 
 __all__ = (
     "global_skill_dirs",
@@ -18,7 +23,6 @@ __all__ = (
 )
 
 _SKILL_RELPATH = "SKILL.md"
-_SKILL_DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "skill"
 
 
 def global_skill_dirs(home: Path | None = None) -> tuple[Path, Path]:
@@ -53,7 +57,7 @@ def _render(text: str) -> str:
     return _insert_marker(filled)
 
 
-def _walk_markdown(node: Path, prefix: str = "") -> list[tuple[str, str]]:
+def _walk_markdown(node: Traversable, prefix: str = "") -> list[tuple[str, str]]:
     found: list[tuple[str, str]] = []
     for child in node.iterdir():
         relpath = f"{prefix}{child.name}"
@@ -65,6 +69,6 @@ def _walk_markdown(node: Path, prefix: str = "") -> list[tuple[str, str]]:
 
 
 def skill_files() -> list[tuple[str, str]]:
-    raw = _walk_markdown(_SKILL_DATA_DIR)
+    raw = _walk_markdown(files("byor").joinpath("data", "skill"))
     rendered = [(relpath, _render(text)) for relpath, text in raw]
     return sorted(rendered, key=lambda item: (item[0] != _SKILL_RELPATH, item[0]))

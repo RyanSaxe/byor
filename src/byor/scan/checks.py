@@ -3,6 +3,11 @@
 Checks extend ast-grep with linters, type checkers, and project scripts that accept file arguments.
 This module merges check definitions by precedence, applies exclusions, expands safe home paths, and
 records failures for agent feedback.
+
+Each command is `shlex.split` and run directly, never through a shell: that is what keeps a
+committed check string from being a shell-injection vector, so there is no `&&`, pipe, redirection,
+or alias — multi-step logic belongs in a script the check points at. The in-scope files are appended
+as trailing arguments, so a check command must accept a list of file paths.
 """
 
 from __future__ import annotations
