@@ -91,6 +91,25 @@ def test_gate_without_a_recorded_branch_falls_back_to_detection(home: Path) -> N
     assert "branches: [trunk]" in workflow
 
 
+def test_gate_fail_on_error_drops_the_error_flag_from_both_files(home: Path) -> None:
+    repo = gate_repo(home)
+    config = load_repo_config(repo)
+    config.fail_on = "error"
+    save_repo_config(repo, config)
+
+    # Any subsequent repo command regenerates the byor-owned artifacts.
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    precommit = (repo / ".pre-commit-config.yaml").read_text()
+    workflow = (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
+    assert "entry: uvx --from ast-grep-cli ast-grep scan\n" in precommit
+    assert "- run: uvx --from ast-grep-cli ast-grep scan\n" in workflow
+    assert "--error" not in precommit
+    assert "--error" not in workflow
+    # Doctor's staleness view renders from the same setting.
+    assert main(["doctor", "--repo", str(repo)]) == 0
+
+
 def test_gate_self_heals_when_a_check_is_added_later(home: Path) -> None:
     write_global_rule(home, "python/no-cast.yml", rule_id="no-cast")
     repo = gate_repo(home)
