@@ -1,0 +1,17 @@
+id: python.prefer-pytest-over-unittest
+valid:
+  - import pytest
+  # A project module that merely contains "unittest" in its name is fine.
+  - from mymod.unittest_helpers import thing
+invalid:
+  - import unittest
+  # Aliasing the module does not hide it.
+  - import unittest as ut
+  # The unittest.case module is unittest by another path.
+  - import unittest.case
+  - from unittest.case import TestCase
+  - from unittest import TestCase
+  # Aliasing the class does not hide it either.
+  - from unittest import TestCase as TC
+  - from unittest import IsolatedAsyncioTestCase
+  - from unittest import skipIf

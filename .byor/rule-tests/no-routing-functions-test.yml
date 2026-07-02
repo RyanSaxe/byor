@@ -1,0 +1,78 @@
+id: no-routing-functions
+valid:
+  # Module-level call: not inside a function body.
+  - configure(settings)
+  # Does real work before forwarding — not a pass-through.
+  - |
+    def save(user):
+        validate(user)
+        return store(user)
+  # The call's result is bound and used, not merely forwarded.
+  - |
+    def load(user_id):
+        record = fetch(user_id)
+        return hydrate(record)
+  # A docstring plus two real statements is not a pass-through.
+  - |
+    def load(user_id):
+        """Load a user."""
+        record = fetch(user_id)
+        return hydrate(record)
+  # Dunder methods are exempt: delegation is the protocol's only legal shape.
+  - |
+    class Box:
+        def __len__(self):
+            return len(self._items)
+  - |
+    class Box:
+        def __iter__(self):
+            return iter(self._items)
+  - |
+    class Box:
+        def __repr__(self):
+            """Render for debugging."""
+            return repr(self._items)
+invalid:
+  # A lone forwarding return.
+  - |
+    def save(user):
+        return store(user)
+  # A lone forwarding bare call.
+  - |
+    def notify(user):
+        send(user)
+  # Awaited pass-through.
+  - |
+    async def save(user):
+        return await store(user)
+  # Yield-from pass-through.
+  - |
+    def records():
+        yield from fetch_records()
+  # Documented one-liner: a docstring still leaves a single real statement.
+  - |
+    def save(user):
+        """Persist the user."""
+        return store(user)
+  # A comment cannot hide the delegation.
+  - |
+    def save(user):
+        # persistence lives elsewhere
+        return store(user)
+  # ...nor can a docstring-plus-comment combination.
+  - |
+    def save(user):
+        """Persist the user."""
+        # persistence lives elsewhere
+        return store(user)
+  # Properties are not exempt.
+  - |
+    class Box:
+        @property
+        def size(self):
+            return len(self._items)
+  # Ordinary methods are not exempt either.
+  - |
+    class Box:
+        def save(self, user):
+            return store(user)

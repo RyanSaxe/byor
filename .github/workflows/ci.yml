@@ -71,6 +71,9 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - run: uv run ast-grep scan --error
+      # Every project rule's valid/invalid behavior is pinned by the samples in
+      # .byor/rule-tests, so a rule edit that changes what fires fails CI.
+      - run: uv run ast-grep test -c sgconfig.yml --skip-snapshot-tests
       # The example rules are validated against their samples so docs can't
       # drift from the tool. --skip-snapshot-tests enforces valid/invalid match
       # expectations without committing snapshot files.
