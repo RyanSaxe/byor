@@ -31,11 +31,14 @@ metadata:
       Do not use typing.cast here. Fix the type by narrowing, changing the
       signature, introducing a protocol, or restructuring the value flow. Keep a
       cast only when the needed invariant cannot be expressed by Python's type
-      system.
+      system. If this is genuinely necessary, add `# ast-grep-ignore:
+      python.no-typing-cast` at the end of the offending line, with a short
+      comment on the line above explaining the type-system limitation.
     tags:
       - python
       - typing
       - style-guide
+      - greenfield
 ```
 
 Required ast-grep fields: `id`, `language`, `rule`, `message`. Recommended:
@@ -96,7 +99,7 @@ Global rules are copied into `.byor/rules/personal/global/` by sync so
 ast-grep can read them. That directory is a generated build artifact — never
 edit it by hand; sync mirrors it wholesale (see
 [sync-model.md](sync-model.md)). Organize rules in subdirectories by language
-or topic (e.g. `rules/python.no-typing-cast.yml`); sync preserves the relative
+or topic (e.g. `rules/python/no-typing-cast.yml`); sync preserves the relative
 paths.
 
 Project and local rules override global rules by the same ID: sync skips the

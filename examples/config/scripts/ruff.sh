@@ -1,41 +1,25 @@
-#!/usr/bin/env zsh
-# A byor `check` script (wired in config.yml). The pattern it demonstrates:
-# autofix what is safe, tell the agent exactly what changed, then report only
-# the irreducible remainder — so the agent acts on real problems, not noise.
-# The agent reads this output; keep it plain text, never ANSI color.
-export NO_COLOR=1
+#!/bin/sh
+# A byor `check` script: autofix what is safe, tell the agent exactly what
+# changed, then report only the irreducible remainder. byor appends in-scope
+# files as arguments and runs from the repo root; no arguments means scan the
+# whole repo, respecting ignored files.
+export NO_COLOR=1 # the agent reads this output; keep it plain text
 unset FORCE_COLOR CLICOLOR_FORCE
 
-files=("$@")
-if (( ${#files[@]} == 0 )); then
-  files=()
-  if git_root=$(git rev-parse --show-toplevel 2>/dev/null); then
-    while IFS= read -r file; do
-      files+=("$git_root/$file")
-    done < <(git -C "$git_root" ls-files -co --exclude-standard -- '*.py' '*.pyi')
-  fi
+if [ "$#" -eq 0 ]; then
+  set -- $(git ls-files -co --exclude-standard -- '*.py' '*.pyi')
+  [ "$#" -eq 0 ] && exit 0
 fi
-[[ ${#files[@]} -eq 0 ]] && exit 0
 
-# Apply lint fixes, capturing a summary of what was fixed (--show-fixes).
-fixed=$(uvx ruff check --fix-only --show-fixes "${files[@]}" 2>/dev/null)
-
-# Apply formatting; ruff reports "reformatted" only when it rewrote something.
-format_out=$(uvx ruff format "${files[@]}" 2>&1)
+fixed=$(uvx ruff check --fix-only --show-fixes "$@" 2>/dev/null) # apply + summarize
 reformatted=""
-[[ "$format_out" == *reformatted* ]] && reformatted="ruff format reformatted the file(s)."
+case "$(uvx ruff format "$@" 2>&1)" in
+*reformatted*) reformatted="ruff format reformatted the file(s)." ;;
+esac
+remaining=$(uvx ruff check --quiet --output-format concise "$@" 2>/dev/null)
 
-# What ruff could not fix — the only thing the agent must act on. --quiet prints
-# the concise violations and nothing else (no "All checks passed!" when clean).
-remaining=$(uvx ruff check --quiet --output-format concise "${files[@]}" 2>/dev/null)
-
-report=""
-[[ -n "$fixed" ]] && report+="Autofixed by ruff (no action needed):"$'\n'"$fixed"$'\n'
-[[ -n "$reformatted" ]] && report+="$reformatted"$'\n'
-[[ -n "$remaining" ]] && report+="Remaining ruff issues to fix:"$'\n'"$remaining"$'\n'
-
-# Stay silent only when the file was already clean; otherwise surface the report
-# (a nonzero exit is what byor feeds back) so the agent knows what changed.
-[[ -z "$report" ]] && exit 0
-print -rn -- "$report"
+[ -z "$fixed$reformatted$remaining" ] && exit 0 # already clean: stay silent
+[ -n "$fixed" ] && printf 'Autofixed by ruff (no action needed):\n%s\n' "$fixed"
+[ -n "$reformatted" ] && printf '%s\n' "$reformatted"
+[ -n "$remaining" ] && printf 'Remaining ruff issues to fix:\n%s\n' "$remaining"
 exit 2

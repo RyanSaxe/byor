@@ -51,7 +51,7 @@ Code:
   3 | value = cast(int, "3")
 
 Instruction:
-Do not use typing.cast here. Fix the type by narrowing, changing the signature, introducing a protocol, or restructuring the value flow. Keep a cast only when the needed invariant cannot be expressed by Python's type system.
+Do not use typing.cast here. Fix the type by narrowing, changing the signature, introducing a protocol, or restructuring the value flow. Keep a cast only when the needed invariant cannot be expressed by Python's type system. If this is genuinely necessary, add `# ast-grep-ignore: python.no-typing-cast` at the end of the offending line, with a short comment on the line above explaining the type-system limitation.
 ```
 
 Every in-scope diagnostic is rendered — the agent sees the full set, never a
@@ -69,7 +69,7 @@ self-correct:
 BYOR found 1 issue in AI-written code.
 
 src/example.py:3:9  [warning] python.no-typing-cast
-Do not use typing.cast here. Fix the type by narrowing, changing the signature, introducing a protocol, or restructuring the value flow. Keep a cast only when the needed invariant cannot be expressed by Python's type system.
+Do not use typing.cast here. Fix the type by narrowing, changing the signature, introducing a protocol, or restructuring the value flow. Keep a cast only when the needed invariant cannot be expressed by Python's type system. If this is genuinely necessary, add `# ast-grep-ignore: python.no-typing-cast` at the end of the offending line, with a short comment on the line above explaining the type-system limitation.
 ```
 
 To make it the default in every repo, including hook runs, opt in globally in
@@ -178,26 +178,30 @@ fixes and exit nonzero whenever the file was touched — even when nothing is le
 to fix, so byor still surfaces the note:
 
 ```sh
-#!/usr/bin/env zsh
-# byor appends in-scope files as arguments; no args means whole repo.
-export NO_COLOR=1   # the agent reads this output; keep it plain text
+#!/bin/sh
+# A byor `check` script: autofix what is safe, tell the agent exactly what
+# changed, then report only the irreducible remainder. byor appends in-scope
+# files as arguments and runs from the repo root; no arguments means scan the
+# whole repo, respecting ignored files.
+export NO_COLOR=1 # the agent reads this output; keep it plain text
+unset FORCE_COLOR CLICOLOR_FORCE
 
-files=("$@")
-if (( ${#files[@]} == 0 )); then
-  files=()
-  while IFS= read -r file; do
-    files+=("$file")
-  done < <(git ls-files -co --exclude-standard -- '*.py' '*.pyi')
+if [ "$#" -eq 0 ]; then
+  set -- $(git ls-files -co --exclude-standard -- '*.py' '*.pyi')
+  [ "$#" -eq 0 ] && exit 0
 fi
-(( ${#files[@]} == 0 )) && exit 0
 
-fixed=$(uvx ruff check --fix-only --show-fixes "${files[@]}" 2>/dev/null)   # apply + summarize
-uvx ruff format "${files[@]}" >/dev/null 2>&1
-remaining=$(uvx ruff check --quiet --output-format concise "${files[@]}" 2>/dev/null)
+fixed=$(uvx ruff check --fix-only --show-fixes "$@" 2>/dev/null) # apply + summarize
+reformatted=""
+case "$(uvx ruff format "$@" 2>&1)" in
+*reformatted*) reformatted="ruff format reformatted the file(s)." ;;
+esac
+remaining=$(uvx ruff check --quiet --output-format concise "$@" 2>/dev/null)
 
-[[ -z "$fixed$remaining" ]] && exit 0   # already clean: stay silent
-[[ -n "$fixed" ]] && print -r -- "autofixed by ruff (no action needed):"$'\n'"$fixed"
-[[ -n "$remaining" ]] && print -r -- "remaining ruff issues to fix:"$'\n'"$remaining"
+[ -z "$fixed$reformatted$remaining" ] && exit 0 # already clean: stay silent
+[ -n "$fixed" ] && printf 'Autofixed by ruff (no action needed):\n%s\n' "$fixed"
+[ -n "$reformatted" ] && printf '%s\n' "$reformatted"
+[ -n "$remaining" ] && printf 'Remaining ruff issues to fix:\n%s\n' "$remaining"
 exit 2
 ```
 
@@ -209,7 +213,7 @@ a personal standard near the global config (`~/.config/byor/scripts/`,
 referenced with `~/`); a repo policy committed in the repo
 (`.byor/scripts/`, referenced by its repo-relative path, which already
 resolves against the repo root). Make it executable, or name the interpreter in
-`run` (`run: zsh ~/.config/byor/scripts/ruff.sh`). The bundled rule-capture
+`run` (`run: sh ~/.config/byor/scripts/ruff.sh`). The bundled rule-capture
 skill walks an agent through authoring one when a policy fits a script better
 than an ast-grep rule or an off-the-shelf tool.
 
