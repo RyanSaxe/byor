@@ -35,9 +35,14 @@ def heal_global(config_dir: Path) -> list[str]:
     """
     config = load_global_config(config_dir)
     rules_dir = global_rules_dir(config_dir, config)
-    if rules_dir.is_dir():
-        ensure_home_sgconfig(rules_dir)
     warnings: list[str] = []
+    if rules_dir.is_dir():
+        # A malformed ~/sgconfig.yml must degrade like a broken agent config:
+        # crashing here would block every self-healing command.
+        try:
+            ensure_home_sgconfig(rules_dir)
+        except ConfigError as error:
+            warnings.append(f"byor: skipping ~/sgconfig.yml self-heal: {error} (run 'byor doctor')")
     for agent in config.agents:
         try:
             install_agent(agent)

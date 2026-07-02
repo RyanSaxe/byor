@@ -7,6 +7,7 @@ command and scaffold code can stay declarative.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import stat
 import tempfile
@@ -61,12 +62,15 @@ def prune_empty_dirs(root: Path, *, keep_root: bool = True) -> None:
     rule is deleted; uninstall passes `keep_root=False` to remove the whole
     skill tree once emptied. A missing `root` is a no-op either way.
     """
-    # os.walk snapshots entries before children are pruned, so re-check emptiness.
+    # os.walk snapshots entries before children are pruned, and a concurrent
+    # sync may add or remove entries mid-walk: rmdir is itself the atomic
+    # emptiness check, so a non-empty or already-removed directory is skipped.
     for dirpath, _, _ in os.walk(root, topdown=False):
         directory = Path(dirpath)
-        if (keep_root and directory == root) or any(directory.iterdir()):
+        if keep_root and directory == root:
             continue
-        directory.rmdir()
+        with contextlib.suppress(OSError):
+            directory.rmdir()
 
 
 def write_text_atomic(path: Path, content: str) -> None:

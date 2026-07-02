@@ -23,6 +23,7 @@ from support import (
 
 from byor.cli import main
 from byor.config import load_repo_config, save_repo_config
+from byor.rules.sync import mirror_contents, mirror_global_rules
 
 
 def sync_args(repo: Path, *extra: str) -> list[str]:
@@ -235,6 +236,54 @@ def test_self_heal_skips_an_agent_with_a_broken_config(
     err = capsys.readouterr().err
     assert "byor: skipping claude-code self-heal" in err
     assert "run 'byor doctor'" in err
+
+
+# heal.py promises healing degrades to warnings; a malformed ~/sgconfig.yml
+# used to abort every self-healing command before it could run.
+def test_self_heal_warns_instead_of_crashing_on_a_broken_home_sgconfig(
+    home: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = make_repo(home)
+    (home / "sgconfig.yml").write_text("ruleDirs: not-a-list\n")
+    capsys.readouterr()
+
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    err = capsys.readouterr().err
+    assert "byor: skipping ~/sgconfig.yml self-heal" in err
+    assert "run 'byor doctor'" in err
+
+
+# heal_gate used to raise on a broken repo config, discarding the warning
+# heal_repo had already collected and crashing the command with a bare error.
+def test_self_heal_degrades_gate_heal_and_keeps_the_repo_warning(
+    home: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = make_repo(home)
+    config_path = repo / ".byor" / "config.yml"
+    config_path.write_text(config_path.read_text() + "fail_on: sometimes\n")
+    capsys.readouterr()
+
+    assert main(["list", "--repo", str(repo)]) == 1  # list itself still needs the config
+
+    err = capsys.readouterr().err
+    assert "byor: skipping repo self-heal" in err
+    assert "byor: skipping gate self-heal" in err
+
+
+# On a case-insensitive filesystem the stale old name resolves to the freshly
+# written file, so removing after writing used to delete the renamed rule.
+def test_mirror_converges_after_a_case_only_rename(tmp_path: Path) -> None:
+    mirror_dir = tmp_path / "mirror"
+    content = "id: no-print\n"
+    assert mirror_global_rules(mirror_dir, {"no-print.yml": content}).written == 1
+
+    result = mirror_global_rules(mirror_dir, {"No-Print.yml": content})
+
+    assert result.written == 1
+    assert mirror_contents(mirror_dir) == {"No-Print.yml": content}
 
 
 def test_sync_all_continues_past_a_repo_whose_sync_fails(home: Path, capsys: pytest.CaptureFixture[str]) -> None:

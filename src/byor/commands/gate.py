@@ -214,11 +214,20 @@ def _gate_branch(repo_root: Path, repo_config: RepoConfig) -> str:
 
 
 def heal_gate(repo_root: Path) -> list[str]:
+    """Regenerate the gate files before a command runs, degrading to a warning.
+
+    Like heal_repo, a broken repo config (or a vendoring collision) must not
+    block the unrelated command — raising here would also discard the warnings
+    the earlier heal steps already collected.
+    """
     if not repo_config_path(repo_root).is_file():
         return []
-    if not load_repo_config(repo_root).gate:
-        return []
-    return regenerate_gate(repo_root)
+    try:
+        if not load_repo_config(repo_root).gate:
+            return []
+        return regenerate_gate(repo_root)
+    except ByorError as error:
+        return [f"byor: skipping gate self-heal: {error} (run 'byor doctor')"]
 
 
 def promote_everything(repo_root: Path, config_dir: Path) -> list[str]:
