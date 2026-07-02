@@ -1,8 +1,8 @@
-"""Personal rules in a real git repository, against the real ast-grep binary.
+"""Exercise rule visibility inside real git repositories.
 
-ast-grep's rule discovery respects gitignore, so the git-ignored personal rule
-copies need the `.ignore` negation files to stay loadable,
-while staying invisible to `git status`.
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
 """
 
 import subprocess
@@ -35,15 +35,13 @@ def git_repo(home: Path, *init_extra: str) -> Path:
 def scan(repo: Path) -> str:
     # resolve_ast_grep applies PATHEXT, so it finds ast-grep.cmd on Windows
     # where a bare "ast-grep" argv entry would not.
-    result = subprocess.run(
-        [str(resolve_ast_grep()), "scan"], cwd=repo, capture_output=True, text=True
-    )
+    result = subprocess.run([str(resolve_ast_grep()), "scan"], cwd=repo, capture_output=True, text=True, check=False)
     return result.stdout
 
 
 @pytest.mark.parametrize("private", [False, True])
-def test_synced_global_rule_is_seen_by_ast_grep_scan(home: Path, private: bool) -> None:
-    write_global_rule(home, "python/no-python-cast.yml", "no-python-cast")
+def test_synced_global_rule_is_seen_by_ast_grep_scan(home: Path, *, private: bool) -> None:
+    write_global_rule(home, "python/no-python-cast.yml", rule_id="no-python-cast")
     repo = git_repo(home, *(["--private"] if private else []))
     (repo / "app.py").write_text(VIOLATION)
 
@@ -53,7 +51,7 @@ def test_synced_global_rule_is_seen_by_ast_grep_scan(home: Path, private: bool) 
 def test_installed_package_rule_is_seen_by_ast_grep_and_hidden_from_git(
     home: Path,
 ) -> None:
-    write_package_rule(home, "python-strict", "no-python-cast.yml", "no-python-cast")
+    write_package_rule(home, "python-strict", relpath="no-python-cast.yml", rule_id="no-python-cast")
     repo = git_repo(home)
     git(repo, "add", "-A")
     git(repo, "commit", "--quiet", "-m", "init")
@@ -78,7 +76,7 @@ def test_synced_nested_copy_is_invisible_to_git_status(home: Path) -> None:
     repo = git_repo(home)
     git(repo, "add", "-A")
     git(repo, "commit", "--quiet", "-m", "init")
-    write_global_rule(home, "python/nested-rule.yml", "nested-rule")
+    write_global_rule(home, "python/nested-rule.yml", rule_id="nested-rule")
 
     assert main(["sync", "--repo", str(repo)]) == 0
 
@@ -86,10 +84,8 @@ def test_synced_nested_copy_is_invisible_to_git_status(home: Path) -> None:
     assert git(repo, "status", "--porcelain") == ""
 
 
-def test_agent_check_reports_violations_of_synced_global_rules(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    write_global_rule(home, "python/no-python-cast.yml", "no-python-cast")
+def test_agent_check_reports_violations_of_synced_global_rules(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write_global_rule(home, "python/no-python-cast.yml", rule_id="no-python-cast")
     repo = git_repo(home)
     source = repo / "app.py"
     source.write_text(VIOLATION)
@@ -101,7 +97,7 @@ def test_agent_check_reports_violations_of_synced_global_rules(
 
 
 def test_sync_restores_a_deleted_visibility_file_in_the_mirror(home: Path) -> None:
-    write_global_rule(home, "python/no-python-cast.yml", "no-python-cast")
+    write_global_rule(home, "python/no-python-cast.yml", rule_id="no-python-cast")
     repo = git_repo(home)
     (mirror(repo) / ".ignore").unlink()
     (repo / "app.py").write_text(VIOLATION)

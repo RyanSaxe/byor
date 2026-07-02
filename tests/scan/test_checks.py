@@ -1,4 +1,9 @@
-"""Merge precedence, exclusion, and execution for extra checks."""
+"""Exercise configured check command execution.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
 
 import shlex
 import sys
@@ -23,7 +28,7 @@ def test_repo_check_wins_over_global_check_of_the_same_name() -> None:
         ]
     )
 
-    effective = effective_checks(repo, global_config, LocalConfig())
+    effective = effective_checks(repo, global_config, local_config=LocalConfig())
 
     by_name = {check.name: check for check in effective}
     assert _names(effective) == ["ruff", "mypy"]
@@ -40,7 +45,7 @@ def test_package_check_sits_between_repo_and_global_by_precedence() -> None:
         ("package:web", CheckDef("eslint", ["js"], "pkg-run")),
     ]
 
-    effective = effective_checks(repo, global_config, LocalConfig(), package_checks)
+    effective = effective_checks(repo, global_config, local_config=LocalConfig(), package_checks=package_checks)
 
     by_name = {check.name: check for check in effective}
     assert _names(effective) == ["ruff", "eslint", "mypy"]
@@ -54,18 +59,16 @@ def test_local_exclusion_disables_a_package_check() -> None:
     package_checks = [("package:web", CheckDef("eslint", ["js"], "run"))]
     local = LocalConfig(excluded_checks=["eslint"])
 
-    effective = effective_checks(RepoConfig(), GlobalConfig(), local, package_checks)
+    effective = effective_checks(RepoConfig(), GlobalConfig(), local_config=local, package_checks=package_checks)
 
     assert _names(effective) == []
 
 
 def test_local_exclusion_disables_a_check_by_name() -> None:
-    repo = RepoConfig(
-        checks=[CheckDef("ruff", ["py"], "run"), CheckDef("eslint", ["js"], "run")]
-    )
+    repo = RepoConfig(checks=[CheckDef("ruff", ["py"], "run"), CheckDef("eslint", ["js"], "run")])
     local = LocalConfig(excluded_checks=["eslint"])
 
-    effective = effective_checks(repo, GlobalConfig(), local)
+    effective = effective_checks(repo, GlobalConfig(), local_config=local)
 
     assert _names(effective) == ["ruff"]
 
@@ -79,7 +82,7 @@ def test_local_exclusion_disables_a_check_by_tag() -> None:
     )
     local = LocalConfig(excluded_check_tags=["strict"])
 
-    effective = effective_checks(repo, GlobalConfig(), local)
+    effective = effective_checks(repo, GlobalConfig(), local_config=local)
 
     assert _names(effective) == ["ruff"]
 
@@ -90,7 +93,7 @@ def test_extensionless_check_runs_when_no_extensions_listed(tmp_path: Path) -> N
     target = tmp_path / "notes.txt"
     target.write_text("hello\n")
 
-    outcome = run_checks([check], tmp_path, [target])
+    outcome = run_checks([check], tmp_path, files=[target])
 
     assert outcome.failures == []
     assert outcome.warnings == []
@@ -99,10 +102,7 @@ def test_extensionless_check_runs_when_no_extensions_listed(tmp_path: Path) -> N
 def test_failing_check_appends_a_named_section_with_raw_output(tmp_path: Path) -> None:
     script = tmp_path / "fail.py"
     script.write_text(
-        "import sys\n"
-        "print('stdout complaint')\n"
-        "print('stderr complaint', file=sys.stderr)\n"
-        "sys.exit(1)\n"
+        "import sys\nprint('stdout complaint')\nprint('stderr complaint', file=sys.stderr)\nsys.exit(1)\n"
     )
     check = EffectiveCheck(
         CheckDef("strict", ["py"], shlex.join([sys.executable, str(script)])),
@@ -111,7 +111,7 @@ def test_failing_check_appends_a_named_section_with_raw_output(tmp_path: Path) -
     target = tmp_path / "src.py"
     target.write_text("x = 1\n")
 
-    outcome = run_checks([check], tmp_path, [target])
+    outcome = run_checks([check], tmp_path, files=[target])
 
     assert len(outcome.failures) == 1
     section = outcome.failures[0]
@@ -132,14 +132,12 @@ def test_check_skips_files_whose_extension_does_not_match(tmp_path: Path) -> Non
     only_js = tmp_path / "app.js"
     only_js.write_text("//\n")
 
-    outcome = run_checks([check], tmp_path, [only_js])
+    outcome = run_checks([check], tmp_path, files=[only_js])
 
     assert outcome.failures == []
 
 
-def test_run_command_expands_a_leading_tilde_to_home(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_command_expands_a_leading_tilde_to_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     home = tmp_path / "home"
     scripts = home / ".config" / "byor" / "scripts"
     scripts.mkdir(parents=True)
@@ -153,7 +151,7 @@ def test_run_command_expands_a_leading_tilde_to_home(
     target = tmp_path / "src.py"
     target.write_text("x = 1\n")
 
-    outcome = run_checks([check], tmp_path, [target])
+    outcome = run_checks([check], tmp_path, files=[target])
 
     assert outcome.warnings == []
     assert len(outcome.failures) == 1
@@ -168,7 +166,7 @@ def test_missing_command_warns_once_and_does_not_fail(tmp_path: Path) -> None:
     target = tmp_path / "src.py"
     target.write_text("x = 1\n")
 
-    outcome = run_checks([check], tmp_path, [target])
+    outcome = run_checks([check], tmp_path, files=[target])
 
     assert outcome.failures == []
     assert len(outcome.warnings) == 1
@@ -179,13 +177,11 @@ def test_uninvocable_command_warns_and_does_not_crash(tmp_path: Path) -> None:
     # argv[0] is a directory, so exec raises an OSError other than FileNotFound.
     not_executable = tmp_path / "adir"
     not_executable.mkdir()
-    check = EffectiveCheck(
-        CheckDef("dir", ["py"], shlex.join([str(not_executable)])), origin="repo"
-    )
+    check = EffectiveCheck(CheckDef("dir", ["py"], shlex.join([str(not_executable)])), origin="repo")
     target = tmp_path / "src.py"
     target.write_text("x = 1\n")
 
-    outcome = run_checks([check], tmp_path, [target])
+    outcome = run_checks([check], tmp_path, files=[target])
 
     assert outcome.failures == []
     assert len(outcome.warnings) == 1

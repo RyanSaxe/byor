@@ -1,4 +1,9 @@
-"""`byor init --gate`: distribute a byor-free blocking gate to the team."""
+"""Exercise BYOR gate scaffold generation.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
 
 from pathlib import Path
 
@@ -21,7 +26,7 @@ def gate_repo(home: Path, *extra: str) -> Path:
 def test_gate_promotes_rules_and_checks_and_writes_portable_artifacts(
     home: Path,
 ) -> None:
-    write_global_rule(home, "python/no-cast.yml", "no-cast")
+    write_global_rule(home, "python/no-cast.yml", rule_id="no-cast")
     write_global_check("ruff", "ruff-check")
     repo = gate_repo(home)
 
@@ -31,18 +36,20 @@ def test_gate_promotes_rules_and_checks_and_writes_portable_artifacts(
     assert config.gate is True
 
     precommit = (repo / ".pre-commit-config.yaml").read_text()
-    assert "ast-grep scan --error" in precommit
+    assert "uvx --from ast-grep-cli ast-grep scan --error" in precommit
     assert "ruff-check" in precommit
     # A check's extensions become a pre-commit files filter (byor-faithful scoping).
     assert r"files: \.(py)$" in precommit
 
     workflow = (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
-    assert "ast-grep scan --error" in workflow
+    assert "astral-sh/setup-uv@v6" in workflow
+    assert "uvx --from ast-grep-cli ast-grep scan --error" in workflow
+    assert "npm install" not in workflow
     assert "ruff-check" in workflow
 
 
 def test_gate_self_heals_when_a_check_is_added_later(home: Path) -> None:
-    write_global_rule(home, "python/no-cast.yml", "no-cast")
+    write_global_rule(home, "python/no-cast.yml", rule_id="no-cast")
     repo = gate_repo(home)
     assert "later-check" not in (repo / ".pre-commit-config.yaml").read_text()
 
@@ -52,14 +59,10 @@ def test_gate_self_heals_when_a_check_is_added_later(home: Path) -> None:
     assert main(["list", "--repo", str(repo)]) == 0
 
     assert "later-check" in (repo / ".pre-commit-config.yaml").read_text()
-    assert (
-        "later-check" in (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
-    )
+    assert "later-check" in (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
 
 
-def test_gate_vendors_a_home_script_check_into_the_repo(
-    home: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_gate_vendors_a_home_script_check_into_the_repo(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Redirect `~` into the sandbox on both POSIX (HOME) and Windows (USERPROFILE),
     # since os.path.expanduser reads different vars per platform.
     monkeypatch.setenv("HOME", str(home))
@@ -73,8 +76,26 @@ def test_gate_vendors_a_home_script_check_into_the_repo(
     assert run == ".byor/scripts/fix.sh"
 
 
+def test_gate_rewrites_vendored_home_script_dependencies(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    scripts = home / ".config" / "byor" / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "runner.sh").write_text('#!/usr/bin/env zsh\nexec "${HOME}/.config/byor/scripts/helper.py" "$@"\n')
+    (scripts / "helper.py").write_text("#!/usr/bin/env python3\nprint('ok')\n")
+    write_global_check("runner", "~/.config/byor/scripts/runner.sh")
+
+    repo = gate_repo(home)
+
+    runner = repo / ".byor" / "scripts" / "runner.sh"
+    helper = repo / ".byor" / "scripts" / "helper.py"
+    assert runner.is_file()
+    assert helper.is_file()
+    assert runner.read_text() == ('#!/usr/bin/env zsh\nexec ".byor/scripts/helper.py" "$@"\n')
+
+
 def test_private_gate_installs_a_local_shim_and_commits_nothing(home: Path) -> None:
-    write_global_rule(home, "python/no-cast.yml", "no-cast")
+    write_global_rule(home, "python/no-cast.yml", rule_id="no-cast")
     repo = gate_repo(home, "--private")
 
     assert (repo / ".git" / "hooks" / "pre-commit").is_file()
@@ -85,10 +106,8 @@ def test_private_gate_installs_a_local_shim_and_commits_nothing(home: Path) -> N
     assert "sgconfig" not in status
 
 
-def test_gate_does_not_clobber_an_existing_precommit_config(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    write_global_rule(home, "python/no-cast.yml", "no-cast")
+def test_gate_does_not_clobber_an_existing_precommit_config(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write_global_rule(home, "python/no-cast.yml", rule_id="no-cast")
     repo = home / "repo"
     repo.mkdir()
     git(repo, "init", "--quiet")

@@ -1,17 +1,20 @@
-"""Rule-mutating commands: add, edit, promote, exclude, include."""
+"""Implement BYOR rule mutation commands.
+
+Add, edit, remove, promote, include, and exclude all modify rule or check state and then resync the
+repository. This module keeps those workflows together so conflict checks, draft handling, and fan-
+out behavior stay consistent.
+"""
 
 from __future__ import annotations
 
-import argparse
 import os
 import shlex
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from ruamel.yaml.comments import CommentedMap
 
@@ -24,8 +27,9 @@ from byor.config import (
     save_local_config,
     save_repo_config,
 )
-from byor.errors import ByorError, ConfigError, UnsafeOverwrite
+from byor.errors import ByorError, ConfigError, UnsafeOverwriteError
 from byor.io.fsio import write_text_atomic
+from byor.io.output import write_line
 from byor.io.paths import display_path, global_config_dir, resolve_repo_root
 from byor.io.yamlio import dump_yaml, parse_yaml_mapping
 from byor.rules.rules import (
@@ -49,6 +53,22 @@ from byor.rules.sync import (
 )
 from byor.scan.checks import load_effective_checks
 
+if TYPE_CHECKING:
+    import argparse
+    from collections.abc import Callable
+
+__all__ = (
+    "ExclusionKind",
+    "ExclusionSelector",
+    "RepoContext",
+    "repo_context",
+    "run_add",
+    "run_edit",
+    "run_exclusion",
+    "run_promote",
+    "run_remove",
+)
+
 DEFAULT_EDITOR = "vi"
 
 RULE_TEMPLATE = """\
@@ -68,8 +88,6 @@ metadata:
 
 @dataclass
 class RepoContext:
-    """The resolved locations every rule command needs."""
-
     repo_root: Path
     config_dir: Path
     paths: RepoPaths
@@ -77,7 +95,6 @@ class RepoContext:
 
 
 def repo_context(args: argparse.Namespace) -> RepoContext:
-    """Resolve the repo and global locations; fails on uninitialized repos."""
     repo_root = resolve_repo_root(explicit=args.repo)
     config_dir = global_config_dir()
     return RepoContext(
@@ -89,14 +106,12 @@ def repo_context(args: argparse.Namespace) -> RepoContext:
 
 
 def run_add(args: argparse.Namespace) -> int:
-    template = RULE_TEMPLATE.format(
-        rule_id=args.id or "REPLACE_ME", language=args.language or "Python"
-    )
+    template = RULE_TEMPLATE.format(rule_id=args.id or "REPLACE_ME", language=args.language or "Python")
     if args.allow_exceptions:
         template = _append_exception_sentence(template)
     if args.from_file is None and not args.edit:
-        print(template)
-        print("Rerun with --from FILE or --edit to create the rule.")
+        write_line(template.rstrip())
+        write_line("Rerun with --from FILE or --edit to create the rule.")
         return 0
     context = repo_context(args)
     scope: RuleScope = args.scope
@@ -104,7 +119,8 @@ def run_add(args: argparse.Namespace) -> int:
     if args.from_file is None:
         draft = _edit_in_draft(template)
         if draft is None:
-            raise ByorError("Aborted: the template was left unedited.")
+            msg = "Aborted: the template was left unedited."
+            raise ByorError(msg)
     try:
         if draft is not None:
             rule = load_rule(draft)
@@ -113,63 +129,53 @@ def run_add(args: argparse.Namespace) -> int:
             if args.allow_exceptions:
                 rule = replace(rule, content=_append_exception_sentence(rule.content))
         destination = (
-            scope_rules_dir(
-                scope, context.repo_root, context.paths, context.canonical.root
-            )
+            scope_rules_dir(scope, context.repo_root, paths=context.paths, global_rules_root=context.canonical.root)
             / f"{rule.id}.yml"
         )
         if destination.exists():
-            raise UnsafeOverwrite(
+            msg = (
                 f"{display_path(destination, context.repo_root)} already exists; "
                 f"use `byor edit {rule.id}` to change it."
             )
+            raise UnsafeOverwriteError(msg)
         rule = replace(rule, path=destination)
-        _check_conflicts(context, scope, rule, removed=set())
+        _check_conflicts(context, scope, rule=rule, removed=set())
     except ByorError as error:
         raise _with_draft_hint(error, draft) from error
     if draft is not None:
         draft.unlink()
     _warn_on_id_pattern(rule)
     write_text_atomic(destination, rule.content)
-    print(
-        f"Added {scope} rule '{rule.id}' "
-        f"at {display_path(destination, context.repo_root)}"
-    )
+    write_line(f"Added {scope} rule '{rule.id}' at {display_path(destination, context.repo_root)}")
     _finish(context, fan_out=scope == "global")
     return 0
 
 
 def run_edit(args: argparse.Namespace) -> int:
     context = repo_context(args)
-    scope, found = _find_rule(context, args.rule_id, args.scope)
+    scope, found = _find_rule(context, args.rule_id, requested=args.scope)
     draft = _edit_in_draft(found.content)
     if draft is None:
-        print(f"No changes to '{args.rule_id}'")
+        write_line(f"No changes to '{found.id}'")
         return 0
     try:
         rule = replace(load_rule(draft), path=found.path)
-        _check_conflicts(context, scope, rule, removed={found.path})
+        _check_conflicts(context, scope, rule=rule, removed={found.path})
     except ByorError as error:
         raise _with_draft_hint(error, draft) from error
     draft.unlink()
     _warn_on_id_pattern(rule)
     write_text_atomic(found.path, rule.content)
-    print(
-        f"Updated {scope} rule '{rule.id}' "
-        f"at {display_path(found.path, context.repo_root)}"
-    )
+    write_line(f"Updated {scope} rule '{rule.id}' at {display_path(found.path, context.repo_root)}")
     _finish(context, fan_out=scope == "global")
     return 0
 
 
 def run_remove(args: argparse.Namespace) -> int:
     context = repo_context(args)
-    scope, rule = _find_rule(context, args.rule_id, args.scope)
+    scope, rule = _find_rule(context, args.rule_id, requested=args.scope)
     rule.path.unlink()
-    print(
-        f"Removed {scope} rule '{rule.id}' "
-        f"at {display_path(rule.path, context.repo_root)}"
-    )
+    write_line(f"Removed {scope} rule '{rule.id}' at {display_path(rule.path, context.repo_root)}")
     _finish(context, fan_out=scope == "global")
     return 0
 
@@ -179,7 +185,8 @@ def run_promote(args: argparse.Namespace) -> int:
     if args.check is not None:
         return _promote_check(context, args.check)
     if args.from_scope is None:
-        raise ByorError("promoting a rule requires --from {local,global,package}")
+        msg = "promoting a rule requires --from {local,global,package}"
+        raise ByorError(msg)
     return _promote_rule(context, args)
 
 
@@ -188,68 +195,60 @@ def _promote_rule(context: RepoContext, args: argparse.Namespace) -> int:
     project_dir = context.repo_root / context.paths.project_rules
     destination = project_dir / rule.path.relative_to(source_dir)
     if destination.exists() and not args.replace:
-        raise UnsafeOverwrite(
-            f"{display_path(destination, context.repo_root)} already exists; "
-            "rerun with --replace to overwrite it."
-        )
+        msg = f"{display_path(destination, context.repo_root)} already exists; rerun with --replace to overwrite it."
+        raise UnsafeOverwriteError(msg)
     # Conflict check on the post-promote state, before any write. With
     # --keep-local this fails: keeping the local original would leave project
     # and local rules sharing the ID, which ast-grep rejects.
     removed = {destination, rule.path} if remove_source else {destination}
-    _check_conflicts(context, "project", replace(rule, path=destination), removed)
+    _check_conflicts(
+        context,
+        "project",
+        rule=replace(rule, path=destination),
+        removed=removed,
+    )
     write_text_atomic(destination, rule.content)
     if remove_source:
         rule.path.unlink()
-    print(f"Promoted '{rule.id}' to {display_path(destination, context.repo_root)}")
+    write_line(f"Promoted '{rule.id}' to {display_path(destination, context.repo_root)}")
     _finish(context, fan_out=False)
     return 0
 
 
-def _promote_source(
-    context: RepoContext, args: argparse.Namespace
-) -> tuple[Rule, Path, bool]:
-    """The rule to promote, its source directory, and whether to remove the source.
-
-    A package rule, like a canonical global one, is copied and left in place; a
-    local rule moves unless --keep-local keeps the (now conflicting) original.
-    """
+def _promote_source(context: RepoContext, args: argparse.Namespace) -> tuple[Rule, Path, bool]:
     if args.from_scope == "package":
         return (*_find_package_rule(context, args.rule_id), False)
     scope: RuleScope = args.from_scope
-    _, rule = _find_rule(context, args.rule_id, scope)
+    _, rule = _find_rule(context, args.rule_id, requested=scope)
     source_dir = scope_rules_dir(
-        scope, context.repo_root, context.paths, context.canonical.root
+        scope, context.repo_root, paths=context.paths, global_rules_root=context.canonical.root
     )
     return rule, source_dir, scope == "local" and not args.keep_local
 
 
 def _find_package_rule(context: RepoContext, rule_id: str) -> tuple[Rule, Path]:
-    packages = load_installed_packages(
-        context.canonical, load_local_config(context.repo_root).packages
-    )
+    packages = load_installed_packages(context.canonical, load_local_config(context.repo_root).packages)
     for package in packages:
         for rule in package.rules:
             if rule.id == rule_id:
                 return rule, package.root
-    raise ByorError(f"No rule with ID '{rule_id}' found in installed packages.")
+    msg = f"No rule with ID '{rule_id}' found in installed packages."
+    raise ByorError(msg)
 
 
 def _promote_check(context: RepoContext, name: str) -> int:
-    """Copy a global or package check into tracked .byor/config.yml by name.
-
-    The effective-check merge already lets a repo check win by name, so the
-    copied check runs exactly once — in byor, CI, and pre-commit alike.
-    """
     repo_config = load_repo_config(context.repo_root)
     if any(check.name == name for check in repo_config.checks):
-        raise ByorError(f"check '{name}' is already a repo check")
+        msg = f"check '{name}' is already a repo check"
+        raise ByorError(msg)
     effective = load_effective_checks(context.repo_root, context.config_dir)
     match = next((check for check in effective if check.name == name), None)
     if match is None:
-        raise ByorError(f"no global or package check named '{name}' to promote")
+        msg = f"no global or package check named '{name}' to promote"
+        raise ByorError(msg)
     repo_config.checks.append(match.definition)
     save_repo_config(context.repo_root, repo_config)
-    print(f"Promoted check '{name}' into .byor/config.yml")
+    write_line(f"Promoted check '{name}' into .byor/config.yml")
     return 0
 
 
@@ -261,24 +260,23 @@ def run_exclusion(args: argparse.Namespace) -> int:
     exclude = args.command == "exclude"
     if exclude:
         if selector.value in values:
-            print(f"{_selector_subject(selector)} is already excluded")
+            write_line(f"{_selector_subject(selector)} is already excluded")
         else:
             values.append(selector.value)
             save_local_config(context.repo_root, local)
-            print(f"Excluded {_selector_subject(selector)} in .byor/local.yml")
+            write_line(f"Excluded {_selector_subject(selector)} in .byor/local.yml")
+    elif selector.value not in values:
+        write_line(f"{_selector_subject(selector)} is not excluded")
     else:
-        if selector.value not in values:
-            print(f"{_selector_subject(selector)} is not excluded")
-        else:
-            values.remove(selector.value)
-            save_local_config(context.repo_root, local)
-            print(f"Re-enabled {_selector_subject(selector)}")
+        values.remove(selector.value)
+        save_local_config(context.repo_root, local)
+        write_line(f"Re-enabled {_selector_subject(selector)}")
     plan = _sync_and_report(context.repo_root, context.canonical)
     # A project or local rule may still own the ID: say so.
     if not exclude and selector.kind == "rule-id":
         for skipped in plan.skipped:
             if skipped.id == selector.value:
-                print(f"'{skipped.id}' is still skipped: {skipped.reason}")
+                write_line(f"'{skipped.id}' is still skipped: {skipped.reason}")
     return 0
 
 
@@ -294,13 +292,9 @@ class ExclusionKind:
 
 EXCLUSION_KINDS: dict[str, ExclusionKind] = {
     "rule-id": ExclusionKind("rule_id", lambda local: local.excluded_rule_ids, ""),
-    "rule tag": ExclusionKind(
-        "tag", lambda local: local.excluded_rule_tags, "rule tag"
-    ),
+    "rule tag": ExclusionKind("tag", lambda local: local.excluded_rule_tags, "rule tag"),
     "check": ExclusionKind("check", lambda local: local.excluded_checks, "check"),
-    "check tag": ExclusionKind(
-        "check_tag", lambda local: local.excluded_check_tags, "check tag"
-    ),
+    "check tag": ExclusionKind("check_tag", lambda local: local.excluded_check_tags, "check tag"),
 }
 
 
@@ -311,13 +305,10 @@ class ExclusionSelector:
 
 
 def _selector(args: argparse.Namespace) -> ExclusionSelector:
-    chosen = [
-        (kind, value)
-        for kind, spec in EXCLUSION_KINDS.items()
-        if (value := getattr(args, spec.arg)) is not None
-    ]
+    chosen = [(kind, value) for kind, spec in EXCLUSION_KINDS.items() if (value := getattr(args, spec.arg)) is not None]
     if len(chosen) != 1:
-        raise ByorError("choose exactly one of RULE_ID, --tag, --check, or --check-tag")
+        msg = "choose exactly one of RULE_ID, --tag, --check, or --check-tag"
+        raise ByorError(msg)
     kind, value = chosen[0]
     return ExclusionSelector(kind=kind, value=value)
 
@@ -328,8 +319,7 @@ def _selector_subject(selector: ExclusionSelector) -> str:
 
 
 def _append_exception_sentence(content: str) -> str:
-    """Rule text whose metadata.byor.agent_prompt ends with the standard
-    exception sentence, creating the metadata path when absent.
+    """Return rule text with the standard exception sentence in its agent prompt.
 
     A missing agent_prompt is seeded from `message` — the documented fallback —
     so the prompt still carries the fix instruction, not just the escape hatch.
@@ -354,7 +344,10 @@ def _append_exception_sentence(content: str) -> str:
 
 
 def _find_rule(
-    context: RepoContext, rule_id: str, requested: RuleScope | Literal["auto"]
+    context: RepoContext,
+    rule_id: str,
+    *,
+    requested: RuleScope | Literal["auto"],
 ) -> tuple[RuleScope, Rule]:
     """Resolve a rule ID to its scope and parsed rule.
 
@@ -371,17 +364,18 @@ def _find_rule(
             if rule.id == rule_id:
                 return scope, rule
     where = "any scope" if requested == "auto" else f"{requested} rules"
-    raise ByorError(f"No rule with ID '{rule_id}' found in {where}.")
+    msg = f"No rule with ID '{rule_id}' found in {where}."
+    raise ByorError(msg)
 
 
 def _load_source_rule(source: Path) -> Rule:
     if not source.is_file():
-        raise ConfigError(f"{source}: no such file")
+        msg = f"{source}: no such file"
+        raise ConfigError(msg)
     return load_rule(source)
 
 
 def _edit_in_draft(content: str) -> Path | None:
-    """Open `content` in $EDITOR via a draft file; None when left unchanged."""
     draft = _write_draft(content)
     try:
         _open_in_editor(draft)
@@ -402,80 +396,65 @@ def _write_draft(content: str) -> Path:
 
 
 def _open_in_editor(path: Path) -> None:
-    """$EDITOR (shlex-split, default vi) as an argv list, never a shell string."""
     argv = [*shlex.split(os.environ.get("EDITOR") or DEFAULT_EDITOR), str(path)]
-    result = subprocess.run(argv)
+    result = subprocess.run(argv, check=False)
     if result.returncode != 0:
-        raise ByorError(f"Editor exited with status {result.returncode}; aborting.")
+        msg = f"Editor exited with status {result.returncode}; aborting."
+        raise ByorError(msg)
 
 
 def _with_draft_hint(error: ByorError, draft: Path | None) -> ByorError:
-    """Point at the kept draft file so a failed add/edit never loses work."""
     if draft is None:
         return error
     return type(error)(f"{error}\nYour draft is saved at {draft}.")
 
 
 def _check_conflicts(
-    context: RepoContext, scope: RuleScope, rule: Rule, removed: set[Path]
+    context: RepoContext,
+    scope: RuleScope,
+    *,
+    rule: Rule,
+    removed: set[Path],
 ) -> None:
-    """Enforce the conflict table for the rule set as it would be after writing `rule`.
-
-    `removed` holds the file paths the command replaces or deletes, so their
-    current contents do not count against the new rule.
-    """
     scoped = {
-        name: [
-            existing
-            for existing in _scope_rules(context, name)
-            if existing.path not in removed
-        ]
+        name: [existing for existing in _scope_rules(context, name) if existing.path not in removed]
         for name in ("project", "local", "global")
     }
     scoped[scope].append(rule)
-    check_id_conflicts(scoped["project"], scoped["local"], scoped["global"])
+    check_id_conflicts(scoped["project"], scoped["local"], canonical_global=scoped["global"])
 
 
 def _scope_rules(context: RepoContext, scope: RuleScope) -> list[Rule]:
     if scope == "global":
         return context.canonical.rules
-    directory = scope_rules_dir(
-        scope, context.repo_root, context.paths, context.canonical.root
-    )
+    directory = scope_rules_dir(scope, context.repo_root, paths=context.paths, global_rules_root=context.canonical.root)
     return load_rules(directory)
 
 
 def _warn_on_id_pattern(rule: Rule) -> None:
     for warning in rule_id_warnings([rule]):
-        print(f"byor: warning: {warning}", file=sys.stderr)
+        sys.stderr.write(f"byor: warning: {warning}\n")
 
 
-def _finish(context: RepoContext, fan_out: bool) -> None:
-    """The shared post-action: sync, then surface `doctor --quick` problems.
+def _finish(context: RepoContext, *, fan_out: bool) -> None:
+    """Sync after a rule mutation and surface `doctor --quick` problems.
 
     Global-scope mutations fan out to every registered repo and
     reload the canonical rules the mutation just changed; everything else
     syncs the current repo with the rules already in hand.
     """
-    canonical = (
-        load_canonical_rules(context.config_dir) if fan_out else context.canonical
-    )
+    canonical = load_canonical_rules(context.config_dir) if fan_out else context.canonical
     repos = [context.repo_root]
     if fan_out:
-        repos.extend(
-            repo
-            for repo in iter_registered_repos(context.config_dir)
-            if repo != context.repo_root
-        )
+        repos.extend(repo for repo in iter_registered_repos(context.config_dir) if repo != context.repo_root)
     for repo in repos:
         _sync_and_report(repo, canonical)
     for problem in quick_doctor_problems(context.repo_root, context.config_dir):
-        print(problem)
+        write_line(problem)
 
 
 def _sync_and_report(repo_root: Path, canonical: CanonicalRules) -> SyncPlan:
-    """Post-action sync of one repo, reporting only when it changed."""
     plan, result = sync_repo(repo_root, canonical)
     if result.changed:
-        print(f"Synced {summarize_changes(result)} into {repo_root}")
+        write_line(f"Synced {summarize_changes(result)} into {repo_root}")
     return plan

@@ -1,16 +1,31 @@
-"""The one git subprocess query shared by modules that read repository state."""
+"""Run git commands with clean optional output.
+
+BYOR often needs repository state but should degrade gracefully outside git or before an initial
+commit. These helpers keep git invocation consistent and return None for expected command failures.
+"""
 
 from __future__ import annotations
 
+import shutil
 import subprocess
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+__all__ = (
+    "git_output",
+    "git_stdout",
+)
 
 
 def git_stdout(repo_root: Path, *args: str) -> str | None:
-    """Raw stdout of a git query, or None when git is missing or it fails."""
+    git = shutil.which("git")
+    if git is None:
+        return None
     try:
         result = subprocess.run(
-            ["git", "-C", str(repo_root), *args],
+            [git, "-C", str(repo_root), *args],
             capture_output=True,
             text=True,
             check=False,
@@ -21,6 +36,5 @@ def git_stdout(repo_root: Path, *args: str) -> str | None:
 
 
 def git_output(repo_root: Path, *args: str) -> str | None:
-    """Stripped stdout of a git query, or None when git is missing or it fails."""
     output = (git_stdout(repo_root, *args) or "").strip()
     return output or None

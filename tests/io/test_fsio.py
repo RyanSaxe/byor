@@ -1,3 +1,10 @@
+"""Exercise atomic and managed file writes.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
+
 import os
 import stat
 import sys
@@ -20,9 +27,7 @@ def test_write_text_atomic_creates_parents_overwrites_and_leaves_no_temp_files(
     assert [entry.name for entry in path.parent.iterdir()] == ["file.txt"]
 
 
-@pytest.mark.skipif(
-    sys.platform == "win32", reason="POSIX mode bits and umask are not meaningful"
-)
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX mode bits and umask are not meaningful")
 def test_write_text_atomic_preserves_mode_on_overwrite_and_honors_umask(
     tmp_path: Path,
 ) -> None:

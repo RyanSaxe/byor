@@ -1,0 +1,24 @@
+id: python.no-importlib
+language: Python
+severity: warning
+message: Avoid importlib in Python code.
+rule:
+  any:
+    - pattern: import importlib
+    - pattern: import importlib as $ALIAS
+    - pattern: from importlib import $$$NAMES
+metadata:
+  byor:
+    rationale: >
+      importlib makes imports dynamic and harder for agents, type checkers,
+      linters, and reviewers to reason about. Most code should use explicit
+      top-level imports and straightforward fallback branches instead.
+    agent_prompt: >
+      Do not use importlib here. Prefer explicit top-level imports, including
+      normal try/except import fallbacks for optional standard-library support.
+      If truly dynamic plugin loading is required, ask for review before adding
+      an exception.
+    tags:
+      - python
+      - style-guide
+      - greenfield

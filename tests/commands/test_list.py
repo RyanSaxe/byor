@@ -1,3 +1,10 @@
+"""Exercise rule and check listing behavior.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
+
 import json
 from pathlib import Path
 
@@ -28,12 +35,10 @@ def populate(home: Path, repo: Path) -> None:
         repo / ".byor" / "rules" / "personal" / "local" / "no-bar-local.yml",
         "no-bar-local",
     )
-    write_global_rule(home, "python/no-baz.yml", "no-baz")
+    write_global_rule(home, "python/no-baz.yml", rule_id="no-baz")
 
 
-def test_effective_listing_shows_scope_id_and_path(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_effective_listing_shows_scope_id_and_path(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     populate(home, repo)
     capsys.readouterr()
@@ -47,16 +52,12 @@ def test_effective_listing_shows_scope_id_and_path(
     )
 
 
-def test_scope_all_appends_skipped_global_rules_with_reasons(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_scope_all_appends_skipped_global_rules_with_reasons(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
-    write_global_rule(home, "no-cast.yml", "no-cast")
-    write_global_rule(home, "no-wrap.yml", "no-wrap")
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
+    write_global_rule(home, "no-wrap.yml", rule_id="no-wrap")
     write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
-    (repo / ".byor" / "local.yml").write_text(
-        "version: 1\nglobal:\n  excluded_rule_ids:\n    - no-wrap\n"
-    )
+    (repo / ".byor" / "local.yml").write_text("version: 1\nglobal:\n  excluded_rule_ids:\n    - no-wrap\n")
     capsys.readouterr()
 
     assert main(["list", "--repo", str(repo), "--scope", "all"]) == 0
@@ -67,9 +68,7 @@ def test_scope_all_appends_skipped_global_rules_with_reasons(
     assert "skipped  no-wrap  excluded in .byor/local.yml\n" in out
 
 
-def test_scope_filters_to_one_origin(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_scope_filters_to_one_origin(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     populate(home, repo)
     capsys.readouterr()
@@ -82,12 +81,10 @@ def test_scope_filters_to_one_origin(
     assert "no-baz" not in out
 
 
-def test_json_lists_rules_and_skips(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_json_lists_rules_and_skips(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
-    write_global_rule(home, "no-baz.yml", "no-baz", tags=["typing"])
-    write_global_rule(home, "no-cast.yml", "no-cast", tags=["typing"])
+    write_global_rule(home, "no-baz.yml", rule_id="no-baz", tags=["typing"])
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast", tags=["typing"])
     write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
     capsys.readouterr()
 
@@ -136,12 +133,10 @@ def test_list_surfaces_effective_checks_with_origin_and_exclusions(
     assert "mypy" not in out  # excluded in local.yml
 
 
-def test_list_tag_filters_rules_and_checks_together(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_list_tag_filters_rules_and_checks_together(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
-    write_global_rule(home, "strict.yml", "strict", tags=["strict"])
-    write_global_rule(home, "style.yml", "style", tags=["style"])
+    write_global_rule(home, "strict.yml", rule_id="strict", tags=["strict"])
+    write_global_rule(home, "style.yml", rule_id="style", tags=["style"])
     save_global_config(
         home / "xdg" / "byor",
         GlobalConfig(
@@ -163,11 +158,9 @@ def test_list_tag_filters_rules_and_checks_together(
     assert "ruff" not in out  # check with another tag
 
 
-def test_list_tags_summarizes_rule_and_check_tags(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_list_tags_summarizes_rule_and_check_tags(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
-    write_global_rule(home, "strict.yml", "strict", tags=["strict"])
+    write_global_rule(home, "strict.yml", rule_id="strict", tags=["strict"])
     config_dir = home / "xdg" / "byor"
     save_global_config(
         config_dir,
@@ -183,23 +176,16 @@ def test_list_tags_summarizes_rule_and_check_tags(
     assert "check  strict  1  global:1" in out
 
 
-def test_list_guides_the_user_when_there_are_no_rules(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_list_guides_the_user_when_there_are_no_rules(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     capsys.readouterr()
 
     assert main(["list", "--repo", str(repo)]) == 0
 
-    assert (
-        capsys.readouterr().out
-        == "No rules or checks yet. Add a rule with `byor add`.\n"
-    )
+    assert capsys.readouterr().out == "No rules or checks yet. Add a rule with `byor add`.\n"
 
 
-def test_list_fails_cleanly_outside_an_initialized_repo(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_list_fails_cleanly_outside_an_initialized_repo(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = home / "untouched"
     repo.mkdir()
 
@@ -210,10 +196,8 @@ def test_list_fails_cleanly_outside_an_initialized_repo(
     assert "Traceback" not in captured.err
 
 
-def test_effective_listing_includes_installed_package_rules(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    write_package_rule(home, "python-strict", "no-cast.yml", "pkg-no-cast")
+def test_effective_listing_includes_installed_package_rules(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write_package_rule(home, "python-strict", relpath="no-cast.yml", rule_id="pkg-no-cast")
     repo = make_repo(home)
     install_package(repo, "python-strict")
     assert main(["sync", "--repo", str(repo)]) == 0
@@ -226,10 +210,8 @@ def test_effective_listing_includes_installed_package_rules(
     assert "personal/packages/python-strict/no-cast.yml" in out
 
 
-def test_scope_package_shows_only_package_rules(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    write_package_rule(home, "python-strict", "no-cast.yml", "pkg-no-cast")
+def test_scope_package_shows_only_package_rules(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write_package_rule(home, "python-strict", relpath="no-cast.yml", rule_id="pkg-no-cast")
     repo = make_repo(home)
     write_rule(repo / ".byor" / "rules" / "project" / "no-foo.yml", "no-foo")
     install_package(repo, "python-strict")

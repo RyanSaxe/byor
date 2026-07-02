@@ -1,12 +1,25 @@
-"""Git hook shims that close the pull gap by running sync."""
+"""Install repository git hook shims for BYOR.
+
+Git shims keep repository mirrors fresh after checkouts and merges, and optionally run the local
+gate before commits. This module writes managed hook snippets without taking ownership of unrelated
+user hook content.
+"""
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from byor.errors import ConfigError
 from byor.io.fsio import MANAGED_NOTICE, write_marked_text
 from byor.io.gitio import git_output
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+__all__ = (
+    "install_git_shims",
+    "install_precommit_shim",
+)
 
 SHIM_HOOK_NAMES = ("post-merge", "post-checkout")
 
@@ -35,35 +48,26 @@ byor agent-check --files $files
 
 
 def install_git_shims(repo_root: Path) -> list[str]:
-    """Install marked post-merge/post-checkout shims; returns summary lines.
-
-    Unmarked existing hooks and repos with core.hooksPath set are never
-    touched: the user gets the one line to add to their own hook setup.
-    """
     if not (repo_root / ".git").exists():
-        raise ConfigError(
-            f"{repo_root} has no .git directory; cannot install git hook shims"
-        )
+        msg = f"{repo_root} has no .git directory; cannot install git hook shims"
+        raise ConfigError(msg)
     hooks_path = git_output(repo_root, "config", "--get", "core.hooksPath")
     if hooks_path is not None:
         return [
-            f"core.hooksPath is set ({hooks_path}); add this line to your "
-            "post-merge and post-checkout hooks:",
+            f"core.hooksPath is set ({hooks_path}); add this line to your post-merge and post-checkout hooks:",
             f"  {SHIM_LINE}",
         ]
     hooks_dir = _hooks_dir(repo_root)
     messages: list[str] = []
     for name in SHIM_HOOK_NAMES:
-        messages.extend(_install_shim(hooks_dir / name, SHIM_CONTENT, SHIM_LINE))
+        messages.extend(_install_shim(hooks_dir / name, SHIM_CONTENT, line=SHIM_LINE))
     return messages
 
 
 def install_precommit_shim(repo_root: Path) -> list[str]:
-    """Install a marked pre-commit hook that gates commits on `byor agent-check`."""
     if not (repo_root / ".git").exists():
-        raise ConfigError(
-            f"{repo_root} has no .git directory; cannot install a pre-commit hook"
-        )
+        msg = f"{repo_root} has no .git directory; cannot install a pre-commit hook"
+        raise ConfigError(msg)
     hooks_path = git_output(repo_root, "config", "--get", "core.hooksPath")
     if hooks_path is not None:
         return [
@@ -71,15 +75,14 @@ def install_precommit_shim(repo_root: Path) -> list[str]:
             f"  {PRECOMMIT_LINE}",
         ]
     hook = _hooks_dir(repo_root) / "pre-commit"
-    return _install_shim(hook, PRECOMMIT_CONTENT, PRECOMMIT_LINE)
+    return _install_shim(hook, PRECOMMIT_CONTENT, line=PRECOMMIT_LINE)
 
 
-def _install_shim(hook: Path, content: str, line: str) -> list[str]:
-    result = write_marked_text(hook, content, SHIM_MARKER)
+def _install_shim(hook: Path, content: str, *, line: str) -> list[str]:
+    result = write_marked_text(hook, content, marker=SHIM_MARKER)
     if result == "unmarked":
         return [
-            f".git/hooks/{hook.name} exists without the BYOR marker; "
-            "add this line to it:",
+            f".git/hooks/{hook.name} exists without the BYOR marker; add this line to it:",
             f"  {line}",
         ]
     if result == "unchanged":
@@ -92,5 +95,6 @@ def _hooks_dir(repo_root: Path) -> Path:
     # --git-path resolves worktrees to the shared common hooks directory.
     output = git_output(repo_root, "rev-parse", "--git-path", "hooks")
     if output is None:
-        raise ConfigError(f"could not locate the git hooks directory for {repo_root}")
+        msg = f"could not locate the git hooks directory for {repo_root}"
+        raise ConfigError(msg)
     return (repo_root / output).resolve()

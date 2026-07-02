@@ -1,18 +1,27 @@
-"""Line-range scoping for diagnostics: diff hunks and edit locations.
+"""Compute changed-line ranges for diagnostics.
 
-Pure interval logic plus two range sources — uncommitted `git diff HEAD`
-hunks and hook-payload edit strings located in the post-edit text. A `None`
-result always means "could not scope this file; treat every line as in
-scope", which is the fallback chain ending at file scope.
+Agent feedback should focus on edited or diffed lines when possible while falling back safely when
+scope cannot be determined. This module owns git diff parsing, edit-content matching, range merging,
+and overlap checks.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from byor.io.gitio import git_stdout
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from pathlib import Path
+
+__all__ = (
+    "diff_ranges",
+    "edit_ranges",
+    "merge_ranges",
+    "overlaps",
+)
 
 Range = tuple[int, int]
 """A 1-based inclusive line range."""
@@ -65,13 +74,11 @@ def edit_ranges(text: str, contents: str | Sequence[str]) -> list[Range] | None:
     return merge_ranges(ranges)
 
 
-def overlaps(start: int, end: int, ranges: Sequence[Range]) -> bool:
-    """Whether the 1-based inclusive [start, end] intersects any range."""
+def overlaps(start: int, end: int, *, ranges: Sequence[Range]) -> bool:
     return any(start <= last and first <= end for first, last in ranges)
 
 
 def merge_ranges(ranges: Sequence[Range]) -> list[Range]:
-    """Sorted union, coalescing overlapping and adjacent ranges."""
     merged: list[Range] = []
     for start, end in sorted(ranges):
         if merged and start <= merged[-1][1] + 1:

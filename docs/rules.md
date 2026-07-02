@@ -8,25 +8,34 @@ plus optional metadata that the AI hooks read.
 A worked example (a starting point, not an enabled default):
 
 ```yaml
-id: no-python-cast
+id: python.no-typing-cast
 language: Python
 severity: warning
 message: Avoid typing.cast in Python code.
 rule:
-  pattern: cast($TYPE, $VALUE)
+  any:
+    - pattern: from typing import cast
+    - pattern: from typing import cast as $ALIAS
+    - pattern: from typing_extensions import cast
+    - pattern: from typing_extensions import cast as $ALIAS
+    - pattern: typing.cast($TYPE, $VALUE)
+    - pattern: typing_extensions.cast($TYPE, $VALUE)
+    - pattern: cast($TYPE, $VALUE)
 metadata:
   byor:
     rationale: >
-      casting hides type model problems and can make invalid assumptions
-      invisible to both reviewers and type checkers.
+      Casting hides type-model problems and can make invalid assumptions
+      invisible to reviewers and type checkers. Most casts should be replaced
+      with narrowing, clearer signatures, protocols, or better value flow.
     agent_prompt: >
       Do not use typing.cast here. Fix the type by narrowing, changing the
-      signature, introducing a protocol, or restructuring the value flow. If
-      the cast is genuinely necessary, leave a concise comment explaining the
-      invariant that the type checker cannot see.
+      signature, introducing a protocol, or restructuring the value flow. Keep a
+      cast only when the needed invariant cannot be expressed by Python's type
+      system.
     tags:
       - python
       - typing
+      - style-guide
 ```
 
 Required ast-grep fields: `id`, `language`, `rule`, `message`. Recommended:
@@ -87,7 +96,7 @@ Global rules are copied into `.byor/rules/personal/global/` by sync so
 ast-grep can read them. That directory is a generated build artifact — never
 edit it by hand; sync mirrors it wholesale (see
 [sync-model.md](sync-model.md)). Organize rules in subdirectories by language
-or topic (e.g. `rules/python/no-python-cast.yml`); sync preserves the relative
+or topic (e.g. `rules/python.no-typing-cast.yml`); sync preserves the relative
 paths.
 
 Project and local rules override global rules by the same ID: sync skips the
@@ -217,7 +226,7 @@ byor list --scope all
 ```
 
 ```text
-project  no-python-cast       .byor/rules/project/python/no-python-cast.yml
+project  python.no-typing-cast  .byor/rules/project/python.no-typing-cast.yml
 skipped  no-one-line-wrapper  excluded in .byor/local.yml
 ```
 

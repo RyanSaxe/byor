@@ -1,30 +1,28 @@
-"""The byor skill: a hub SKILL.md plus reference files, assembled from package data.
+"""Render the BYOR skill from package references.
 
-The whole skill — the hub and every reference — is authored as Markdown under
-``data/skill/`` and shipped as package data. This module fills in the shared
-exceptions sentence and inserts the managed marker so byor owns the rendered
-copies and keeps them current.
-
-The hub frontmatter is deliberately limited to the cross-agent ``name`` +
-``description`` fields, the only pair every harness reads, so the one tree works
-everywhere — never add a harness-specific field (e.g. Claude's ``allowed-tools``),
-which would fork it.
+The managed skill is assembled from the packaged markdown instructions and reference files so agents
+receive current BYOR guidance. Rendering here keeps install and self-heal paths from duplicating
+markdown packaging details.
 """
 
 from __future__ import annotations
 
-from importlib.resources import files
-from importlib.resources.abc import Traversable
 from pathlib import Path
 
 from byor.io.fsio import MANAGED_MARKER
 from byor.rules.rules import ALLOW_EXCEPTIONS_SENTENCE
 
+__all__ = (
+    "global_skill_dirs",
+    "skill_files",
+)
+
 _SKILL_RELPATH = "SKILL.md"
+_SKILL_DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "skill"
 
 
 def global_skill_dirs(home: Path | None = None) -> tuple[Path, Path]:
-    """The two global skill directories byor writes the rendered tree into.
+    """Return the two global skill directories for the rendered BYOR skill.
 
     `~/.agents/skills/byor/` is read by Codex, Copilot, opencode, and pi;
     `~/.claude/skills/byor/` by Claude Code, which reads only its own directory.
@@ -43,8 +41,6 @@ _ALLOW_EXCEPTIONS_PLACEHOLDER = "{{ALLOW_EXCEPTIONS_SENTENCE}}"
 
 
 def _insert_marker(text: str) -> str:
-    """The managed marker on its own line: after the frontmatter when present
-    (the hub), otherwise prepended (reference files have no frontmatter)."""
     if not text.startswith(_FRONTMATTER_FENCE):
         return f"{MANAGED_MARKER}\n\n{text}"
     closing = text.index("\n" + _FRONTMATTER_FENCE, len(_FRONTMATTER_FENCE))
@@ -53,13 +49,11 @@ def _insert_marker(text: str) -> str:
 
 
 def _render(text: str) -> str:
-    """Fill the exceptions sentence (a no-op where absent) and add the marker."""
     filled = text.replace(_ALLOW_EXCEPTIONS_PLACEHOLDER, ALLOW_EXCEPTIONS_SENTENCE)
     return _insert_marker(filled)
 
 
-def _walk_markdown(node: Traversable, prefix: str = "") -> list[tuple[str, str]]:
-    """Every `.md` file under `node` as `(posix relpath, raw text)` pairs."""
+def _walk_markdown(node: Path, prefix: str = "") -> list[tuple[str, str]]:
     found: list[tuple[str, str]] = []
     for child in node.iterdir():
         relpath = f"{prefix}{child.name}"
@@ -71,11 +65,6 @@ def _walk_markdown(node: Traversable, prefix: str = "") -> list[tuple[str, str]]
 
 
 def skill_files() -> list[tuple[str, str]]:
-    """The rendered skill tree as `(relpath, content)` pairs, hub first.
-
-    The hub SKILL.md leads; references follow in sorted order so the rendered
-    tree is deterministic across machines.
-    """
-    raw = _walk_markdown(files("byor").joinpath("data", "skill"))
+    raw = _walk_markdown(_SKILL_DATA_DIR)
     rendered = [(relpath, _render(text)) for relpath, text in raw]
     return sorted(rendered, key=lambda item: (item[0] != _SKILL_RELPATH, item[0]))

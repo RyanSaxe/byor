@@ -1,12 +1,8 @@
-"""Normalized hook payloads and responses across the stdin-hook harnesses.
+"""Translate AI harness hook payloads into BYOR edits.
 
-Each harness pipes a different post-edit JSON shape on stdin and reads back a
-different feedback channel. This module is the single normalized pipeline:
-`parse_payload` turns any harness's stdin JSON into an `EditPayload` (the
-touched files plus, when locatable, the literal edited text), and `emit`
-renders byor's diagnostics into the harness's response format. Every parser
-fails open — an unrecognized or malformed payload yields an empty
-`EditPayload` so the agent loop is never blocked.
+Each supported agent reports edited files differently, so this module normalizes those payloads and
+formats feedback for the harness. Keeping those adapters together makes hook behavior testable
+without coupling scanning logic to one agent.
 """
 
 from __future__ import annotations
@@ -17,9 +13,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, TypeAlias
 
-JsonValue: TypeAlias = (
-    "None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]"
+__all__ = (
+    "EditPayload",
+    "emit",
+    "parse_apply_patch",
+    "parse_payload",
 )
+
+JsonValue: TypeAlias = "None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]"
 
 Harness = Literal["claude-code", "codex", "copilot"]
 
@@ -44,7 +45,6 @@ class EditPayload:
 
 
 def parse_payload(harness: Harness, raw: str) -> EditPayload:
-    """Normalize a harness's stdin JSON; an unparseable payload scans nothing."""
     payload = _load_object(raw)
     if payload is None:
         return EditPayload()
@@ -52,7 +52,7 @@ def parse_payload(harness: Harness, raw: str) -> EditPayload:
 
 
 def emit(harness: Harness, rendered: str) -> tuple[str, int]:
-    """The harness's (stdout, exit code) for rendered diagnostics.
+    """Return the harness's stdout and exit code for rendered diagnostics.
 
     `rendered` is empty when there are no diagnostics. Only claude-code uses a
     nonzero exit (2, its stderr-feedback contract); the others always exit 0
@@ -64,7 +64,6 @@ def emit(harness: Harness, rendered: str) -> tuple[str, int]:
 
 
 def _parse_claude_code(payload: dict[str, JsonValue]) -> EditPayload:
-    """tool_input.file_path with old_string/new_string/edits[]/content edits."""
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict):
         return EditPayload()
@@ -77,13 +76,11 @@ def _parse_claude_code(payload: dict[str, JsonValue]) -> EditPayload:
 
 
 def _claude_edit_contents(tool_input: dict[str, JsonValue]) -> list[str]:
-    """Post-edit strings from a Write/Edit/MultiEdit payload, in any combination."""
     direct = _strings(tool_input, ("new_string", "content"))
     return direct + _new_strings_from_edits(tool_input.get("edits"))
 
 
 def _parse_copilot(payload: dict[str, JsonValue]) -> EditPayload:
-    """toolArgs (a JSON-encoded string) carrying the edit tool's path and text."""
     tool_args = _copilot_tool_args(payload.get("toolArgs"))
     if tool_args is None:
         return EditPayload()
@@ -96,11 +93,6 @@ def _parse_copilot(payload: dict[str, JsonValue]) -> EditPayload:
 
 
 def _copilot_tool_args(value: JsonValue) -> dict[str, JsonValue] | None:
-    """Copilot delivers `toolArgs` as a JSON string; decode it to a mapping.
-
-    The SDK surface documents an object instead, so an already-decoded mapping is
-    accepted too; anything else (or undecodable JSON) scans nothing.
-    """
     if isinstance(value, str):
         try:
             value = json.loads(value)
@@ -110,7 +102,6 @@ def _copilot_tool_args(value: JsonValue) -> dict[str, JsonValue] | None:
 
 
 def _parse_codex(payload: dict[str, JsonValue]) -> EditPayload:
-    """tool_input.command carrying an apply_patch envelope to parse."""
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict):
         return EditPayload()
@@ -134,13 +125,13 @@ def parse_apply_patch(text: str) -> dict[str, list[str]]:
     for line in text.splitlines():
         target = _patch_file_header(line)
         if target is not None:
-            _flush_patch_section(added, current, plus_lines)
+            _flush_patch_section(added, current, plus_lines=plus_lines)
             current, plus_lines = target, []
             added.setdefault(target, [])
             continue
         if current is not None and line.startswith("+"):
             plus_lines.append(line[1:])
-    _flush_patch_section(added, current, plus_lines)
+    _flush_patch_section(added, current, plus_lines=plus_lines)
     return added
 
 
@@ -151,9 +142,7 @@ def _patch_file_header(line: str) -> str | None:
     return None
 
 
-def _flush_patch_section(
-    added: dict[str, list[str]], current: str | None, plus_lines: list[str]
-) -> None:
+def _flush_patch_section(added: dict[str, list[str]], current: str | None, *, plus_lines: list[str]) -> None:
     if current is not None and plus_lines:
         added[current] = ["\n".join(plus_lines)]
 
@@ -168,7 +157,6 @@ def _payload_from_patch(added_by_file: dict[str, list[str]]) -> EditPayload:
 
 
 def _emit_claude_code(rendered: str) -> tuple[str, int]:
-    """Diagnostics go to stderr via the hook command's redirect; exit 2 here."""
     return rendered, 2
 
 
@@ -228,19 +216,14 @@ def _string(value: JsonValue) -> str | None:
 
 
 def _strings(mapping: dict[str, JsonValue], keys: tuple[str, ...]) -> list[str]:
-    """Every non-empty string value across `keys`, in key order."""
     return [value for key in keys if (value := _string(mapping.get(key))) is not None]
 
 
 def _new_strings_from_edits(edits: JsonValue) -> list[str]:
-    """The `new_string` of each dict in an `edits[]` list; empty otherwise."""
     if not isinstance(edits, list):
         return []
     return [
-        value
-        for edit in edits
-        if isinstance(edit, dict)
-        and (value := _string(edit.get("new_string"))) is not None
+        value for edit in edits if isinstance(edit, dict) and (value := _string(edit.get("new_string"))) is not None
     ]
 
 

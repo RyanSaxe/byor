@@ -1,4 +1,9 @@
-"""Line-range scoping: edit location, diff hunks, and overlap."""
+"""Exercise changed-line scope detection.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
 
 from pathlib import Path
 
@@ -41,11 +46,11 @@ def test_edit_ranges_returns_none_when_any_edit_is_unlocatable() -> None:
 def test_overlaps_uses_inclusive_interval_intersection() -> None:
     ranges = [(3, 5), (9, 9)]
 
-    assert overlaps(5, 7, ranges)
-    assert overlaps(1, 3, ranges)
-    assert overlaps(9, 9, ranges)
-    assert not overlaps(6, 8, ranges)
-    assert not overlaps(1, 2, [])
+    assert overlaps(5, 7, ranges=ranges)
+    assert overlaps(1, 3, ranges=ranges)
+    assert overlaps(9, 9, ranges=ranges)
+    assert not overlaps(6, 8, ranges=ranges)
+    assert not overlaps(1, 2, ranges=[])
 
 
 def test_merge_ranges_coalesces_overlapping_and_adjacent() -> None:
@@ -61,7 +66,7 @@ def make_git_repo(tmp_path: Path) -> Path:
 
 def test_diff_ranges_reports_changed_and_inserted_lines(tmp_path: Path) -> None:
     repo = make_git_repo(tmp_path)
-    file = commit_file(repo, "src.py", "a = 1\nb = 2\nc = 3\nd = 4\n")
+    file = commit_file(repo, "src.py", content="a = 1\nb = 2\nc = 3\nd = 4\n")
 
     file.write_text("a = 1\nb = 20\nc = 3\nd = 4\ne = 5\nf = 6\n")
 
@@ -70,14 +75,14 @@ def test_diff_ranges_reports_changed_and_inserted_lines(tmp_path: Path) -> None:
 
 def test_diff_ranges_is_empty_for_an_unchanged_tracked_file(tmp_path: Path) -> None:
     repo = make_git_repo(tmp_path)
-    file = commit_file(repo, "src.py", "a = 1\n")
+    file = commit_file(repo, "src.py", content="a = 1\n")
 
     assert diff_ranges(repo, file) == []
 
 
 def test_diff_ranges_ignores_pure_deletions(tmp_path: Path) -> None:
     repo = make_git_repo(tmp_path)
-    file = commit_file(repo, "src.py", "a = 1\nb = 2\nc = 3\n")
+    file = commit_file(repo, "src.py", content="a = 1\nb = 2\nc = 3\n")
 
     file.write_text("a = 1\nc = 3\n")
 
@@ -86,7 +91,7 @@ def test_diff_ranges_ignores_pure_deletions(tmp_path: Path) -> None:
 
 def test_diff_ranges_is_none_for_an_untracked_file(tmp_path: Path) -> None:
     repo = make_git_repo(tmp_path)
-    commit_file(repo, "src.py", "a = 1\n")
+    commit_file(repo, "src.py", content="a = 1\n")
     untracked = repo / "new.py"
     untracked.write_text("b = 2\n")
 

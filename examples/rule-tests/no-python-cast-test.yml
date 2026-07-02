@@ -1,7 +1,0 @@
-id: no-python-cast
-valid:
-  - value = int(raw)
-  - user = narrow(value)
-invalid:
-  - user = cast(User, value)
-  - return cast(list[int], items)

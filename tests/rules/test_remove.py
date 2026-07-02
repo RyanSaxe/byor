@@ -1,3 +1,10 @@
+"""Exercise rule removal behavior.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
+
 from pathlib import Path
 
 import pytest
@@ -6,9 +13,7 @@ from support import make_repo, mirror, write_global_rule, write_rule
 from byor.cli import main
 
 
-def test_remove_deletes_a_project_rule(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_remove_deletes_a_project_rule(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     target = write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
     capsys.readouterr()
@@ -22,7 +27,7 @@ def test_remove_deletes_a_project_rule(
 
 def test_remove_shadowing_project_rule_lets_the_global_copy_return(home: Path) -> None:
     repo = make_repo(home)
-    write_global_rule(home, "no-cast.yml", "no-cast")
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
     write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
     main(["sync", "--repo", str(repo)])
     assert not (mirror(repo) / "no-cast.yml").exists()  # shadowed: copy skipped
@@ -35,9 +40,9 @@ def test_remove_shadowing_project_rule_lets_the_global_copy_return(home: Path) -
 def test_remove_global_rule_deletes_the_canonical_file_and_fans_out(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    first = make_repo(home, "first")
-    second = make_repo(home, "second")
-    canonical = write_global_rule(home, "python/no-cast.yml", "no-cast")
+    first = make_repo(home, name="first")
+    second = make_repo(home, name="second")
+    canonical = write_global_rule(home, "python/no-cast.yml", rule_id="no-cast")
     main(["sync", "--all"])
     capsys.readouterr()
 
@@ -51,9 +56,7 @@ def test_remove_global_rule_deletes_the_canonical_file_and_fans_out(
     assert f"Synced 1 removed global rule into {second}" in out
 
 
-def test_remove_unknown_rule_id_fails_cleanly(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_remove_unknown_rule_id_fails_cleanly(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
 
     assert main(["remove", "--repo", str(repo), "missing"]) == 1

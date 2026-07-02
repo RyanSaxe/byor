@@ -1,3 +1,10 @@
+"""Exercise rule creation behavior.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
+
 from pathlib import Path
 
 import pytest
@@ -21,9 +28,7 @@ def add_args(repo: Path, *extra: str) -> list[str]:
     return ["add", "--repo", str(repo), *extra]
 
 
-def test_add_without_source_prints_template_and_hint(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_add_without_source_prints_template_and_hint(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     capsys.readouterr()
 
@@ -36,20 +41,13 @@ def test_add_without_source_prints_template_and_hint(
     assert "allow_with_comment" not in out
     assert "Rerun with --from FILE or --edit" in out
 
-    assert (
-        main(
-            add_args(repo, "--scope", "project", "--id", "no-cast", "--language", "Go")
-        )
-        == 0
-    )
+    assert main(add_args(repo, "--scope", "project", "--id", "no-cast", "--language", "Go")) == 0
     out = capsys.readouterr().out
     assert "id: no-cast" in out
     assert "language: Go" in out
 
 
-def test_add_from_file_creates_project_rule(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_add_from_file_creates_project_rule(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     source = write_rule(home / "source.yml", "team-rule")
     capsys.readouterr()
@@ -59,25 +57,17 @@ def test_add_from_file_creates_project_rule(
     destination = repo / ".byor" / "rules" / "project" / "team-rule.yml"
     assert destination.read_text() == source.read_text()
     captured = capsys.readouterr()
-    assert (
-        "Added project rule 'team-rule' at .byor/rules/project/team-rule.yml"
-        in captured.out
-    )
+    assert "Added project rule 'team-rule' at .byor/rules/project/team-rule.yml" in captured.out
     assert "doctor:" not in captured.out
 
 
-def test_add_global_rule_fans_out_to_registered_repos(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    first = make_repo(home, "first")
-    second = make_repo(home, "second")
+def test_add_global_rule_fans_out_to_registered_repos(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    first = make_repo(home, name="first")
+    second = make_repo(home, name="second")
     source = write_rule(home / "source.yml", "no-cast")
     capsys.readouterr()
 
-    assert (
-        main(["add", "--repo", str(first), "--scope", "global", "--from", str(source)])
-        == 0
-    )
+    assert main(["add", "--repo", str(first), "--scope", "global", "--from", str(source)]) == 0
 
     canonical = home / "xdg" / "byor" / "rules" / "no-cast.yml"
     assert canonical.read_text() == source.read_text()
@@ -88,9 +78,7 @@ def test_add_global_rule_fans_out_to_registered_repos(
     assert f"Synced 1 updated global rule into {second}" in out
 
 
-def test_add_edit_writes_the_edited_template(
-    home: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_add_edit_writes_the_edited_template(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = make_repo(home)
     content = RULE_TEMPLATE.format(rule_id="my-rule", message="No.")
     monkeypatch.setenv("EDITOR", make_editor(home, content))
@@ -102,7 +90,7 @@ def test_add_edit_writes_the_edited_template(
 
 
 def test_add_edit_aborts_when_template_left_unedited(
-    home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home)
     monkeypatch.setenv("EDITOR", NOOP_EDITOR)
@@ -115,7 +103,7 @@ def test_add_edit_aborts_when_template_left_unedited(
 
 
 def test_add_edit_aborts_when_editor_fails(
-    home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home)
     monkeypatch.setenv("EDITOR", failing_editor(3))
@@ -125,9 +113,7 @@ def test_add_edit_aborts_when_editor_fails(
     assert "Editor exited with status 3" in capsys.readouterr().err
 
 
-def test_add_rejects_invalid_rule_file(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_add_rejects_invalid_rule_file(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     source = home / "broken.yml"
     source.write_text("id: broken\n")
@@ -140,9 +126,7 @@ def test_add_rejects_invalid_rule_file(
     assert not (repo / ".byor" / "rules" / "project" / "broken.yml").exists()
 
 
-def test_add_rejects_duplicate_id_within_scope(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_add_rejects_duplicate_id_within_scope(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     write_rule(repo / ".byor" / "rules" / "project" / "existing.yml", "no-cast")
     source = write_rule(home / "source.yml", "no-cast")
@@ -153,9 +137,7 @@ def test_add_rejects_duplicate_id_within_scope(
     assert not (repo / ".byor" / "rules" / "project" / "no-cast.yml").exists()
 
 
-def test_add_refuses_to_overwrite_existing_destination(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_add_refuses_to_overwrite_existing_destination(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     source = write_rule(home / "source.yml", "no-cast")
     assert main(add_args(repo, "--scope", "project", "--from", str(source))) == 0
@@ -165,11 +147,9 @@ def test_add_refuses_to_overwrite_existing_destination(
     assert "already exists" in capsys.readouterr().err
 
 
-def test_add_project_rule_overriding_a_global_id_is_allowed(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_add_project_rule_overriding_a_global_id_is_allowed(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
-    write_global_rule(home, "no-cast.yml", "no-cast")
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
     main(["sync", "--repo", str(repo)])
     source = write_rule(home / "source.yml", "no-cast", message="Stricter.")
     capsys.readouterr()
@@ -180,9 +160,7 @@ def test_add_project_rule_overriding_a_global_id_is_allowed(
     assert f"Synced 1 removed global rule into {repo}" in capsys.readouterr().out
 
 
-def test_allow_exceptions_prefills_the_template(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_allow_exceptions_prefills_the_template(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     capsys.readouterr()
 
@@ -220,9 +198,7 @@ def test_allow_exceptions_appends_to_an_existing_agent_prompt(home: Path) -> Non
     )
 
     written = load_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml")
-    assert written.byor.agent_prompt == (
-        f"Narrow the type instead. {ALLOW_EXCEPTIONS_SENTENCE}"
-    )
+    assert written.byor.agent_prompt == (f"Narrow the type instead. {ALLOW_EXCEPTIONS_SENTENCE}")
 
 
 def test_allow_exceptions_seeds_agent_prompt_from_message_when_absent(
@@ -249,9 +225,7 @@ def test_allow_exceptions_seeds_agent_prompt_from_message_when_absent(
     assert written.byor.agent_prompt == f"Avoid this. {ALLOW_EXCEPTIONS_SENTENCE}"
 
 
-def test_allow_exceptions_with_edit_keeps_the_prefilled_sentence(
-    home: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_allow_exceptions_with_edit_keeps_the_prefilled_sentence(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = make_repo(home)
     monkeypatch.setenv("EDITOR", substituting_editor("REPLACE_ME", "no-cast"))
 
@@ -263,9 +237,7 @@ def test_allow_exceptions_with_edit_keeps_the_prefilled_sentence(
     assert written.byor.agent_prompt.endswith(ALLOW_EXCEPTIONS_SENTENCE)
 
 
-def test_add_warns_on_nonconforming_rule_id(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_add_warns_on_nonconforming_rule_id(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     source = write_rule(home / "source.yml", "Bad_ID")
 
@@ -275,9 +247,7 @@ def test_add_warns_on_nonconforming_rule_id(
     assert (repo / ".byor" / "rules" / "project" / "Bad_ID.yml").is_file()
 
 
-def test_add_rejects_a_path_traversal_rule_id(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_add_rejects_a_path_traversal_rule_id(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     source = write_rule(home / "source.yml", "../../escaped")
     capsys.readouterr()

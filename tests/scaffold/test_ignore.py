@@ -1,3 +1,10 @@
+"""Exercise BYOR ignore-file scaffolding.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
+
 from pathlib import Path
 
 import pytest
@@ -72,12 +79,11 @@ def test_private_mode_resolves_info_exclude_in_a_worktree(tmp_path: Path) -> Non
 
 
 def test_private_mode_requires_a_git_repository(tmp_path: Path) -> None:
-    with pytest.raises(ConfigError, match="no .git directory"):
+    with pytest.raises(ConfigError, match=r"no \.git directory"):
         write_ignore_block(tmp_path, private=True)
 
 
 def test_ignored_patterns_cover_nested_rule_files() -> None:
-    """`*` does not cross `/` in gitignore; synced copies keep their nesting."""
     assert ".byor/rules/personal/global/**/*.yml" in IGNORED_PATTERNS
     assert ".byor/rules/personal/local/**/*.yml" in IGNORED_PATTERNS
 

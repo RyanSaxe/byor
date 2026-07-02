@@ -1,30 +1,17 @@
-"""Extra command-line checks run after ast-grep diagnostics.
+"""Run configured BYOR check commands.
 
-`checks:` entries in the repo and global configs name a command to run on the
-in-scope files whose extension matches. Repo checks win over global ones by
-name; `.byor/local.yml` `checks.excluded` disables them per repo. A failing
-check's raw output is appended under a `### <name>` header and yields the same
-diagnostics-exist exit code as an ast-grep finding. A missing command warns
-once and never crashes the hook — committed checks run on contributors'
-machines under the same trust model as pre-commit.
-
-The command is `shlex.split` and run directly (never through a shell): that is
-what keeps a committed check string from being a shell-injection vector, so
-there is no `&&`, pipe, redirection, or alias — multi-step logic belongs in a
-script the check points at. byor expands a leading `~`/`~/` in the command
-itself so such a script can live under `~/.config/byor` and resolve everywhere;
-the in-scope files are appended as trailing arguments, so a check command must
-accept a list of file paths.
+Checks extend ast-grep with linters, type checkers, and project scripts that accept file arguments.
+This module merges check definitions by precedence, applies exclusions, expands safe home paths, and
+records failures for agent feedback.
 """
 
 from __future__ import annotations
 
-import os
 import shlex
 import subprocess
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from byor.config import (
     CheckDef,
@@ -38,11 +25,20 @@ from byor.config import (
     repo_config_path,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+__all__ = (
+    "CheckOutcome",
+    "EffectiveCheck",
+    "effective_checks",
+    "load_effective_checks",
+    "run_checks",
+)
+
 
 @dataclass(frozen=True)
 class EffectiveCheck:
-    """A check after merge and exclusion, tagged with where it came from."""
-
     definition: CheckDef
     origin: str
     """"repo" or "global"."""
@@ -54,8 +50,6 @@ class EffectiveCheck:
 
 @dataclass
 class CheckOutcome:
-    """The result of running the matching checks over a set of files."""
-
     failures: list[str] = field(default_factory=list)
     """`### <name>` sections for checks that exited nonzero."""
     warnings: list[str] = field(default_factory=list)
@@ -65,6 +59,7 @@ class CheckOutcome:
 def effective_checks(
     repo_config: RepoConfig,
     global_config: GlobalConfig,
+    *,
     local_config: LocalConfig,
     package_checks: Sequence[tuple[str, CheckDef]] = (),
 ) -> list[EffectiveCheck]:
@@ -102,24 +97,21 @@ def load_effective_checks(repo_root: Path, config_dir: Path) -> list[EffectiveCh
     repo is not byor-initialized; repo checks load only when `.byor/config.yml`
     exists. `.byor/local.yml` exclusions are honored either way.
     """
-    repo_config = (
-        load_repo_config(repo_root)
-        if repo_config_path(repo_root).is_file()
-        else RepoConfig()
-    )
+    repo_config = load_repo_config(repo_root) if repo_config_path(repo_root).is_file() else RepoConfig()
     global_config = load_global_config(config_dir)
     local_config = load_local_config(repo_root)
     package_checks = [
         (f"package:{name}", check)
         for name in local_config.packages
-        for check in load_package_checks(config_dir, global_config, name)
+        for check in load_package_checks(config_dir, global_config, name=name)
     ]
-    return effective_checks(repo_config, global_config, local_config, package_checks)
+    return effective_checks(repo_config, global_config, local_config=local_config, package_checks=package_checks)
 
 
 def run_checks(
     checks: list[EffectiveCheck],
     repo_root: Path,
+    *,
     files: list[Path],
     whole_repo: bool = False,
 ) -> CheckOutcome:
@@ -132,34 +124,28 @@ def run_checks(
     outcome = CheckOutcome()
     for check in checks:
         if whole_repo:
-            _run_one(check, repo_root, [], outcome)
+            _run_one(check, repo_root, files=[], outcome=outcome)
             continue
         matching = _matching_files(check.definition, files)
         if not matching:
             continue
-        _run_one(check, repo_root, matching, outcome)
+        _run_one(check, repo_root, files=matching, outcome=outcome)
     return outcome
 
 
-def _run_one(
-    check: EffectiveCheck, repo_root: Path, files: list[Path], outcome: CheckOutcome
-) -> None:
+def _run_one(check: EffectiveCheck, repo_root: Path, *, files: list[Path], outcome: CheckOutcome) -> None:
     command = [_expand_home(token) for token in shlex.split(check.definition.run)]
     argv = command + [str(file) for file in files]
     try:
-        result = subprocess.run(
-            argv, cwd=repo_root, capture_output=True, text=True, check=False
-        )
+        result = subprocess.run(argv, cwd=repo_root, capture_output=True, text=True, check=False)
     except OSError as error:
-        outcome.warnings.append(
-            f"byor: check '{check.name}' could not run ({argv[0]}): {error}"
-        )
+        outcome.warnings.append(f"byor: check '{check.name}' could not run ({argv[0]}): {error}")
         return
     if result.returncode != 0:
-        outcome.failures.append(_section(check.name, result.stdout, result.stderr))
+        outcome.failures.append(_section(check.name, result.stdout, stderr=result.stderr))
 
 
-def _expand_home(token: str) -> str:
+def _expand_home(command_part: str) -> str:
     """Expand a leading ``~``/``~/`` to the user's home; leave any other token literal.
 
     Checks run without a shell (see the module docstring), so byor expands the
@@ -168,9 +154,9 @@ def _expand_home(token: str) -> str:
     lets a check point ``run`` at a script under ``~/.config/byor`` and have it
     resolve in every repo.
     """
-    if token == "~" or token.startswith("~/"):
-        return os.path.expanduser(token)
-    return token
+    if command_part == "~" or command_part.startswith("~/"):
+        return str(Path(command_part).expanduser())
+    return command_part
 
 
 def _matching_files(check: CheckDef, files: list[Path]) -> list[Path]:
@@ -180,6 +166,6 @@ def _matching_files(check: CheckDef, files: list[Path]) -> list[Path]:
     return [file for file in files if file.suffix in suffixes]
 
 
-def _section(name: str, stdout: str, stderr: str) -> str:
+def _section(name: str, stdout: str, *, stderr: str) -> str:
     body = "\n".join(part for part in (stdout.rstrip(), stderr.rstrip()) if part)
     return f"### {name}\n{body}" if body else f"### {name}"

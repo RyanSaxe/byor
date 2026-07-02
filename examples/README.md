@@ -15,9 +15,9 @@ These are ordered from the simplest mechanism to the most expressive:
 | Rule | Demonstrates |
 | --- | --- |
 | [`no-print`](rules/no-print.yml) | A bare `pattern` with a variadic metavariable (`$$$ARGS`). |
-| [`no-python-cast`](rules/no-python-cast.yml) | A `pattern` with named metavariables (`$TYPE`, `$VALUE`). |
-| [`no-routing-functions`](rules/no-routing-functions.yml) | Relational rules — `any`/`all`, `inside`, `follows`, and `nthChild` with `reverse`, to match "a call that is a function's only statement." |
-| [`keyword-only-args`](rules/keyword-only-args.yml) | `nthChild` positional counting with a `self`/`cls` exemption, to require that arguments after the first two are keyword-only. |
+| [`python.no-typing-cast`](rules/python.no-typing-cast.yml) | A small `any` rule combining import patterns and call patterns with named metavariables (`$TYPE`, `$VALUE`). |
+| [`no-routing-functions`](rules/no-routing-functions.yml) | Relational rules — `any`/`all`, `inside`, `follows`, and `nthChild` with `reverse`, to match pass-through calls or `yield from` as a function's only statement. |
+| [`keyword-only-args`](rules/keyword-only-args.yml) | Function-signature `context` patterns plus constraints, to catch defaulted positional parameters while exempting `self`/`cls` methods. |
 | [`no-console-log`](rules/no-console-log.yml) | The same bare `pattern` mechanism in a non-Python language (`language: typescript`). |
 
 Each file's `metadata.byor.agent_prompt` is the directive byor hands an AI agent
@@ -41,4 +41,5 @@ into the same loop and feeding their output to AI agents.
   agent list.
 - [`config/scripts/ruff.sh`](config/scripts/ruff.sh) — a `check` script that
   autofixes what is safe, tells the agent exactly what changed, then reports
-  only the issues it could not fix.
+  only the issues it could not fix. It accepts explicit file arguments for hook
+  mode, and scans non-ignored repo Python files when no files are passed.

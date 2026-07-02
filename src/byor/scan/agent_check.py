@@ -1,13 +1,17 @@
-"""`byor agent-check`: ast-grep diagnostics rendered for AI agents."""
+"""Render BYOR diagnostics for AI agents.
+
+Agent checks combine ast-grep matches, custom check failures, edit or diff scoping, and harness-
+specific output. This module owns the high-level scan flow so hooks can fail open while command-line
+scans remain strict.
+"""
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from byor.agents.harness import EditPayload, Harness, emit, parse_payload
 from byor.config import load_global_config, repo_config_path
@@ -22,15 +26,25 @@ from byor.scan.astgrep import ScanMatch, resolve_ast_grep, scan_files
 from byor.scan.checks import CheckOutcome, load_effective_checks, run_checks
 from byor.scan.linescope import Range, diff_ranges, edit_ranges, overlaps
 
+if TYPE_CHECKING:
+    import argparse
+
+__all__ = (
+    "Diagnostic",
+    "collect_diagnostics",
+    "render_diagnostics",
+    "run_agent_check",
+)
+
 DIAGNOSTICS_EXIT_CODE = 2
+FAIL_OPEN_ERRORS = (Exception,)
 
 Scope = Literal["edit", "diff", "file"]
+DiagnosticStyle = Literal["verbose", "concise"]
 
 
 @dataclass
 class Diagnostic:
-    """One diagnostic ready to render: 1-based position, repo-relative path."""
-
     file: str
     line: int
     column: int
@@ -46,40 +60,53 @@ def run_agent_check(args: argparse.Namespace) -> int:
     repo_root = resolve_repo_root(explicit=args.repo)
     harness: Harness | None = args.stdin_hook
     if harness is not None:
-        return _run_hook(args, repo_root, harness)
-    return _run_files(args, repo_root, list(args.files), _resolve_scope(args, None))
+        return _run_hook(args, repo_root, harness=harness)
+    return _run_files(
+        args,
+        repo_root,
+        files=list(args.files),
+        scope=_resolve_scope(args, None),
+    )
 
 
 def _run_files(
-    args: argparse.Namespace, repo_root: Path, files: list[Path], scope: Scope
+    args: argparse.Namespace,
+    repo_root: Path,
+    *,
+    files: list[Path],
+    scope: Scope,
 ) -> int:
-    """The `--files` path: print diagnostics in the requested text/json format."""
     config_dir = global_config_dir()
     scoped = _scoped_files(files, scope)
-    diagnostics = _diagnostics(args, repo_root, scoped, scope, payload=None)
+    diagnostics = _diagnostics(repo_root, scoped, scope=scope, payload=None)
     checks = load_effective_checks(repo_root, config_dir)
     outcome = run_checks(
-        checks, repo_root, scoped, whole_repo=scope == "file" and not scoped
+        checks,
+        repo_root,
+        files=scoped,
+        whole_repo=scope == "file" and not scoped,
     )
     for warning in outcome.warnings:
-        print(warning, file=sys.stderr)
+        sys.stderr.write(f"{warning}\n")
     if args.format == "json":
-        print(json.dumps(_json_payload(diagnostics, outcome), indent=2))
+        sys.stdout.write(f"{json.dumps(_json_payload(diagnostics, outcome), indent=2)}\n")
     else:
         global_config = load_global_config(config_dir)
         concise = args.concise or global_config.output_concise
         for line in render_diagnostics(
-            diagnostics, concise, global_config.output_max_diagnostics
+            diagnostics,
+            style="concise" if concise else "verbose",
+            limit=global_config.output_max_diagnostics,
         ):
-            print(line)
+            sys.stdout.write(f"{line}\n")
         for section in outcome.failures:
-            print(section)
+            sys.stdout.write(f"{section}\n")
     has_findings = bool(diagnostics) or bool(outcome.failures)
     return DIAGNOSTICS_EXIT_CODE if has_findings else 0
 
 
-def _run_hook(args: argparse.Namespace, repo_root: Path, harness: Harness) -> int:
-    """The `--stdin-hook HARNESS` path: fail-open, never block the agent.
+def _run_hook(args: argparse.Namespace, repo_root: Path, *, harness: Harness) -> int:
+    """Run the fail-open `--stdin-hook HARNESS` path.
 
     Any internal byor error is caught and reported on stderr but still exits 0,
     so a global-scope hook (which carries no shell `|| true` guard) cannot block
@@ -87,21 +114,21 @@ def _run_hook(args: argparse.Namespace, repo_root: Path, harness: Harness) -> in
     """
     # fail-open: a byor bug must never block the agent loop
     try:
-        return _hook_diagnostics(args, repo_root, harness)
-    except Exception as error:
+        return _hook_diagnostics(args, repo_root, harness=harness)
+    except FAIL_OPEN_ERRORS as error:
         # Still exit 0 (never block), but leave a breadcrumb so "byor couldn't
         # run" is distinguishable from "byor found nothing". Hook stderr is not
         # fed to the agent on exit 0, so this stays out of its context; `byor
         # doctor` surfaces the root cause (e.g. a missing rule directory).
-        print(
-            f"byor: agent-check skipped after an internal error: {error}",
-            file=sys.stderr,
-        )
+        sys.stderr.write(f"byor: agent-check skipped after an internal error: {error}\n")
         return 0
 
 
 def _hook_diagnostics(
-    args: argparse.Namespace, repo_root: Path, harness: Harness
+    args: argparse.Namespace,
+    repo_root: Path,
+    *,
+    harness: Harness,
 ) -> int:
     """Parse the payload, scan, and emit per harness.
 
@@ -119,18 +146,21 @@ def _hook_diagnostics(
         return 0
     scope = _resolve_scope(args, harness)
     scoped = _scoped_files(payload.files, scope)
-    diagnostics = _diagnostics(args, repo_root, scoped, scope, payload)
+    diagnostics = _diagnostics(repo_root, scoped, scope=scope, payload=payload)
     checks = load_effective_checks(repo_root, config_dir)
-    outcome = run_checks(checks, repo_root, scoped)
+    outcome = run_checks(checks, repo_root, files=scoped)
     for warning in outcome.warnings:
-        print(warning, file=sys.stderr)
+        sys.stderr.write(f"{warning}\n")
     concise = args.concise or global_config.output_concise
     rendered = _render_feedback(
-        diagnostics, outcome, concise, global_config.output_max_diagnostics
+        diagnostics,
+        outcome,
+        concise=concise,
+        limit=global_config.output_max_diagnostics,
     )
     stdout, exit_code = emit(harness, rendered)
     if stdout:
-        print(stdout)
+        sys.stdout.write(f"{stdout}\n")
     return exit_code
 
 
@@ -161,27 +191,29 @@ def _json_payload(
 def _render_feedback(
     diagnostics: list[Diagnostic],
     outcome: CheckOutcome,
+    *,
     concise: bool,
     limit: int | None,
 ) -> str:
-    """Combine ast-grep diagnostics and failing-check sections for the emitter."""
-    sections = render_diagnostics(diagnostics, concise, limit) + outcome.failures
+    sections = (
+        render_diagnostics(
+            diagnostics,
+            style="concise" if concise else "verbose",
+            limit=limit,
+        )
+        + outcome.failures
+    )
     return "\n".join(sections)
 
 
 def _has_any_rules(repo_root: Path) -> bool:
-    """Whether a scan could surface anything: repo rules or a global setup.
-
-    The cheap pre-check that keeps a global hook a near-instant no-op in a repo
-    that is neither byor-init'd nor covered by `~/sgconfig.yml`.
-    """
     return repo_config_path(repo_root).is_file() or home_sgconfig_path().is_file()
 
 
 def _diagnostics(
-    args: argparse.Namespace,
     repo_root: Path,
     files: list[Path],
+    *,
     scope: Scope,
     payload: EditPayload | None,
 ) -> list[Diagnostic]:
@@ -192,17 +224,17 @@ def _diagnostics(
     config = None if repo_config_path(repo_root).is_file() else home_sgconfig_path()
     config_dir = global_config_dir()
     executable = resolve_ast_grep(load_global_config(config_dir).ast_grep_command)
-    result = scan_files(executable, repo_root, files, config=config)
+    result = scan_files(executable, repo_root, files=files, config=config)
     if result.warnings:
-        print(result.warnings, file=sys.stderr)
+        sys.stderr.write(f"{result.warnings}\n")
     matches = result.matches
     if scope != "file":
-        matches = _matches_in_scope(matches, repo_root, scope, payload)
+        matches = _matches_in_scope(matches, repo_root, scope=scope, payload=payload)
     return collect_diagnostics(matches, repo_root)
 
 
 def _resolve_scope(args: argparse.Namespace, harness: Harness | None) -> Scope:
-    """The diagnostic scope: explicit flag wins, else per mode.
+    """Resolve the diagnostic scope from explicit flags or mode.
 
     Hook mode defaults to edit (payload contents locate the lines); `--files`
     defaults to file. The fallback chain edit -> diff -> file is applied later,
@@ -211,9 +243,8 @@ def _resolve_scope(args: argparse.Namespace, harness: Harness | None) -> Scope:
     scope: str | None = args.scope
     if scope == "edit":
         if harness is None:
-            raise ByorError(
-                "--scope edit needs a hook payload; use --stdin-hook, or --scope diff"
-            )
+            msg = "--scope edit needs a hook payload; use --stdin-hook, or --scope diff"
+            raise ByorError(msg)
         return "edit"
     if scope == "diff":
         return "diff"
@@ -225,10 +256,11 @@ def _resolve_scope(args: argparse.Namespace, harness: Harness | None) -> Scope:
 def _matches_in_scope(
     matches: list[ScanMatch],
     repo_root: Path,
+    *,
     scope: Scope,
     payload: EditPayload | None,
 ) -> list[ScanMatch]:
-    """Matches overlapping their file's in-scope line ranges.
+    """Filter matches to their file's in-scope line ranges.
 
     A `None` range means the file could not be scoped (untracked, non-git,
     unborn HEAD, or — under edit scope — edit contents that could not be
@@ -240,15 +272,24 @@ def _matches_in_scope(
     for match in matches:
         if match.file not in ranges_by_file:
             file = (repo_root / match.file).resolve()
-            ranges_by_file[match.file] = _file_ranges(repo_root, file, scope, payload)
+            ranges_by_file[match.file] = _file_ranges(
+                repo_root,
+                file,
+                scope=scope,
+                payload=payload,
+            )
         ranges = ranges_by_file[match.file]
-        if ranges is None or overlaps(match.line, match.end_line, ranges):
+        if ranges is None or overlaps(match.line, match.end_line, ranges=ranges):
             in_scope.append(match)
     return in_scope
 
 
 def _file_ranges(
-    repo_root: Path, file: Path, scope: Scope, payload: EditPayload | None
+    repo_root: Path,
+    file: Path,
+    *,
+    scope: Scope,
+    payload: EditPayload | None,
 ) -> list[Range] | None:
     """In-scope line ranges for one file under the active scope.
 
@@ -271,12 +312,6 @@ def _edit_ranges_for(file: Path, payload: EditPayload) -> list[Range] | None:
 
 
 def _resolved_payload(payload: EditPayload, repo_root: Path) -> EditPayload:
-    """Resolve the payload's paths so they match the scanned files' keys.
-
-    A relative path from the harness is taken against the repo root, where the
-    agent runs, not the process cwd, so it lines up with the scanned files.
-    """
-
     def resolve(path: Path) -> Path:
         return path.resolve() if path.is_absolute() else (repo_root / path).resolve()
 
@@ -287,7 +322,6 @@ def _resolved_payload(payload: EditPayload, repo_root: Path) -> EditPayload:
 
 
 def collect_diagnostics(matches: list[ScanMatch], repo_root: Path) -> list[Diagnostic]:
-    """1-based diagnostics grouped by file, sorted by line then rule ID."""
     diagnostics = [
         Diagnostic(
             file=display_path(Path(match.file), repo_root),
@@ -306,18 +340,16 @@ def collect_diagnostics(matches: list[ScanMatch], repo_root: Path) -> list[Diagn
 
 
 def render_diagnostics(
-    diagnostics: list[Diagnostic], concise: bool = False, limit: int | None = None
+    diagnostics: list[Diagnostic],
+    *,
+    style: DiagnosticStyle = "verbose",
+    limit: int | None = None,
 ) -> list[str]:
-    """The rendered text output; empty when there are no diagnostics.
-
-    `limit` caps how many diagnostics are rendered; the summary still counts
-    them all and a trailing note reports the remainder. None renders every one.
-    """
     if not diagnostics:
         return []
     header = [_summary_line(diagnostics)]
     shown = diagnostics if limit is None else diagnostics[:limit]
-    body = _render_concise(shown) if concise else _render_verbose(shown)
+    body = _render_concise(shown) if style == "concise" else _render_verbose(shown)
     hidden = len(diagnostics) - len(shown)
     if hidden:
         body += ["", f"... and {hidden} more not shown (raise output.max_diagnostics)."]
@@ -348,7 +380,6 @@ def _render_verbose(diagnostics: list[Diagnostic]) -> list[str]:
 
 
 def _render_concise(diagnostics: list[Diagnostic]) -> list[str]:
-    """One location line plus the fix instruction; no code block or ceremony."""
     lines: list[str] = []
     for diagnostic in diagnostics:
         location = f"{diagnostic.file}:{diagnostic.line}:{diagnostic.column}"
@@ -361,11 +392,7 @@ def _render_concise(diagnostics: list[Diagnostic]) -> list[str]:
 
 
 def _render_code(code: str, start_line: int) -> list[str]:
-    """Render exact source indentation behind a clearly separate line gutter."""
     source_lines = code.splitlines()
     width = len(str(start_line + len(source_lines) - 1))
-    numbered = [
-        f"  {line_number:>{width}} | {line}"
-        for line_number, line in enumerate(source_lines, start=start_line)
-    ]
+    numbered = [f"  {line_number:>{width}} | {line}" for line_number, line in enumerate(source_lines, start=start_line)]
     return ["Code:", *numbered]

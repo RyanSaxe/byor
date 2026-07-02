@@ -1,28 +1,31 @@
-"""A byor-free CI workflow that gates on the committed rules and checks.
+"""Render GitHub Actions enforcement for BYOR.
 
-The generated GitHub Actions workflow runs `ast-grep scan --error` and each
-committed repo check directly, so a fresh clone enforces the gate with no byor
-installed. byor owns the workflow file (marker header), so it is regenerated
-wholesale whenever the committed rules or checks change.
+The CI scaffold writes a managed workflow that installs tooling and runs the same BYOR gate used
+locally. Keeping workflow text generated from checks ensures repository enforcement tracks
+configuration changes.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from byor.config import CheckDef
 from byor.io.fsio import MANAGED_NOTICE, write_marked_text
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from byor.config import CheckDef
+
+__all__ = ("write_ci_workflow",)
 
 WORKFLOW_RELPATH = ".github/workflows/byor-gate.yml"
 
 GATE_MARKER = f"# {MANAGED_NOTICE}"
+AST_GREP_ENTRY = "uvx --from ast-grep-cli ast-grep scan --error"
 
 
 def write_ci_workflow(repo_root: Path, checks: list[CheckDef]) -> list[str]:
-    """Converge the CI workflow to gate on project rules and `checks`."""
-    result = write_marked_text(
-        repo_root / WORKFLOW_RELPATH, _workflow_yaml(checks), GATE_MARKER
-    )
+    result = write_marked_text(repo_root / WORKFLOW_RELPATH, _workflow_yaml(checks), marker=GATE_MARKER)
     if result == "written":
         return [f"Wrote {WORKFLOW_RELPATH}"]
     return []
@@ -31,8 +34,10 @@ def write_ci_workflow(repo_root: Path, checks: list[CheckDef]) -> list[str]:
 def _workflow_yaml(checks: list[CheckDef]) -> str:
     steps = [
         "      - uses: actions/checkout@v4",
-        "      - run: npm install -g @ast-grep/cli",
-        "      - run: ast-grep scan --error",
+        "      - uses: astral-sh/setup-uv@v6",
+        "        with:",
+        "          enable-cache: true",
+        f"      - run: {AST_GREP_ENTRY}",
     ]
     steps.extend(f"      - run: {check.run}" for check in checks)
     return (

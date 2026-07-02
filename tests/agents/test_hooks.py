@@ -1,4 +1,9 @@
-"""AI agent adapters and the `byor hook` / `byor install` commands (global)."""
+"""Exercise agent hook installation flows.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
 
 import json
 from pathlib import Path
@@ -13,12 +18,10 @@ SETTINGS_RELPATH = Path(".claude") / "settings.json"
 
 
 def claude_settings(home: Path) -> Path:
-    """The global claude settings the hook lands in (home is sandboxed in tests)."""
     return home / SETTINGS_RELPATH
 
 
 def claude_command(home: Path) -> str:
-    """The single PostToolUse command byor installed in the global claude settings."""
     commands = [
         command
         for command in commands_in(json.loads(claude_settings(home).read_text()))
@@ -29,7 +32,7 @@ def claude_command(home: Path) -> str:
 
 
 def test_install_writes_an_unguarded_global_hook(home: Path) -> None:
-    install_agents(home, "claude-code")
+    install_agents("claude-code")
 
     command = claude_command(home)
     assert f"{BYOR_COMMAND_SIGNATURE} claude-code" in command
@@ -44,7 +47,7 @@ def test_install_merges_into_existing_global_settings(home: Path) -> None:
     settings.parent.mkdir(parents=True)
     settings.write_text(json.dumps({"model": "opus", "hooks": {"PreToolUse": []}}))
 
-    install_agents(home, "claude-code")
+    install_agents("claude-code")
 
     data = json.loads(settings.read_text())
     assert data["model"] == "opus"
@@ -52,7 +55,7 @@ def test_install_merges_into_existing_global_settings(home: Path) -> None:
     assert BYOR_COMMAND_SIGNATURE in json.dumps(data["hooks"]["PostToolUse"])
 
     snapshot = settings.read_text()
-    install_agents(home, "claude-code")
+    install_agents("claude-code")
     assert settings.read_text() == snapshot
 
 
@@ -65,14 +68,12 @@ def test_outdated_claude_settings_hook_is_updated(home: Path) -> None:
     }
     settings.write_text(json.dumps({"hooks": {"PostToolUse": [stale]}}))
 
-    install_agents(home, "claude-code")
+    install_agents("claude-code")
 
     assert f"{BYOR_COMMAND_SIGNATURE} claude-code" in claude_command(home)
 
 
-def test_invalid_claude_settings_fail_cleanly(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_invalid_claude_settings_fail_cleanly(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     settings = claude_settings(home)
     settings.parent.mkdir(parents=True)
     settings.write_text("{not json")
@@ -91,25 +92,43 @@ def test_hook_install_is_global_and_records_the_agent(home: Path) -> None:
     assert global_agents() == ["codex"]
 
 
-def test_codex_install_prints_the_trust_step(
-    home: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+@pytest.mark.usefixtures("home")
+def test_codex_install_prints_the_trust_step(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["hook", "install", "--agent", "codex"]) == 0
 
     assert "/hooks" in capsys.readouterr().out
 
 
-def test_doctor_flags_a_recorded_harness_whose_hook_was_removed(
+def test_doctor_self_heals_a_recorded_harness_whose_hook_was_removed(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home)
-    install_agents(home, "codex")
-    (home / ".codex" / "hooks.json").unlink()
+    install_agents("codex")
+    hook = home / ".codex" / "hooks.json"
+    hook.unlink()
     capsys.readouterr()
 
-    assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
+    assert main(["doctor", "--repo", str(repo), "--quick"]) == 0
 
-    assert "the codex hook is not installed" in capsys.readouterr().out
+    assert "agent_files" in capsys.readouterr().out
+    assert hook.is_file()
+
+
+def test_doctor_self_heals_a_recorded_harness_with_a_stale_matcher(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    install_agents("codex")
+    hook = home / ".codex" / "hooks.json"
+    data = json.loads(hook.read_text())
+    data["hooks"]["PostToolUse"][0]["matcher"] = "Edit|Write"
+    hook.write_text(json.dumps(data))
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo), "--quick"]) == 0
+
+    healed = json.loads(hook.read_text())
+    assert healed["hooks"]["PostToolUse"][0]["matcher"] == "apply_patch|Edit|Write"
 
 
 def test_hook_uninstall_removes_the_hook_and_record(home: Path) -> None:

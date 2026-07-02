@@ -1,7 +1,13 @@
-from importlib.metadata import version
+"""Exercise the BYOR command-line entry point.
+
+These tests document the public behavior expected from the surrounding package area. Keeping that
+intent at module scope helps the dogfooding contract distinguish purposeful coverage from incidental
+implementation checks.
+"""
 
 import pytest
 
+from byor import __version__
 from byor.cli import build_parser, main
 
 
@@ -18,7 +24,7 @@ def test_version_prints_package_version(capsys: pytest.CaptureFixture[str]) -> N
         main(["--version"])
 
     assert excinfo.value.code == 0
-    assert capsys.readouterr().out.strip() == f"byor {version('byor')}"
+    assert capsys.readouterr().out.strip() == f"byor {__version__}"
 
 
 def test_unknown_command_exits_nonzero() -> None:

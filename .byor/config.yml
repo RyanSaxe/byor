@@ -6,4 +6,51 @@ paths:
   project_rules: .byor/rules/project
   personal_local_rules: .byor/rules/personal/local
   personal_global_rules: .byor/rules/personal/global
-checks: []
+  personal_packages_rules: .byor/rules/personal/packages
+checks:
+  - name: ruff
+    extensions:
+      - py
+      - pyi
+    run: uv run .byor/scripts/ruff.sh
+    tags:
+      - greenfield
+      - lint
+      - format
+  - name: ty
+    extensions:
+      - py
+      - pyi
+    run: uv run ty check --output-format concise --no-progress --color never --error all
+    tags:
+      - greenfield
+      - typing
+      - strict
+  - name: no-suppression-comments
+    extensions:
+      - py
+      - pyi
+    run: uv run .byor/scripts/no-suppression-comments.py
+    tags:
+      - greenfield
+      - suppression
+      - style-guide
+  - name: module-contract
+    extensions:
+      - py
+      - pyi
+    run: uv run .byor/scripts/module-contract.py
+    tags:
+      - greenfield
+      - documentation
+      - api
+  - name: no-thin-docstrings
+    extensions:
+      - py
+      - pyi
+    run: uv run .byor/scripts/no-thin-docstrings.py
+    tags:
+      - greenfield
+      - documentation
+      - style-guide
+gate: true

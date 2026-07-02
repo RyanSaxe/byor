@@ -1,16 +1,14 @@
-"""Distribute a blocking gate: promote everything, then emit byor-free artifacts.
+"""Generate repository gate scaffolding from BYOR configuration.
 
-A shared gate first vendors every effective rule and check into tracked config
-(project rules and .byor/config.yml), rewriting any check that points at a
-`~/` script to a copy committed under .byor/scripts/. The emitted
-.pre-commit-config.yaml and CI workflow then run `ast-grep scan --error` plus
-those checks directly — no byor, no `~/.config/byor`. A private gate commits
-nothing and installs a local pre-commit shim instead.
+Gate installation vendors project rules and check scripts into committed pre-commit and CI files.
+The module keeps generated enforcement reproducible so users can dogfood BYOR locally and in GitHub
+Actions.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import shutil
 from dataclasses import replace
@@ -29,11 +27,21 @@ from byor.scaffold.githooks import install_precommit_shim
 from byor.scaffold.precommit import write_precommit_config
 from byor.scan.checks import load_effective_checks
 
+__all__ = (
+    "heal_gate",
+    "install_gate",
+    "promote_everything",
+    "regenerate_gate",
+)
+
 VENDORED_SCRIPTS_DIR = ".byor/scripts"
+HOME_SCRIPT_PATTERN = re.compile(
+    r"(?P<path>(?:\$\{HOME\}|\$HOME|~)/\.config/byor/scripts/"
+    r"(?P<name>[A-Za-z0-9_.-]+))"
+)
 
 
-def install_gate(repo_root: Path, config_dir: Path, private: bool) -> list[str]:
-    """Install the team gate; private repos get only a local, uncommitted shim."""
+def install_gate(repo_root: Path, config_dir: Path, *, private: bool) -> list[str]:
     if private:
         return install_precommit_shim(repo_root)
     messages = promote_everything(repo_root, config_dir)
@@ -44,19 +52,11 @@ def install_gate(repo_root: Path, config_dir: Path, private: bool) -> list[str]:
 
 
 def regenerate_gate(repo_root: Path) -> list[str]:
-    """(Re)write the byor-free pre-commit and CI artifacts from the committed config.
-
-    Both are byor-owned build products: `write_marked_text` overwrites them when
-    they carry byor's marker and leaves a user-owned pre-commit config alone.
-    """
     checks = load_repo_config(repo_root).checks
-    return write_ci_workflow(repo_root, checks) + write_precommit_config(
-        repo_root, checks
-    )
+    return write_ci_workflow(repo_root, checks) + write_precommit_config(repo_root, checks)
 
 
 def heal_gate(repo_root: Path) -> list[str]:
-    """Keep a gated repo's artifacts current; a no-op without an initialized gate."""
     if not repo_config_path(repo_root).is_file():
         return []
     if not load_repo_config(repo_root).gate:
@@ -73,8 +73,8 @@ def promote_everything(repo_root: Path, config_dir: Path) -> list[str]:
     """
     paths = load_repo_config(repo_root).paths
     project_dir = repo_root / paths.project_rules
-    rules = _copy_mirror(project_dir, repo_root / paths.personal_global_rules, False)
-    rules += _copy_mirror(project_dir, repo_root / paths.personal_packages_rules, True)
+    rules = _copy_mirror(project_dir, repo_root / paths.personal_global_rules, strip_package=False)
+    rules += _copy_mirror(project_dir, repo_root / paths.personal_packages_rules, strip_package=True)
 
     repo_config = load_repo_config(repo_root)
     names = {check.name for check in repo_config.checks}
@@ -90,17 +90,10 @@ def promote_everything(repo_root: Path, config_dir: Path) -> list[str]:
     return [f"Promoted {rules} rules and {promoted_checks} checks into tracked config"]
 
 
-def _copy_mirror(project_dir: Path, mirror_dir: Path, strip_package: bool) -> int:
-    """Copy each mirrored rule into project rules; return how many were written.
-
-    Package copies live under `<package>/...`; that leading segment is dropped so
-    the rule lands at the same path a `byor promote --from package` would use.
-    """
+def _copy_mirror(project_dir: Path, mirror_dir: Path, *, strip_package: bool) -> int:
     written = 0
     for relpath, content in mirror_contents(mirror_dir).items():
-        dest_rel = (
-            relpath.split("/", 1)[1] if strip_package and "/" in relpath else relpath
-        )
+        dest_rel = relpath.split("/", 1)[1] if strip_package and "/" in relpath else relpath
         destination = project_dir / dest_rel
         if not destination.exists():
             write_text_atomic(destination, content)
@@ -109,27 +102,43 @@ def _copy_mirror(project_dir: Path, mirror_dir: Path, strip_package: bool) -> in
 
 
 def _vendor_check(repo_root: Path, check: CheckDef) -> CheckDef:
-    """Copy any `~/` script the check runs into the repo and repoint `run` at it.
-
-    A check whose command lives under the home directory cannot run in CI or on
-    a teammate's machine; vendoring the script keeps the committed gate portable.
-    """
     tokens = shlex.split(check.run)
     rewritten: list[str] = []
     changed = False
     for token in tokens:
-        source = Path(os.path.expanduser(token)) if token.startswith("~/") else None
+        source = Path(token).expanduser() if token.startswith("~/") else None
         if source is not None and source.is_file():
-            rewritten.append(_vendor_script(repo_root, source))
+            rewritten.append(_vendor_script(repo_root, source, seen=set()))
             changed = True
         else:
             rewritten.append(token)
     return replace(check, run=shlex.join(rewritten)) if changed else check
 
 
-def _vendor_script(repo_root: Path, source: Path) -> str:
+def _vendor_script(repo_root: Path, source: Path, *, seen: set[Path]) -> str:
     destination = repo_root / VENDORED_SCRIPTS_DIR / source.name
     destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(source, destination)
+    resolved = source.resolve()
+    if resolved in seen:
+        return f"{VENDORED_SCRIPTS_DIR}/{source.name}"
+    seen.add(resolved)
+    try:
+        content = source.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        shutil.copyfile(source, destination)
+    else:
+        content = _rewrite_vendored_script_content(repo_root, content, seen=seen)
+        write_text_atomic(destination, content)
     destination.chmod(destination.stat().st_mode | 0o111)
     return f"{VENDORED_SCRIPTS_DIR}/{source.name}"
+
+
+def _rewrite_vendored_script_content(repo_root: Path, content: str, *, seen: set[Path]) -> str:
+    def replace_match(match: re.Match[str]) -> str:
+        raw_path = match.group("path")
+        source = Path(os.path.expandvars(raw_path)).expanduser()
+        if not source.is_file():
+            return raw_path
+        return _vendor_script(repo_root, source, seen=seen)
+
+    return HOME_SCRIPT_PATTERN.sub(replace_match, content)

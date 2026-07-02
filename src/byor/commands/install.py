@@ -1,14 +1,13 @@
-"""`byor install`: one-time, machine-level registration of byor's AI integrations.
+"""Install BYOR into the user environment.
 
-Sets up the global ast-grep config (`~/sgconfig.yml` -> `~/.config/byor/rules`),
-writes the rule-capture skill and the chosen harnesses' post-edit hooks/plugins
-to their global locations, and records the chosen agents in the global config so
-`doctor` can verify them and self-heal keeps them current.
+The install command prepares global rule discovery, records selected agents, and writes managed
+integration files. It is intentionally separate from repository initialization because machine-level
+setup and project setup change different state.
 """
 
 from __future__ import annotations
 
-import argparse
+from typing import TYPE_CHECKING
 
 from byor.agents.install import AGENT_CHOICES, install_agent
 from byor.commands.prompts import ask, numbers_to_choices, print_options
@@ -19,8 +18,14 @@ from byor.config import (
     save_global_config,
 )
 from byor.errors import ConfigError
+from byor.io.output import write_line, write_lines
 from byor.io.paths import global_config_dir
 from byor.scaffold.sgconfig import ensure_home_sgconfig
+
+if TYPE_CHECKING:
+    import argparse
+
+__all__ = ("run_install",)
 
 
 def run_install(args: argparse.Namespace) -> int:
@@ -41,18 +46,13 @@ def run_install(args: argparse.Namespace) -> int:
             config.agents.append(agent)
     save_global_config(config_dir, config)
 
-    for message in messages:
-        print(message)
-    print("byor is installed. Run `byor init` in a repo to add project rules.")
-    print(
-        'In your agent, say "set up byor" to import preferences from your '
-        "existing CLAUDE.md / AGENTS.md."
-    )
+    write_lines(messages)
+    write_line("byor is installed. Run `byor init` in a repo to add project rules.")
+    write_line('In your agent, say "set up byor" to import preferences from your existing CLAUDE.md / AGENTS.md.')
     return 0
 
 
 def _resolve_agents(args: argparse.Namespace, config: GlobalConfig) -> list[str]:
-    """The agents to install: explicit flag, else prompt, else the recorded set."""
     if args.agents is not None:
         return _parse_agents(args.agents)
     if not args.non_interactive:
@@ -61,15 +61,11 @@ def _resolve_agents(args: argparse.Namespace, config: GlobalConfig) -> list[str]
 
 
 def _parse_agents(raw: str) -> list[str]:
-    agents = list(
-        dict.fromkeys(item.strip() for item in raw.split(",") if item.strip())
-    )
+    agents = list(dict.fromkeys(item.strip() for item in raw.split(",") if item.strip()))
     unknown = [agent for agent in agents if agent not in AGENT_CHOICES]
     if unknown:
-        raise ConfigError(
-            f"Unknown agents: {', '.join(unknown)}. "
-            f"Choose from: {', '.join(AGENT_CHOICES)}."
-        )
+        msg = f"Unknown agents: {', '.join(unknown)}. Choose from: {', '.join(AGENT_CHOICES)}."
+        raise ConfigError(msg)
     return agents
 
 
@@ -81,14 +77,9 @@ def _prompt_agents(default: list[str]) -> list[str]:
         agents = numbers_to_choices(raw, AGENT_CHOICES)
         if agents is not None:
             return agents
-        print(f"Please enter numbers between 1 and {len(AGENT_CHOICES)}.")
+        write_line(f"Please enter numbers between 1 and {len(AGENT_CHOICES)}.")
 
 
 def _default_agent_numbers(default: list[str]) -> str:
-    """The comma-separated prompt default seeded from the recorded agents."""
-    numbers = [
-        str(AGENT_CHOICES.index(agent) + 1)
-        for agent in default
-        if agent in AGENT_CHOICES
-    ]
+    numbers = [str(AGENT_CHOICES.index(agent) + 1) for agent in default if agent in AGENT_CHOICES]
     return ",".join(numbers) if numbers else "1"

@@ -1,4 +1,9 @@
-"""Filesystem location resolution: the global config dir and the repo root."""
+"""Resolve BYOR paths and display names.
+
+Path handling crosses repository roots, user configuration directories, and safe relative display
+paths. Centralizing those helpers avoids ad hoc path arithmetic in commands and keeps repository-
+bound checks defensive.
+"""
 
 from __future__ import annotations
 
@@ -7,21 +12,24 @@ from pathlib import Path
 
 from byor.errors import ConfigError
 
+__all__ = (
+    "display_path",
+    "global_config_dir",
+    "home_sgconfig_path",
+    "resolve_repo_root",
+    "resolve_within",
+)
+
 
 def resolve_within(root: Path, candidate: Path) -> Path:
-    """Resolve `candidate` and require it to stay within `root`.
-
-    Confines config-supplied paths (e.g. a repo's `personal_global_rules`) so
-    byor never writes to or deletes from outside the repository it operates on.
-    """
     resolved = candidate.resolve()
     if not resolved.is_relative_to(root.resolve()):
-        raise ConfigError(f"{candidate} resolves outside {root}")
+        msg = f"{candidate} resolves outside {root}"
+        raise ConfigError(msg)
     return resolved
 
 
 def global_config_dir() -> Path:
-    """$XDG_CONFIG_HOME/byor when set, else ~/.config/byor, on every platform."""
     xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
     if xdg_config_home:
         return Path(xdg_config_home) / "byor"
@@ -39,7 +47,6 @@ def home_sgconfig_path(home: Path | None = None) -> Path:
 
 
 def display_path(path: Path, repo_root: Path) -> str:
-    """Repo-relative POSIX for paths inside the repo, as given otherwise."""
     try:
         return path.relative_to(repo_root).as_posix()
     except ValueError:

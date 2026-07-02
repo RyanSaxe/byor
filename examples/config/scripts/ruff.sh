@@ -2,24 +2,32 @@
 # A byor `check` script (wired in config.yml). The pattern it demonstrates:
 # autofix what is safe, tell the agent exactly what changed, then report only
 # the irreducible remainder — so the agent acts on real problems, not noise.
-# byor appends the in-scope files as arguments; with none, there is nothing to do.
-[[ $# -eq 0 ]] && exit 0
-
 # The agent reads this output; keep it plain text, never ANSI color.
 export NO_COLOR=1
 unset FORCE_COLOR CLICOLOR_FORCE
 
+files=("$@")
+if (( ${#files[@]} == 0 )); then
+  files=()
+  if git_root=$(git rev-parse --show-toplevel 2>/dev/null); then
+    while IFS= read -r file; do
+      files+=("$git_root/$file")
+    done < <(git -C "$git_root" ls-files -co --exclude-standard -- '*.py' '*.pyi')
+  fi
+fi
+[[ ${#files[@]} -eq 0 ]] && exit 0
+
 # Apply lint fixes, capturing a summary of what was fixed (--show-fixes).
-fixed=$(uvx ruff check --fix-only --show-fixes "$@" 2>/dev/null)
+fixed=$(uvx ruff check --fix-only --show-fixes "${files[@]}" 2>/dev/null)
 
 # Apply formatting; ruff reports "reformatted" only when it rewrote something.
-format_out=$(uvx ruff format "$@" 2>&1)
+format_out=$(uvx ruff format "${files[@]}" 2>&1)
 reformatted=""
 [[ "$format_out" == *reformatted* ]] && reformatted="ruff format reformatted the file(s)."
 
 # What ruff could not fix — the only thing the agent must act on. --quiet prints
 # the concise violations and nothing else (no "All checks passed!" when clean).
-remaining=$(uvx ruff check --quiet --output-format concise "$@" 2>/dev/null)
+remaining=$(uvx ruff check --quiet --output-format concise "${files[@]}" 2>/dev/null)
 
 report=""
 [[ -n "$fixed" ]] && report+="Autofixed by ruff (no action needed):"$'\n'"$fixed"$'\n'

@@ -34,6 +34,11 @@ A byor check runs your command on the in-scope files **without a shell** (so no
 script:
 
 - accepts a list of file paths as its arguments;
+- treats an empty argument list as "scan the whole repository", using the
+  repository's normal ignored-file rules (for git repos, `git ls-files -co
+  --exclude-standard` is the right shape). This is required because CI and
+  generated gates may run checks without filenames, while hooks and agent
+  feedback usually pass a narrowed file list;
 - exits nonzero, with concise plain-text output, when any file still violates —
   that output is fed verbatim into the agent's context, so keep it short and
   free of ANSI color;
