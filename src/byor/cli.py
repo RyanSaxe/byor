@@ -18,6 +18,7 @@ from byor.agents.harness import HARNESS_CHOICES
 from byor.agents.install import AGENT_CHOICES, run_hook
 from byor.commands.doctor import run_doctor
 from byor.commands.gate import heal_gate
+from byor.commands.heal import heal_global, heal_repo
 from byor.commands.init import run_init
 from byor.commands.install import run_install
 from byor.commands.listing import run_list
@@ -32,7 +33,7 @@ from byor.commands.rules import (
 )
 from byor.errors import ByorError
 from byor.io.paths import global_config_dir, resolve_repo_root
-from byor.rules.sync import heal_global, heal_repo, run_sync
+from byor.rules.sync import run_sync
 from byor.scan.agent_check import run_agent_check
 
 if TYPE_CHECKING:
