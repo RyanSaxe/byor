@@ -19,6 +19,7 @@ from support import (
     install_package,
     make_repo,
     repo_with_agents,
+    write_global_check,
     write_package_rule,
     write_rule,
 )
@@ -337,6 +338,51 @@ def test_doctor_flags_stale_gate_files(home: Path, capsys: pytest.CaptureFixture
     # Doctor is read-only: the gate artifacts still lack the new check.
     assert "ruff" not in (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
     assert "ruff" not in (repo / ".pre-commit-config.yaml").read_text()
+
+
+def gated_script_repo(home: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    (home / "fix.sh").write_text("#!/bin/sh\necho hi\n")
+    write_global_check("fixer", "~/fix.sh")
+    repo = home / "gated"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+    return repo
+
+
+def test_doctor_flags_a_missing_vendored_script(
+    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = gated_script_repo(home, monkeypatch)
+    (repo / ".byor" / "scripts" / "fix.sh").unlink()
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  vendored_scripts" in out
+    assert ".byor/scripts/fix.sh is missing" in out
+    # Doctor is read-only: the script is not restored.
+    assert not (repo / ".byor" / "scripts" / "fix.sh").exists()
+
+
+def test_doctor_flags_a_drifted_vendored_script(
+    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = gated_script_repo(home, monkeypatch)
+    (home / "fix.sh").write_text("#!/bin/sh\necho changed\n")
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  vendored_scripts" in out
+    assert ".byor/scripts/fix.sh drifted from ~/fix.sh" in out
+    assert "run `byor init --gate`" in out
+    # Doctor is read-only: the vendored copy still has the old body.
+    assert "echo hi" in (repo / ".byor" / "scripts" / "fix.sh").read_text()
 
 
 def test_doctor_flags_a_missing_packages_visibility_file(home: Path) -> None:

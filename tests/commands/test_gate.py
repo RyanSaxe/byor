@@ -134,7 +134,12 @@ def test_gate_rewrites_vendored_home_script_dependencies(home: Path, monkeypatch
     helper = repo / ".byor" / "scripts" / "helper.py"
     assert runner.is_file()
     assert helper.is_file()
-    assert runner.read_text() == ('#!/usr/bin/env zsh\nexec ".byor/scripts/helper.py" "$@"\n')
+    assert runner.read_text() == (
+        "#!/usr/bin/env zsh\n"
+        "# Vendored by BYOR from ~/.config/byor/scripts/runner.sh. "
+        "Managed by BYOR. Manual edits may be overwritten.\n"
+        'exec ".byor/scripts/helper.py" "$@"\n'
+    )
 
 
 def test_gate_vendors_subdirectory_script_references(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -150,7 +155,62 @@ def test_gate_vendors_subdirectory_script_references(home: Path, monkeypatch: py
 
     runner = repo / ".byor" / "scripts" / "runner.sh"
     assert (repo / ".byor" / "scripts" / "sub" / "tool.py").is_file()
-    assert runner.read_text() == ('#!/usr/bin/env zsh\nexec ".byor/scripts/sub/tool.py" "$@"\n')
+    assert runner.read_text() == (
+        "#!/usr/bin/env zsh\n"
+        "# Vendored by BYOR from ~/.config/byor/scripts/runner.sh. "
+        "Managed by BYOR. Manual edits may be overwritten.\n"
+        'exec ".byor/scripts/sub/tool.py" "$@"\n'
+    )
+
+
+# A gate repo whose only extra check runs a vendored copy of ~/fix.sh.
+def script_check_repo(home: Path, monkeypatch: pytest.MonkeyPatch, *, content: str = "#!/bin/sh\necho one\n") -> Path:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    (home / "fix.sh").write_text(content)
+    write_global_check("fixer", "~/fix.sh")
+    return gate_repo(home)
+
+
+def test_gate_revendors_a_script_when_its_source_changes(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = script_check_repo(home, monkeypatch)
+    vendored = repo / ".byor" / "scripts" / "fix.sh"
+    assert "Vendored by BYOR from ~/fix.sh" in vendored.read_text()
+    assert "echo one" in vendored.read_text()
+
+    (home / "fix.sh").write_text("#!/bin/sh\necho two\n")
+    assert main(["list", "--repo", str(repo)]) == 0  # any command self-heals the gate
+
+    text = vendored.read_text()
+    assert "echo two" in text
+    assert "Vendored by BYOR from ~/fix.sh" in text
+
+
+def test_gate_leaves_a_vendored_script_alone_when_its_source_is_missing(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = script_check_repo(home, monkeypatch)
+    vendored = repo / ".byor" / "scripts" / "fix.sh"
+    (home / "fix.sh").unlink()  # a teammate's machine never has the source
+
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    assert "echo one" in vendored.read_text()
+
+
+def test_gate_never_rewrites_a_vendored_script_whose_marker_was_removed(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = script_check_repo(home, monkeypatch)
+    vendored = repo / ".byor" / "scripts" / "fix.sh"
+    owned = "#!/bin/sh\necho mine\n"
+    vendored.write_text(owned)  # stripping the marker takes ownership
+    (home / "fix.sh").write_text("#!/bin/sh\necho theirs\n")
+
+    assert main(["list", "--repo", str(repo)]) == 0
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+
+    assert vendored.read_text() == owned
 
 
 def test_gate_refuses_two_scripts_vendoring_to_the_same_name(

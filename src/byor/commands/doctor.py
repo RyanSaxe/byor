@@ -15,7 +15,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from byor.agents.install import agent_file_problems
-from byor.commands.gate import stale_gate_files
+from byor.commands.gate import (
+    referenced_vendored_scripts,
+    stale_gate_files,
+    vendored_script_problems,
+)
 from byor.config import (
     GlobalConfig,
     RepoConfig,
@@ -141,6 +145,9 @@ def _repo_checks(
         gate_check = _gate_check(repo_root, repo_config)
         if gate_check is not None:
             checks.append(gate_check)
+        vendored_check = _vendored_scripts_check(repo_root, repo_config)
+        if vendored_check is not None:
+            checks.append(vendored_check)
     extra = _extra_checks_check(repo_root, repo_config, global_config=global_config)
     if extra is not None:
         checks.append(extra)
@@ -359,6 +366,21 @@ def _gate_check(repo_root: Path, repo_config: RepoConfig) -> Check | None:
             message=f"gate files are stale: {', '.join(stale)}; run `byor init --gate`",
         )
     return Check(id="gate_files", ok=True, message="gate files match the configured checks")
+
+
+def _vendored_scripts_check(repo_root: Path, repo_config: RepoConfig) -> Check | None:
+    relpaths = referenced_vendored_scripts(repo_config.checks)
+    if not relpaths:
+        return None
+    problems = [problem for relpath in relpaths for problem in vendored_script_problems(repo_root, relpath)]
+    if problems:
+        return Check(id="vendored_scripts", ok=False, message="; ".join(problems))
+    noun = "script" if len(relpaths) == 1 else "scripts"
+    return Check(
+        id="vendored_scripts",
+        ok=True,
+        message=f"{len(relpaths)} vendored check {noun} present and current",
+    )
 
 
 def _registry_check(config_dir: Path, global_config: GlobalConfig) -> Check:
