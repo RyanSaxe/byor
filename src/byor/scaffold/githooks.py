@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from byor.errors import ConfigError
-from byor.io.fsio import MANAGED_NOTICE, write_marked_text
+from byor.io.fsio import MANAGED_NOTICE, marked_text_status, write_marked_text
 from byor.io.gitio import git_output
 
 if TYPE_CHECKING:
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 __all__ = (
     "install_git_shims",
     "install_precommit_shim",
+    "shim_problems",
 )
 
 SHIM_HOOK_NAMES = ("post-merge", "post-checkout")
@@ -78,6 +79,40 @@ def install_precommit_shim(repo_root: Path) -> list[str]:
         ]
     hook = _hooks_dir(repo_root) / "pre-commit"
     return _install_shim(hook, PRECOMMIT_CONTENT, line=PRECOMMIT_LINE)
+
+
+def shim_problems(repo_root: Path) -> list[str] | None:
+    """Return read-only findings for installed hook shims, or None when unverifiable.
+
+    Repo config does not record the shim opt-ins, so a repo with no marked hook
+    is indistinguishable from one that never installed them: None means there is
+    nothing to verify (no .git, core.hooksPath in charge, or no marked shim).
+    A marked sync shim implies its post-merge/post-checkout partner, so a deleted
+    partner is a finding; the standalone pre-commit shim can only be checked for
+    drift. Unmarked hooks are user-owned and never compared.
+    """
+    if not (repo_root / ".git").exists():
+        return None
+    if git_output(repo_root, "config", "--get", "core.hooksPath") is not None:
+        return None
+    hooks_dir = _hooks_dir(repo_root)
+    sync_statuses = {
+        name: marked_text_status(hooks_dir / name, SHIM_CONTENT, marker=SHIM_MARKER) for name in SHIM_HOOK_NAMES
+    }
+    precommit_status = marked_text_status(hooks_dir / "pre-commit", PRECOMMIT_CONTENT, marker=SHIM_MARKER)
+    marked = {"unchanged", "drifted"}
+    if marked.isdisjoint(sync_statuses.values()) and precommit_status not in marked:
+        return None
+    problems: list[str] = []
+    if not marked.isdisjoint(sync_statuses.values()):
+        problems.extend(
+            f".git/hooks/{name} is {'missing' if status == 'missing' else 'outdated'}; run `byor init --git-hooks`"
+            for name, status in sync_statuses.items()
+            if status in ("missing", "drifted")
+        )
+    if precommit_status == "drifted":
+        problems.append(".git/hooks/pre-commit is outdated; run `byor init --private --gate`")
+    return problems
 
 
 def _install_shim(hook: Path, content: str, *, line: str) -> list[str]:
