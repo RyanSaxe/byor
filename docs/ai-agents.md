@@ -129,15 +129,17 @@ the in-scope files whose extension is listed in `extensions` are appended as
 trailing arguments (an empty `extensions` matches every in-scope file), so **a
 check command must accept a list of file paths**. When no file paths are
 provided, the command must treat that as a whole-repo scan while respecting
-normal ignored-file rules; generated CI gates intentionally run checks that way.
+normal ignored-file rules; generated CI gates intentionally run checks that way,
+so a check that quietly no-ops without arguments passes every CI run while
+enforcing nothing.
 The command runs without a shell — that is what keeps a committed check string from being a
 shell-injection vector — so there is no `&&`, pipe, redirection, or alias.
 Anything multi-step (autofix, then format, then report the rest) belongs in a
 script the check points at; byor expands a leading `~`/`~/` in the command so
 that script can live under `~/.config/byor` and resolve in every repo (see
-[Check scripts](#check-scripts)). Checks merge by `name` with the repo config
-winning over the global one, and `.byor/local.yml` disables them per repo by
-name or by tag:
+[Check scripts](#check-scripts)). Checks merge by `name` — a repo check wins
+over a same-named package check, which wins over a global one — and
+`.byor/local.yml` disables them per repo by name or by tag:
 
 ```yaml
 checks:
