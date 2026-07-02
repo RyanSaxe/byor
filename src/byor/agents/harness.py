@@ -35,12 +35,11 @@ class EditPayload:
     """One harness payload normalized: edited files and their edit text.
 
     `edits[path]` holds the literal post-edit strings the harness reported for
-    that file, used for edit-scope line ranges. A file present with no edit
-    strings (or absent edits entirely) means "scope this file by diff" — the
-    Fallback when contents cannot be located.
+    that file, used for edit-scope line ranges. A file mapped to no edit
+    strings means "scope this file by diff" — the fallback when contents
+    cannot be located.
     """
 
-    files: list[Path] = field(default_factory=list)
     edits: dict[Path, list[str]] = field(default_factory=dict)
 
 
@@ -70,9 +69,7 @@ def _parse_claude_code(payload: dict[str, JsonValue]) -> EditPayload:
     file_path = _string(tool_input.get("file_path"))
     if file_path is None:
         return EditPayload()
-    contents = _claude_edit_contents(tool_input)
-    path = Path(file_path)
-    return EditPayload(files=[path], edits={path: contents})
+    return EditPayload(edits={Path(file_path): _claude_edit_contents(tool_input)})
 
 
 def _claude_edit_contents(tool_input: dict[str, JsonValue]) -> list[str]:
@@ -88,8 +85,7 @@ def _parse_copilot(payload: dict[str, JsonValue]) -> EditPayload:
     if file_path is None:
         return EditPayload()
     contents = _strings(tool_args, ("new_str", "file_text", "new_string", "content"))
-    path = Path(file_path)
-    return EditPayload(files=[path], edits={path: contents})
+    return EditPayload(edits={Path(file_path): contents})
 
 
 def _copilot_tool_args(value: JsonValue) -> dict[str, JsonValue] | None:
@@ -108,7 +104,8 @@ def _parse_codex(payload: dict[str, JsonValue]) -> EditPayload:
     command = _string(tool_input.get("command"))
     if command is None:
         return EditPayload()
-    return _payload_from_patch(parse_apply_patch(command))
+    added = parse_apply_patch(command)
+    return EditPayload(edits={Path(raw_path): contents for raw_path, contents in added.items()})
 
 
 def parse_apply_patch(text: str) -> dict[str, list[str]]:
@@ -145,15 +142,6 @@ def _patch_file_header(line: str) -> str | None:
 def _flush_patch_section(added: dict[str, list[str]], current: str | None, *, plus_lines: list[str]) -> None:
     if current is not None and plus_lines:
         added[current] = ["\n".join(plus_lines)]
-
-
-def _payload_from_patch(added_by_file: dict[str, list[str]]) -> EditPayload:
-    payload = EditPayload()
-    for raw_path, contents in added_by_file.items():
-        path = Path(raw_path)
-        payload.files.append(path)
-        payload.edits[path] = contents
-    return payload
 
 
 def _emit_claude_code(rendered: str) -> tuple[str, int]:
