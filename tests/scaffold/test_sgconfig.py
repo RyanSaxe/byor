@@ -92,9 +92,9 @@ def test_replace_overwrites_after_timestamped_backup(tmp_path: Path) -> None:
 def test_home_sgconfig_created_pointing_at_relative_rules_dir(tmp_path: Path) -> None:
     rules_dir = tmp_path / ".config" / "byor" / "rules"
 
-    message = ensure_home_sgconfig(rules_dir, home=tmp_path)
+    changed = ensure_home_sgconfig(rules_dir, home=tmp_path)
 
-    assert message == "Created sgconfig.yml"
+    assert changed == home_sgconfig_path(tmp_path)
     assert rules_dir.is_dir()
     content = home_sgconfig_path(tmp_path).read_text()
     assert ".config/byor/rules" in content
@@ -105,7 +105,7 @@ def test_home_sgconfig_appends_to_a_users_existing_config(tmp_path: Path) -> Non
     path = home_sgconfig_path(tmp_path)
     path.write_text("# my own global ast-grep setup\nruleDirs:\n  - my-rules\n")
 
-    assert ensure_home_sgconfig(rules_dir, home=tmp_path) == "Updated sgconfig.yml"
+    assert ensure_home_sgconfig(rules_dir, home=tmp_path) == path
 
     content = path.read_text()
     assert "# my own global ast-grep setup" in content

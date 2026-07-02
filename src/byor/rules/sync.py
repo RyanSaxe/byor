@@ -7,10 +7,8 @@ package, and self-heal flows.
 
 from __future__ import annotations
 
-import os
 import sys
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from byor.agents.install import install_agent
@@ -27,7 +25,7 @@ from byor.config import (
     repo_registry_path,
 )
 from byor.errors import ByorError, ConfigError
-from byor.io.fsio import write_text_atomic
+from byor.io.fsio import prune_empty_dirs, write_text_atomic
 from byor.io.paths import global_config_dir, resolve_repo_root, resolve_within
 from byor.rules.rules import (
     Rule,
@@ -43,6 +41,7 @@ from byor.scaffold.sgconfig import ensure_home_sgconfig
 if TYPE_CHECKING:
     import argparse
     from collections.abc import Iterable, Iterator
+    from pathlib import Path
 
 __all__ = (
     "CanonicalRules",
@@ -161,7 +160,14 @@ def _effective_canonical(
     kept: list[Rule] = []
     skipped: list[SkippedRule] = []
     for rule in canonical.rules:
-        reason = _skip_reason(rule, project_ids, local_ids=local_ids, excluded=excluded, excluded_tags=excluded_tag_set)
+        reason = _skip_reason(
+            rule,
+            project_ids,
+            local_ids=local_ids,
+            global_ids=set(),
+            excluded=excluded,
+            excluded_tags=excluded_tag_set,
+        )
         if reason is None:
             kept.append(rule)
         else:
@@ -212,7 +218,7 @@ def compute_packages_plan(
     kept: list[Rule] = []
     for package in packages:
         for rule in package.rules:
-            reason = _package_skip_reason(
+            reason = _skip_reason(
                 rule,
                 project_ids,
                 local_ids=local_ids,
@@ -261,7 +267,7 @@ def mirror_global_rules(mirror_dir: Path, desired: dict[str, str]) -> MirrorResu
         if relpath not in desired:
             (mirror_dir / relpath).unlink()
             removed += 1
-    _prune_empty_dirs(mirror_dir)
+    prune_empty_dirs(mirror_dir)
     return MirrorResult(written=written, removed=removed)
 
 
@@ -441,30 +447,12 @@ def _skip_reason(
     project_ids: set[str],
     *,
     local_ids: set[str],
-    excluded: set[str],
-    excluded_tags: set[str],
-) -> str | None:
-    if rule.id in project_ids:
-        return "overridden by project rule"
-    if rule.id in local_ids:
-        return "overridden by local rule"
-    if rule.id in excluded:
-        return "excluded in .byor/local.yml"
-    for tag in rule.tags:
-        if tag in excluded_tags:
-            return f"excluded by tag '{tag}' in .byor/local.yml"
-    return None
-
-
-def _package_skip_reason(
-    rule: Rule,
-    project_ids: set[str],
-    *,
-    local_ids: set[str],
     global_ids: set[str],
     excluded: set[str],
     excluded_tags: set[str],
 ) -> str | None:
+    # Precedence order: canonical global rules pass an empty `global_ids`;
+    # package rules pass the kept global IDs so a global rule shadows them.
     if rule.id in project_ids:
         return "overridden by project rule"
     if rule.id in local_ids:
@@ -477,14 +465,6 @@ def _package_skip_reason(
         if tag in excluded_tags:
             return f"excluded by tag '{tag}' in .byor/local.yml"
     return None
-
-
-def _prune_empty_dirs(root: Path) -> None:
-    # os.walk snapshots entries before children are pruned, so re-check emptiness.
-    for dirpath, _, _ in os.walk(root, topdown=False):
-        directory = Path(dirpath)
-        if directory != root and not any(directory.iterdir()):
-            directory.rmdir()
 
 
 def _count(number: int, noun: str) -> str:

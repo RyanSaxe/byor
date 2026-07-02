@@ -60,18 +60,19 @@ def ensure_rule_dirs(path: Path, rule_dirs: list[str], *, replace: bool = False)
     return f"Updated {path.name}"
 
 
-def ensure_home_sgconfig(rules_dir: Path, home: Path | None = None) -> str | None:
+def ensure_home_sgconfig(rules_dir: Path, home: Path | None = None) -> Path | None:
     """Converge `~/sgconfig.yml` so ast-grep applies the global rules everywhere.
 
     Creates the rules directory and adds it to `ruleDirs` expressed relative to
     home (the sgconfig's own location). Appends to any pre-existing config the
-    user already keeps and never clobbers it. Returns a one-line summary, or
-    None when nothing changed.
+    user already keeps and never clobbers it. Returns the sgconfig path when it
+    changed, or None when nothing changed.
     """
     home = home or Path.home()
     rules_dir.mkdir(parents=True, exist_ok=True)
     relpath = Path(os.path.relpath(rules_dir, home)).as_posix()
-    return ensure_rule_dirs(home_sgconfig_path(home), [relpath])
+    path = home_sgconfig_path(home)
+    return path if ensure_rule_dirs(path, [relpath]) is not None else None
 
 
 def _minimal_sgconfig(rule_dirs: list[str]) -> CommentedMap:
