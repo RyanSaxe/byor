@@ -58,9 +58,9 @@ byor: synced 2 updated global rules
 
 The exceptions: `byor sync` itself (its body is the sync),
 `byor sync --check`, which reports without writing and exits 3 when stale,
-`byor init`, which runs a full sync as one of its steps, and `byor doctor`,
-which is read-only — it reports staleness and the command that fixes it
-instead of repairing anything itself.
+`byor init`, `byor profile add`, and `byor package add`, which sync as one of
+their own steps, and `byor doctor`, which is read-only — it reports staleness
+and the command that fixes it instead of repairing anything itself.
 
 ```bash
 byor sync           # mirror this repo
@@ -140,10 +140,10 @@ a `~/` script into a committed copy under `.byor/scripts/` with the command
 repointed. Each vendored copy carries a provenance marker recording its source:
 self-heal re-vendors the copy when that source changes on your machine, and
 removing the marker makes the copy user-owned, never rewritten. The emitted
-artifacts then run
-`uvx --from ast-grep-cli ast-grep scan --error` and each check directly, so the
-whole gate enforces with **no byor and no `~/.config/byor`** — just uv, ast-grep,
-and the check commands. pre-commit passes each check its staged matching files
+artifacts then run `ast-grep scan` through uvx with a pinned `ast-grep-cli`
+version — so the gate never drifts with upstream releases — and each check
+directly, so the whole gate enforces with **no byor and no `~/.config/byor`**
+— just uv, ast-grep, and the check commands. pre-commit passes each check its staged matching files
 (via a `files:` filter from `extensions`); CI runs each check whole-repo,
 mirroring byor's two scan modes. The workflow gates pushes to the branch
 recorded as `gate_branch` in `.byor/config.yml` at install time, so
