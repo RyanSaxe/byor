@@ -13,7 +13,7 @@ import pytest
 from support import git, install_package, write_global_check, write_global_rule, write_package_rule
 
 from byor.cli import main
-from byor.config import load_repo_config
+from byor.config import load_repo_config, save_repo_config
 
 
 def gate_repo(home: Path, *, extra: tuple[str, ...] = (), branch: str = "main") -> Path:
@@ -57,6 +57,38 @@ def test_gate_workflow_gates_pushes_to_a_non_main_default_branch(home: Path) -> 
 
     workflow = (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
     assert "on:\n  pull_request:\n  push:\n    branches: [trunk]\n" in workflow
+
+
+def test_gate_workflow_branch_is_stable_across_checkouts(home: Path) -> None:
+    """Without origin/HEAD the branch used to be re-detected on every heal.
+
+    `git checkout -b feature` plus any byor command silently rewrote the
+    committed workflow to gate pushes to `feature`; the branch recorded at
+    install time keeps regeneration (and doctor's staleness view) stable.
+    """
+    repo = gate_repo(home)
+    workflow = repo / ".github" / "workflows" / "byor-gate.yml"
+    assert load_repo_config(repo).gate_branch == "main"
+
+    git(repo, "commit", "--allow-empty", "-q", "-m", "init")
+    git(repo, "checkout", "-q", "-b", "feature")
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    assert "branches: [main]" in workflow.read_text()
+    assert main(["doctor", "--repo", str(repo)]) == 0
+
+
+def test_gate_without_a_recorded_branch_falls_back_to_detection(home: Path) -> None:
+    repo = gate_repo(home, branch="trunk")
+    config = load_repo_config(repo)
+    config.gate_branch = None
+    save_repo_config(repo, config)  # a config written before byor recorded the branch
+    (repo / ".github" / "workflows" / "byor-gate.yml").unlink()
+
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    workflow = (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
+    assert "branches: [trunk]" in workflow
 
 
 def test_gate_self_heals_when_a_check_is_added_later(home: Path) -> None:

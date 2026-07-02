@@ -16,6 +16,7 @@ from pathlib import Path
 
 from byor.config import (
     CheckDef,
+    RepoConfig,
     load_repo_config,
     repo_config_path,
     save_repo_config,
@@ -56,25 +57,30 @@ def install_gate(repo_root: Path, config_dir: Path, *, private: bool) -> list[st
     messages = promote_everything(repo_root, config_dir)
     repo_config = load_repo_config(repo_root)
     repo_config.gate = True
+    # Record the branch once so regeneration never flaps across checkouts.
+    repo_config.gate_branch = default_branch(repo_root)
     save_repo_config(repo_root, repo_config)
     return messages + regenerate_gate(repo_root)
 
 
 def regenerate_gate(repo_root: Path) -> list[str]:
-    checks = load_repo_config(repo_root).checks
-    return write_ci_workflow(repo_root, checks) + write_precommit_config(repo_root, checks)
+    repo_config = load_repo_config(repo_root)
+    checks = repo_config.checks
+    branch = _gate_branch(repo_root, repo_config)
+    return write_ci_workflow(repo_root, checks, default_branch=branch) + write_precommit_config(repo_root, checks)
 
 
-def stale_gate_files(repo_root: Path, checks: list[CheckDef]) -> list[str]:
-    """Gate file relpaths whose content drifted from `checks`, without writing.
+def stale_gate_files(repo_root: Path, repo_config: RepoConfig) -> list[str]:
+    """Gate file relpaths whose content drifted from the configured checks, without writing.
 
     Doctor uses this to report a stale gate instead of repairing it; the
     comparison renders exactly what regenerate_gate would write and diffs it
     against disk. A gate file the user rewrote without the BYOR marker is
     user-owned — regeneration leaves it alone, so it is not stale either.
     """
+    checks = repo_config.checks
     desired = {
-        WORKFLOW_RELPATH: workflow_text(checks, default_branch=default_branch(repo_root)),
+        WORKFLOW_RELPATH: workflow_text(checks, default_branch=_gate_branch(repo_root, repo_config)),
         CONFIG_RELPATH: precommit_config_text(checks),
     }
     return [
@@ -82,6 +88,11 @@ def stale_gate_files(repo_root: Path, checks: list[CheckDef]) -> list[str]:
         for relpath, content in desired.items()
         if marked_text_status(repo_root / relpath, content, marker=GATE_MARKER) in ("missing", "drifted")
     ]
+
+
+def _gate_branch(repo_root: Path, repo_config: RepoConfig) -> str:
+    # Configs from before the branch was recorded fall back to detection.
+    return repo_config.gate_branch or default_branch(repo_root)
 
 
 def heal_gate(repo_root: Path) -> list[str]:

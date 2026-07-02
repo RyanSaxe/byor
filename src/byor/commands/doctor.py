@@ -343,7 +343,7 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path) -> list
 def _gate_check(repo_root: Path, repo_config: RepoConfig) -> Check | None:
     if not repo_config.gate:
         return None
-    stale = stale_gate_files(repo_root, repo_config.checks)
+    stale = stale_gate_files(repo_root, repo_config)
     if stale:
         return Check(
             id="gate_files",
