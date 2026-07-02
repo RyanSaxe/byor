@@ -182,6 +182,27 @@ NO_SUPPRESSION_COMMAND = (sys.executable, str(SCRIPTS_DIR / "no-suppression-comm
 MODULE_CONTRACT_COMMAND = (sys.executable, str(SCRIPTS_DIR / "module-contract.py"))
 
 
+@pytest.mark.parametrize("script_name", ["module-contract.py", "no-thin-docstrings.py"])
+def test_ast_check_scripts_report_files_the_interpreter_cannot_parse(tmp_path: Path, *, script_name: str) -> None:
+    # Broken (or newer-than-the-interpreter) syntax must fail loudly instead
+    # of silently passing the gate.
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    (repo / "future.py").write_text("def broken(:\n    pass\n")
+
+    completed = subprocess.run(
+        (sys.executable, str(SCRIPTS_DIR / script_name)),
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    assert "future.py:1: cannot be parsed by Python" in completed.stdout
+
+
 def test_no_suppression_comments_ignores_markers_inside_strings(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
