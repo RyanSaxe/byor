@@ -20,7 +20,7 @@ from byor.agents.opencode import (
 )
 from byor.agents.pi import PI_EXTENSION, PI_EXTENSION_RELPATH, PI_MARKER
 from byor.config import load_global_config, save_global_config
-from byor.io.fsio import MANAGED_MARKER, marked_text_status, write_marked_text
+from byor.io.fsio import MANAGED_MARKER, marked_text_status, prune_empty_dirs, write_marked_text
 from byor.io.output import write_lines
 from byor.io.paths import global_config_dir
 from byor.rules.skill import global_skill_dirs, skill_files
@@ -114,7 +114,7 @@ def uninstall_agent(agent: str) -> list[str]:
         for path in _global_skill_file_paths():
             messages.extend(_remove_managed_path(path, _home_display(path)))
         for base in global_skill_dirs():
-            _prune_empty_dirs(base)
+            prune_empty_dirs(base, keep_root=False)
         return messages
     plugin = PLUGIN_AGENTS.get(agent)
     if plugin is not None:
@@ -159,16 +159,6 @@ def _install_skill() -> list[str]:
 
 def _global_skill_file_paths() -> list[Path]:
     return [base / relpath for base in global_skill_dirs() for relpath, _ in skill_files()]
-
-
-def _prune_empty_dirs(directory: Path) -> None:
-    if not directory.is_dir():
-        return
-    for child in sorted(directory.iterdir(), reverse=True):
-        if child.is_dir():
-            _prune_empty_dirs(child)
-    if not any(directory.iterdir()):
-        directory.rmdir()
 
 
 def _install_plugin(plugin: PluginAgent) -> list[str]:
