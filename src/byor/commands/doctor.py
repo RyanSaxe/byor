@@ -18,6 +18,7 @@ from byor.agents.install import agent_file_problems
 from byor.commands.gate import (
     referenced_vendored_scripts,
     stale_gate_files,
+    transitive_vendored_scripts,
     vendored_script_problems,
 )
 from byor.config import (
@@ -393,10 +394,18 @@ def _gate_check(repo_root: Path, repo_config: RepoConfig) -> Check | None:
 
 
 def _vendored_scripts_check(repo_root: Path, repo_config: RepoConfig) -> Check | None:
-    relpaths = referenced_vendored_scripts(repo_config.checks)
-    if not relpaths:
+    direct = referenced_vendored_scripts(repo_config.checks)
+    if not direct:
         return None
-    problems = [problem for relpath in relpaths for problem in vendored_script_problems(repo_root, relpath)]
+    relpaths = transitive_vendored_scripts(repo_root, direct)
+    # Only scripts named in a check's run command are (potentially) invoked
+    # directly; a transitively referenced script runs through its caller, so
+    # the exec bit is not required for it.
+    problems = [
+        problem
+        for relpath in relpaths
+        for problem in vendored_script_problems(repo_root, relpath, executable_required=relpath in direct)
+    ]
     if problems:
         return Check(id="vendored_scripts", ok=False, message="; ".join(problems))
     noun = "script" if len(relpaths) == 1 else "scripts"

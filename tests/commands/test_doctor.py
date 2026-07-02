@@ -442,6 +442,38 @@ def test_doctor_flags_a_missing_vendored_script(
     assert not (repo / ".byor" / "scripts" / "fix.sh").exists()
 
 
+# A vendored runner that calls a second vendored script hid that dependency
+# from doctor, which only tokenized check.run: delete the helper and doctor
+# stayed green while the committed gate broke.
+def test_doctor_flags_a_missing_transitively_referenced_vendored_script(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    scripts = home / ".config" / "byor" / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "runner.sh").write_text('#!/bin/sh\nexec "${HOME}/.config/byor/scripts/helper.py" "$@"\n')
+    (scripts / "helper.py").write_text("#!/usr/bin/env python3\nprint('ok')\n")
+    write_global_check("runner", "~/.config/byor/scripts/runner.sh")
+    repo = home / "gated"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+    (repo / ".byor" / "scripts" / "helper.py").unlink()
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  vendored_scripts" in out
+    assert ".byor/scripts/helper.py is missing" in out
+
+
 def test_doctor_flags_a_drifted_vendored_script(
     home: Path,
     # monkeypatch isolates process state (env, cwd, stdio): an external boundary

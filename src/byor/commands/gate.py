@@ -42,6 +42,7 @@ __all__ = (
     "referenced_vendored_scripts",
     "regenerate_gate",
     "stale_gate_files",
+    "transitive_vendored_scripts",
     "vendored_script_problems",
 )
 
@@ -91,23 +92,57 @@ def referenced_vendored_scripts(checks: list[CheckDef]) -> list[str]:
     return list(dict.fromkeys(relpaths))
 
 
-def vendored_script_problems(repo_root: Path, relpath: str) -> list[str]:
+# A `.byor/scripts/...` reference inside a vendored script's own text, the shape
+# _rewrite_home_script_refs produces when it vendors a script's dependencies.
+VENDORED_REF_PATTERN = re.compile(rf"{re.escape(VENDORED_SCRIPTS_DIR)}/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*")
+
+
+def transitive_vendored_scripts(repo_root: Path, relpaths: list[str]) -> list[str]:
+    """`relpaths` plus every vendored script their text references, recursively.
+
+    Doctor needs the full closure: a vendored runner that calls a second
+    vendored script breaks the gate just as hard when that dependency goes
+    missing, even though no check's run command names it directly. Unreadable
+    or binary scripts contribute no references.
+    """
+    closure: dict[str, None] = {}
+    pending = list(relpaths)
+    while pending:
+        relpath = pending.pop(0)
+        if relpath in closure:
+            continue
+        closure[relpath] = None
+        pending.extend(_vendored_references(repo_root / relpath))
+    return list(closure)
+
+
+def _vendored_references(path: Path) -> list[str]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    return VENDORED_REF_PATTERN.findall(text)
+
+
+def vendored_script_problems(repo_root: Path, relpath: str, *, executable_required: bool = True) -> list[str]:
     """Read-only findings for one vendored script a repo check runs.
 
-    A missing or non-executable copy breaks the committed gate for every
-    contributor. Drift against the recorded source is only reported when that
-    source exists on this machine; a copy without the provenance marker is
-    user-owned and never compared.
+    A missing copy breaks the committed gate for every contributor. The exec
+    bit is required only when the script is invoked directly (`executable_
+    required`): interpreter arguments and scripts called from other scripts
+    run fine without it. Drift against the recorded source is only reported
+    when that source exists on this machine; a copy without the provenance
+    marker is user-owned and never compared.
     """
     path = repo_root / relpath
     if not path.is_file():
         return [f"{relpath} is missing; restore it or drop its check from .byor/config.yml"]
     problems: list[str] = []
-    if not os.access(path, os.X_OK):
+    if executable_required and not os.access(path, os.X_OK):
         problems.append(f"{relpath} is not executable; run `chmod +x {relpath}`")
     source = _vendored_source(path)
     if source is not None and source.is_file():
-        expected = _expected_vendored_text(path.name, source)
+        expected = _expected_vendored_text(path.name, source, repo_root=repo_root)
         if expected is not None and path.read_text(encoding="utf-8") != expected:
             problems.append(f"{relpath} drifted from {_source_display(source.resolve())}; run `byor init --gate`")
     return problems
@@ -177,7 +212,9 @@ def promote_everything(repo_root: Path, config_dir: Path) -> list[str]:
 
     Rules come straight from the two mirrors, which already hold exactly the
     effective set; the follow-up sync then clears them since project owns the
-    IDs. Checks an owned scope already provides (repo checks) are left alone.
+    IDs. Repo checks keep their name and place, but any `~/...` script they
+    run is vendored like a global check's: the committed gate would otherwise
+    embed a home path no teammate machine or CI runner has.
     """
     paths = load_repo_config(repo_root).paths
     project_dir = repo_root / paths.project_rules
@@ -185,9 +222,10 @@ def promote_everything(repo_root: Path, config_dir: Path) -> list[str]:
     rules += _copy_mirror(project_dir, repo_root / paths.personal_packages_rules, strip_package=True)
 
     repo_config = load_repo_config(repo_root)
+    vendored: dict[str, Path] = {}
+    repo_config.checks = [_vendor_check(repo_root, check, vendored=vendored) for check in repo_config.checks]
     names = {check.name for check in repo_config.checks}
     promoted_checks = 0
-    vendored: dict[str, Path] = {}
     for effective in load_effective_checks(repo_root, config_dir):
         if effective.origin == "repo" or effective.name in names:
             continue
@@ -204,10 +242,11 @@ def _copy_mirror(project_dir: Path, mirror_dir: Path, *, strip_package: bool) ->
     for relpath, content in mirror_contents(mirror_dir).items():
         dest_rel = relpath.split("/", 1)[1] if strip_package and "/" in relpath else relpath
         destination = project_dir / dest_rel
-        if strip_package and _exists_with_other_content(destination, content):
-            # Two packages shipping the same filename must both be vendored,
-            # so the loser keeps its package prefix instead of being dropped.
-            destination = project_dir / relpath
+        if _exists_with_other_content(destination, content):
+            # A filename collision must not silently drop the rule: the loser
+            # keeps its package prefix, or a global/ prefix for global rules
+            # colliding with a project rule of the same relpath.
+            destination = project_dir / (relpath if strip_package else f"global/{relpath}")
         if not destination.exists():
             write_text_atomic(destination, content)
             written += 1
@@ -235,22 +274,23 @@ def _vendor_check(repo_root: Path, check: CheckDef, *, vendored: dict[str, Path]
 def _vendor_script(repo_root: Path, source: Path, *, vendored: dict[str, Path]) -> str:
     """Copy `source` into the repo's vendored scripts dir and return its relpath.
 
-    `vendored` maps each destination relpath to the source that produced it: it
-    makes re-vendoring the same script idempotent (and recursion-safe) while a
-    second, different source claiming the same destination is a hard error.
-    The copy carries a provenance marker line recording the source, so heal can
-    re-vendor when the source changes; a copy whose marker was removed is
-    user-owned and never rewritten.
+    `vendored` maps each destination relpath (casefolded, because APFS and NTFS
+    would merge Lint.py and lint.py into one file) to the source that produced
+    it: it makes re-vendoring the same script idempotent (and recursion-safe)
+    while a second, different source claiming the same destination is a hard
+    error. The copy carries a provenance marker line recording the source, so
+    heal can re-vendor when the source changes; a copy whose marker was removed
+    is user-owned and never rewritten.
     """
     resolved = source.resolve()
     relpath = f"{VENDORED_SCRIPTS_DIR}/{_vendored_name(resolved)}"
-    already = vendored.get(relpath)
+    already = vendored.get(relpath.casefold())
     if already == resolved:
         return relpath
     if already is not None:
         msg = f"cannot vendor {source} to {relpath}: {already} is already vendored there; rename one of the scripts"
         raise ByorError(msg)
-    vendored[relpath] = resolved
+    vendored[relpath.casefold()] = resolved
     destination = repo_root / relpath
     destination.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -261,7 +301,7 @@ def _vendor_script(repo_root: Path, source: Path, *, vendored: dict[str, Path]) 
     else:
         _vendor_dependencies(repo_root, content, vendored=vendored)
         text = _marked_vendored_text(
-            _rewrite_home_script_refs(content),
+            _rewrite_home_script_refs(content, repo_root=repo_root),
             name=destination.name,
             source_display=_source_display(resolved),
         )
@@ -303,13 +343,13 @@ def _vendored_source(path: Path) -> Path | None:
 
 
 # What vendoring `source` would write, or None for binary sources.
-def _expected_vendored_text(name: str, source: Path) -> str | None:
+def _expected_vendored_text(name: str, source: Path, *, repo_root: Path) -> str | None:
     try:
         content = source.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         return None
     return _marked_vendored_text(
-        _rewrite_home_script_refs(content),
+        _rewrite_home_script_refs(content, repo_root=repo_root),
         name=name,
         source_display=_source_display(source.resolve()),
     )
@@ -343,12 +383,18 @@ def _vendor_dependencies(repo_root: Path, content: str, *, vendored: dict[str, P
 
 # Pure rewrite of home-script references to their vendored relpaths, so the
 # expected text of a vendored script can be computed without writing anything.
-def _rewrite_home_script_refs(content: str) -> str:
+def _rewrite_home_script_refs(content: str, *, repo_root: Path) -> str:
     def replace_match(match: re.Match[str]) -> str:
         source = _referenced_script(match)
-        if source is None:
-            return match.group("path")
-        return f"{VENDORED_SCRIPTS_DIR}/{_vendored_name(source.resolve())}"
+        if source is not None:
+            return f"{VENDORED_SCRIPTS_DIR}/{_vendored_name(source.resolve())}"
+        # The home source is gone but the vendored copy is committed: keep the
+        # rewrite keyed on that stable destination, so drift detection and
+        # re-vendoring never resurrect a `~/...` path no teammate machine has.
+        relpath = f"{VENDORED_SCRIPTS_DIR}/{match.group('name')}"
+        if (repo_root / relpath).is_file():
+            return relpath
+        return match.group("path")
 
     return HOME_SCRIPT_PATTERN.sub(replace_match, content)
 
