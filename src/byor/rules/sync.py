@@ -49,7 +49,6 @@ __all__ = (
     "SkippedRule",
     "SyncPlan",
     "compute_packages_plan",
-    "compute_sync_plan",
     "iter_registered_repos",
     "load_canonical_rules",
     "load_installed_packages",
@@ -138,6 +137,7 @@ def _effective_canonical(
     project: list[Rule],
     local: list[Rule],
     *,
+    package_ids: set[str],
     excluded_rule_ids: Iterable[str],
     excluded_tags: Iterable[str],
     canonical: CanonicalRules,
@@ -145,8 +145,10 @@ def _effective_canonical(
     """Return the canonical global rules a repo keeps and skip the rest.
 
     Step 7 (combined effective IDs are unique) holds by construction: project
-    and local IDs are unique and disjoint per check_id_conflicts, and every
-    kept global rule has an ID outside both sets and unique among global rules.
+    and local IDs are unique and disjoint per check_id_conflicts, `package_ids`
+    holds the surviving package rules (already outside project and local), and
+    every kept global rule has an ID outside all three sets and unique among
+    global rules.
     """
     check_id_conflicts(project, local, canonical_global=canonical.rules)
     project_ids = {rule.id for rule in project}
@@ -160,7 +162,7 @@ def _effective_canonical(
             rule,
             project_ids,
             local_ids=local_ids,
-            global_ids=set(),
+            package_ids=package_ids,
             excluded=excluded,
             excluded_tags=excluded_tag_set,
         )
@@ -169,20 +171,6 @@ def _effective_canonical(
         else:
             skipped.append(SkippedRule(rule.id, reason, list(rule.tags)))
     return kept, skipped
-
-
-def compute_sync_plan(
-    project: list[Rule],
-    local: list[Rule],
-    *,
-    excluded_rule_ids: Iterable[str],
-    excluded_tags: Iterable[str],
-    canonical: CanonicalRules,
-) -> SyncPlan:
-    kept, skipped = _effective_canonical(
-        project, local, excluded_rule_ids=excluded_rule_ids, excluded_tags=excluded_tags, canonical=canonical
-    )
-    return _global_plan(kept, skipped, root=canonical.root)
 
 
 def _global_plan(kept: list[Rule], skipped: list[SkippedRule], *, root: Path) -> SyncPlan:
@@ -195,15 +183,16 @@ def compute_packages_plan(
     local: list[Rule],
     *,
     local_config: LocalConfig,
-    kept_global_ids: set[str],
     packages: list[InstalledPackage],
-) -> SyncPlan:
+) -> tuple[SyncPlan, set[str]]:
     """Decide the packages mirror contents, keyed `<package>/<rule-path>`.
 
-    A package rule an owned scope already provides (project, local, or a kept
-    global rule) is skipped, as is one excluded by ID or tag. Two installed
-    packages defining the same surviving ID is a hard error: ast-grep rejects
-    duplicate IDs, so byor names both and points at `byor exclude`.
+    A package rule a repo-owned scope already provides (project or local) is
+    skipped, as is one excluded by ID or tag; a surviving package rule wins
+    over a same-ID global rule, so the second returned value — the surviving
+    IDs — is what the global plan skips. Two installed packages defining the
+    same surviving ID is a hard error: ast-grep rejects duplicate IDs, so byor
+    names both and points at `byor exclude`.
     """
     project_ids = {rule.id for rule in project}
     local_ids = {rule.id for rule in local}
@@ -218,7 +207,7 @@ def compute_packages_plan(
                 rule,
                 project_ids,
                 local_ids=local_ids,
-                global_ids=kept_global_ids,
+                package_ids=set(),
                 excluded=excluded,
                 excluded_tags=excluded_tags,
             )
@@ -233,7 +222,7 @@ def compute_packages_plan(
         "installed package rules",
         hint="Two installed packages define this ID; exclude one with `byor exclude`.",
     )
-    return SyncPlan(desired=desired, skipped=skipped)
+    return SyncPlan(desired=desired, skipped=skipped), {rule.id for rule in kept}
 
 
 def mirror_contents(mirror_dir: Path) -> dict[str, str]:
@@ -286,19 +275,19 @@ def repo_plans(repo_root: Path, canonical: CanonicalRules) -> RepoPlans:
     local_config = load_local_config(repo_root)
     project = load_rules(repo_root / paths.project_rules)
     local = load_rules(repo_root / paths.personal_local_rules)
-    kept, skipped = _effective_canonical(
-        project,
-        local,
-        excluded_rule_ids=local_config.excluded_rule_ids,
-        excluded_tags=local_config.excluded_rule_tags,
-        canonical=canonical,
-    )
-    packages_plan = compute_packages_plan(
+    packages_plan, package_ids = compute_packages_plan(
         project,
         local,
         local_config=local_config,
-        kept_global_ids={rule.id for rule in kept},
         packages=load_installed_packages(canonical, local_config.packages),
+    )
+    kept, skipped = _effective_canonical(
+        project,
+        local,
+        package_ids=package_ids,
+        excluded_rule_ids=local_config.excluded_rule_ids,
+        excluded_tags=local_config.excluded_rule_tags,
+        canonical=canonical,
     )
     return RepoPlans(
         global_plan=_global_plan(kept, skipped, root=canonical.root),
@@ -403,18 +392,19 @@ def _skip_reason(
     project_ids: set[str],
     *,
     local_ids: set[str],
-    global_ids: set[str],
+    package_ids: set[str],
     excluded: set[str],
     excluded_tags: set[str],
 ) -> str | None:
-    # Precedence order: canonical global rules pass an empty `global_ids`;
-    # package rules pass the kept global IDs so a global rule shadows them.
+    # Precedence order: project > local > package > global. Package rules pass
+    # an empty `package_ids`; canonical global rules pass the surviving package
+    # IDs so an opted-in package overrides the global copy.
     if rule.id in project_ids:
         return "overridden by project rule"
     if rule.id in local_ids:
         return "overridden by local rule"
-    if rule.id in global_ids:
-        return "overridden by global rule"
+    if rule.id in package_ids:
+        return "overridden by package rule"
     if rule.id in excluded:
         return "excluded in .byor/local.yml"
     for tag in rule.tags:

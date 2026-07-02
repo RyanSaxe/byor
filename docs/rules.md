@@ -102,8 +102,9 @@ edit it by hand; sync mirrors it wholesale (see
 or topic (e.g. `rules/python/no-typing-cast.yml`); sync preserves the relative
 paths.
 
-Project and local rules override global rules by the same ID: sync skips the
-global copy, no error. Conflicts that ast-grep would see are errors:
+Same-ID rules resolve by scope precedence — project wins over local wins over
+package wins over global, mirroring the check tiers — and sync skips the losing
+copy, no error. Conflicts that ast-grep would see are errors:
 
 | Where | Behavior |
 | --- | --- |
@@ -112,7 +113,9 @@ global copy, no error. Conflicts that ast-grep would see are errors:
 | Duplicate ID within canonical global rules | Error |
 | Project ID matches global ID | Project wins; sync skips the copy |
 | Local ID matches global ID | Local wins; sync skips the copy |
+| Package ID matches global ID | Package wins; sync skips the global copy |
 | Project ID matches local ID | Error — a local variation of a project rule requires a different ID |
+| Two installed packages share an ID | Error — exclude one with `byor exclude` |
 
 ## Adding rules
 
@@ -307,9 +310,10 @@ byor package add python-strict
 
 `byor package add` records the opt-in in `.byor/local.yml` (private, gitignored)
 and syncs. The package's rules mirror into `.byor/rules/personal/packages/`,
-git-ignored but visible to ast-grep, and its checks apply at a tier between repo
-and global checks (repo wins over package wins over global, by name). Excluding a
-package rule or check works through the usual `byor exclude`.
+git-ignored but visible to ast-grep. Rules and checks share one precedence:
+repo wins over package wins over global (by ID for rules, by name for checks) —
+opting into a package is an easy avenue to override your global setup.
+Excluding a package rule or check works through the usual `byor exclude`.
 
 To share a package's rules or checks with the team, promote them into tracked
 config: `byor promote RULE_ID --from package` and `byor promote --check NAME`.
