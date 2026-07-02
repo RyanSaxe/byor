@@ -10,22 +10,21 @@ type-ignore, tool-specific ignore comments, and coverage pragmas. Comments are
 located with the tokenize module, so markers inside string literals do not
 count; syntactically broken files fall back to a plain line scan. Greenfield
 code should fix the underlying problem instead of hiding it from agents,
-reviewers, linters, or type checkers.
+reviewers, linters, or type checkers. File discovery is shared with the
+sibling checks via the `lib/pyfiles.py` subprocess (see its docstring).
 """
 
 from __future__ import annotations
 
 import io
 import re
-import shutil
 import subprocess
 import sys
 import tokenize
 from dataclasses import dataclass
 from pathlib import Path
 
-PYTHON_SUFFIXES = frozenset({".py", ".pyi"})
-EXCLUDED_WALK_DIRS = frozenset({".git", ".venv", "venv", "node_modules", "__pycache__", ".tox", "dist", "build"})
+PYFILES_LIB = Path(__file__).resolve().parent / "lib" / "pyfiles.py"
 
 
 @dataclass(frozen=True)
@@ -68,66 +67,13 @@ def main(argv: list[str]) -> int:
 
 
 def _python_files(argv: list[str]) -> list[Path]:
-    candidates = [Path(raw) for raw in argv] if argv else _repo_python_files()
-    return [path for path in candidates if path.suffix in PYTHON_SUFFIXES and path.is_file()]
-
-
-def _repo_python_files() -> list[Path]:
-    git = shutil.which("git")
-    if git is None:
-        return _walk_python_files(Path.cwd())
-    root = _git_root(Path.cwd(), git=git)
-    if root is None:
-        return _walk_python_files(Path.cwd())
-    try:
-        completed = subprocess.run(
-            (
-                git,
-                "-C",
-                str(root),
-                "ls-files",
-                "-co",
-                "--exclude-standard",
-                "--",
-                "*.py",
-                "*.pyi",
-            ),
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    except FileNotFoundError:
-        return _walk_python_files(root)
-    if completed.returncode != 0:
-        return _walk_python_files(root)
-    return [root / line for line in completed.stdout.splitlines() if line]
-
-
-def _git_root(start: Path, *, git: str) -> Path | None:
-    anchor = start if start.is_dir() else start.parent
-    try:
-        completed = subprocess.run(
-            (git, "-C", str(anchor), "rev-parse", "--show-toplevel"),
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    except FileNotFoundError:
-        return None
-    if completed.returncode != 0:
-        return None
-    root = completed.stdout.strip()
-    return Path(root) if root else None
-
-
-def _walk_python_files(root: Path) -> list[Path]:
-    return [
-        path
-        for path in root.rglob("*")
-        if path.suffix in PYTHON_SUFFIXES
-        and path.is_file()
-        and not EXCLUDED_WALK_DIRS.intersection(path.relative_to(root).parts)
-    ]
+    completed = subprocess.run(
+        (sys.executable, str(PYFILES_LIB), *argv),
+        check=True,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    return [Path(raw) for raw in completed.stdout.split("\0") if raw]
 
 
 def _scan(path: Path) -> list[_Finding]:

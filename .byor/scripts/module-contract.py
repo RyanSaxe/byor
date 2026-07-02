@@ -11,7 +11,9 @@ module; boilerplate repeated across files satisfies the word count while
 defeating the contract, so the finding messages spell out what counts.
 Package modules also need a static `__all__` tuple for public functions and
 classes, while standalone scripts need an explicit Python runtime contract
-from either their repository or PEP 723 metadata.
+from either their repository or PEP 723 metadata. File discovery is shared
+with the sibling checks via the `lib/pyfiles.py` subprocess (see its
+docstring).
 """
 
 from __future__ import annotations
@@ -51,8 +53,7 @@ DETAIL_ADVICE = (
     "existing prose instead of replacing it, and never paste one generic "
     "paragraph across files"
 )
-PYTHON_SUFFIXES = frozenset({".py", ".pyi"})
-EXCLUDED_WALK_DIRS = frozenset({".git", ".venv", "venv", "node_modules", "__pycache__", ".tox", "dist", "build"})
+PYFILES_LIB = Path(__file__).resolve().parent / "lib" / "pyfiles.py"
 # Sentence heuristic: an ender counts only before whitespace plus a
 # non-lowercase character or at the end of the text, so "Python 3.10" and
 # "e.g. tuples" do not count; stripping abbreviations first also keeps
@@ -88,49 +89,13 @@ def main(argv: list[str]) -> int:
 
 
 def _python_files(argv: list[str]) -> list[Path]:
-    candidates = [Path(raw) for raw in argv] if argv else _repo_python_files()
-    return [path for path in candidates if path.suffix in PYTHON_SUFFIXES and path.is_file()]
-
-
-def _repo_python_files() -> list[Path]:
-    git = shutil.which("git")
-    if git is None:
-        return _walk_python_files(Path.cwd())
-    root = _git_root(Path.cwd(), git=git)
-    if root is None:
-        return _walk_python_files(Path.cwd())
-    try:
-        completed = subprocess.run(
-            (
-                git,
-                "-C",
-                str(root),
-                "ls-files",
-                "-co",
-                "--exclude-standard",
-                "--",
-                "*.py",
-                "*.pyi",
-            ),
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    except FileNotFoundError:
-        return _walk_python_files(root)
-    if completed.returncode != 0:
-        return _walk_python_files(root)
-    return [root / line for line in completed.stdout.splitlines() if line]
-
-
-def _walk_python_files(root: Path) -> list[Path]:
-    return [
-        path
-        for path in root.rglob("*")
-        if path.suffix in PYTHON_SUFFIXES
-        and path.is_file()
-        and not EXCLUDED_WALK_DIRS.intersection(path.relative_to(root).parts)
-    ]
+    completed = subprocess.run(
+        (sys.executable, str(PYFILES_LIB), *argv),
+        check=True,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    return [Path(raw) for raw in completed.stdout.split("\0") if raw]
 
 
 def _check(path: Path) -> list[_Finding]:
