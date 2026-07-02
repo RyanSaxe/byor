@@ -202,7 +202,7 @@ remaining=$(uvx ruff check --quiet --output-format concise "$@" 2>/dev/null)
 [ -n "$fixed" ] && printf 'Autofixed by ruff (no action needed):\n%s\n' "$fixed"
 [ -n "$reformatted" ] && printf '%s\n' "$reformatted"
 [ -n "$remaining" ] && printf 'Remaining ruff issues to fix:\n%s\n' "$remaining"
-exit 2
+exit 1
 ```
 
 A check script must accept the trailing file-path arguments, scan the whole repo
