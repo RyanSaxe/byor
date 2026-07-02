@@ -1,0 +1,8 @@
+{
+  "name": "byor-dev",
+  "private": true,
+  "description": "Dev-only manifest: prettier config for the packaged agent TypeScript sources.",
+  "prettier": {
+    "semi": false
+  }
+}
