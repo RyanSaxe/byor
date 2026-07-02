@@ -14,6 +14,14 @@ from byor.agents.pi import PI_EXTENSION, PI_EXTENSION_RELPATH, PI_MARKER
 from byor.cli import main
 
 
+def test_extension_renders_the_packaged_source_without_placeholders() -> None:
+    # The extension ships as a packaged .ts file; rendering substitutes every
+    # {{...}} placeholder so the installed artifact is plain TypeScript.
+    assert PI_EXTENSION.startswith(PI_MARKER + "\n")
+    assert "{{" not in PI_EXTENSION
+    assert PI_EXTENSION.endswith("\n")
+
+
 def test_install_writes_the_extension(home: Path) -> None:
     repo_with_agents(home, "pi")
 
