@@ -87,8 +87,9 @@ ignore = [
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
 
-[tool.ruff.lint.pylint]
-max-positional-args = 2
+# Positional-argument limits are enforced by the byor rule
+# .byor/rules/project/keyword-only-args.yml; ruff's own PLR0917 is
+# preview-only, so a [tool.ruff.lint.pylint] max-positional-args here is dead.
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
