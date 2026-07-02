@@ -309,7 +309,11 @@ def _add_agent_check_arguments(command: argparse.ArgumentParser) -> None:
 
 
 def _add_doctor_arguments(command: argparse.ArgumentParser) -> None:
-    command.add_argument("--quick", action="store_true", help="Skip recursive rule validation")
+    command.add_argument(
+        "--quick",
+        action="store_true",
+        help="Skip rule validation and the gate, vendored-script, and git-shim staleness checks",
+    )
     command.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
 
 
