@@ -119,6 +119,29 @@ def test_edit_rejects_an_invalid_result_and_keeps_the_original(
     assert "Your draft is saved at" in err
 
 
+def test_edit_rejects_a_result_ast_grep_cannot_load(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = make_repo(home)
+    target = write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
+    original = target.read_text()
+    # Schema-valid, but the kind-ambiguous pattern makes ast-grep refuse the rule.
+    broken = "id: no-cast\nlanguage: Python\nmessage: Avoid this.\nrule:\n  pattern: with open($$$ARGS) as $F\n"
+    monkeypatch.setenv("EDITOR", make_editor(home, broken))
+
+    assert main(edit_args(repo, "no-cast")) == 1
+
+    assert target.read_text() == original
+    err = capsys.readouterr().err
+    assert "ast-grep cannot load rule 'no-cast'" in err
+    assert "Your draft is saved at" in err
+
+
 def test_edit_with_no_changes_is_a_quiet_no_op(
     home: Path,
     # monkeypatch isolates process state (env, cwd, stdio): an external boundary

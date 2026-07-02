@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -27,6 +28,7 @@ __all__ = (
     "ScanResult",
     "ast_grep_version",
     "resolve_ast_grep",
+    "rule_load_error",
     "scan_files",
 )
 
@@ -179,6 +181,32 @@ def scan_files(
 def _without_exit_summary(stderr: str) -> str:
     lines = stderr.strip().splitlines()
     return "\n".join(line for line in lines if not EXIT_SUMMARY_PATTERN.fullmatch(line.strip())).strip()
+
+
+def rule_load_error(executable: Path, rule_text: str) -> str | None:
+    """Return ast-grep's complaint when it cannot load `rule_text`, else None.
+
+    Schema-valid rule YAML can still carry a pattern ast-grep cannot parse
+    (a kind-ambiguous `with open(...) as f`, say), and one such rule on disk
+    breaks every later scan in the repo. This probe runs one `scan
+    --inline-rules` from an empty scratch directory, so nothing is scanned
+    and no repository sgconfig interferes; a nonzero exit means the rule
+    itself failed to load.
+    """
+    with tempfile.TemporaryDirectory(prefix="byor-rule-probe-") as scratch:
+        result = subprocess.run(
+            [str(executable), "scan", "--color", "never", "--inline-rules", rule_text],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=scratch,
+            check=False,
+        )
+    if result.returncode == 0:
+        return None
+    detail = result.stderr.strip() or result.stdout.strip()
+    return detail or f"`{executable.name} scan --inline-rules` exited {result.returncode}"
 
 
 def ast_grep_version(executable: Path) -> str:
