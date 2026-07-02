@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from byor.io.fsio import MANAGED_NOTICE, write_marked_text
-from byor.scaffold.precommit import AST_GREP_ENTRY
+from byor.io.fsio import write_marked_text
+from byor.scaffold.precommit import AST_GREP_ENTRY, GATE_MARKER
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -23,8 +23,6 @@ __all__ = (
 )
 
 WORKFLOW_RELPATH = ".github/workflows/byor-gate.yml"
-
-GATE_MARKER = f"# {MANAGED_NOTICE}"
 
 
 def write_ci_workflow(repo_root: Path, checks: list[CheckDef], *, default_branch: str) -> list[str]:
