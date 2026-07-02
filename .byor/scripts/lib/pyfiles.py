@@ -7,7 +7,7 @@
 
 Given trailing path arguments, it echoes back the ones that are existing
 Python files; given none, it discovers the repository's Python files with
-`git ls-files -co --exclude-standard`, falling back to a filtered directory
+`git ls-files -coz --exclude-standard`, falling back to a filtered directory
 walk when git is unavailable. Paths are written to stdout NUL-delimited so
 any filename, including one with spaces or newlines, round-trips
 unambiguously. A nonzero exit means the listing itself failed, never "no
@@ -58,7 +58,7 @@ def _repo_python_files() -> list[Path]:
                 "-C",
                 str(root),
                 "ls-files",
-                "-co",
+                "-coz",
                 "--exclude-standard",
                 "--",
                 "*.py",
@@ -72,7 +72,9 @@ def _repo_python_files() -> list[Path]:
         return _walk_python_files(root)
     if completed.returncode != 0:
         return _walk_python_files(root)
-    return [root / line for line in completed.stdout.splitlines() if line]
+    # -z NUL-delimits entries and disables core.quotePath mangling, so
+    # filenames with newlines or non-ASCII characters round-trip intact.
+    return [root / entry for entry in completed.stdout.split("\0") if entry]
 
 
 def _git_root(start: Path, *, git: str) -> Path | None:

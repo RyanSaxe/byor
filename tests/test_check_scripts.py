@@ -160,6 +160,24 @@ def test_pyfiles_nul_delimits_space_containing_filenames(tmp_path: Path) -> None
     assert [Path(entry).name for entry in _pyfiles(cwd=repo)] == ["with space.py"]
 
 
+def test_pyfiles_no_args_discovers_newline_and_non_ascii_filenames(tmp_path: Path) -> None:
+    # Newline-splitting git output mangles a newline filename, and git's
+    # core.quotePath quoting turns a non-ASCII name into a dropped file.
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    (repo / "模块.py").write_text("x = 1\n")
+    newline_name = "line\nbreak.py"
+    try:
+        (repo / newline_name).write_text("x = 1\n")
+    except OSError:
+        pytest.skip("this filesystem cannot create a filename containing a newline")
+
+    discovered = {Path(entry).name for entry in _pyfiles(cwd=repo)}
+
+    assert discovered == {"模块.py", newline_name}
+
+
 NO_SUPPRESSION_COMMAND = (sys.executable, str(SCRIPTS_DIR / "no-suppression-comments.py"))
 MODULE_CONTRACT_COMMAND = (sys.executable, str(SCRIPTS_DIR / "module-contract.py"))
 
