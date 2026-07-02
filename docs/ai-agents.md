@@ -187,7 +187,13 @@ export NO_COLOR=1 # the agent reads this output; keep it plain text
 unset FORCE_COLOR CLICOLOR_FORCE
 
 if [ "$#" -eq 0 ]; then
-  set -- $(git ls-files -co --exclude-standard -- '*.py' '*.pyi')
+  # Rebuild "$@" one line at a time so spaces and glob characters survive;
+  # newlines in filenames are out of scope for this teaching example.
+  while IFS= read -r file; do
+    [ -n "$file" ] && set -- "$@" "$file"
+  done <<EOF
+$(git ls-files -co --exclude-standard -- '*.py' '*.pyi')
+EOF
   [ "$#" -eq 0 ] && exit 0
 fi
 
