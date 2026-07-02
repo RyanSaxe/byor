@@ -10,7 +10,7 @@ shim and commits nothing.
 from pathlib import Path
 
 import pytest
-from support import git, write_global_check, write_global_rule
+from support import git, install_package, write_global_check, write_global_rule, write_package_rule
 
 from byor.cli import main
 from byor.config import load_repo_config
@@ -144,6 +144,33 @@ def test_gate_refuses_two_scripts_vendoring_to_the_same_name(
     assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 1
 
     assert "rename one of the scripts" in capsys.readouterr().err
+
+
+def test_gate_promote_keeps_both_package_rules_on_a_filename_collision(home: Path) -> None:
+    """Two packages shipping the same filename (distinct IDs) must both be vendored.
+
+    The loser used to be dropped silently, so the committed gate never
+    enforced it on CI or fresh clones; the collision now lands under a
+    package-prefixed path, and regenerating stays idempotent.
+    """
+    write_package_rule(home, "pkg-a", relpath="no-cast.yml", rule_id="a-no-cast")
+    write_package_rule(home, "pkg-b", relpath="no-cast.yml", rule_id="b-no-cast")
+    repo = home / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    install_package(repo, "pkg-a")
+    install_package(repo, "pkg-b")
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+
+    project = repo / ".byor" / "rules" / "project"
+    vendored = sorted(project.rglob("*.yml"))
+    ids = sorted(line for path in vendored for line in path.read_text().splitlines() if line.startswith("id: "))
+    assert ids == ["id: a-no-cast", "id: b-no-cast"]
+    # Both copies live in the committed project dir, visible to git.
+    visible = git(repo, "ls-files", "--others", "--exclude-standard", "--", str(project))
+    assert visible.count("no-cast.yml") == 2
 
 
 def test_private_gate_installs_a_local_shim_and_commits_nothing(home: Path) -> None:

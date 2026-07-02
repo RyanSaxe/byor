@@ -124,10 +124,18 @@ def _copy_mirror(project_dir: Path, mirror_dir: Path, *, strip_package: bool) ->
     for relpath, content in mirror_contents(mirror_dir).items():
         dest_rel = relpath.split("/", 1)[1] if strip_package and "/" in relpath else relpath
         destination = project_dir / dest_rel
+        if strip_package and _exists_with_other_content(destination, content):
+            # Two packages shipping the same filename must both be vendored,
+            # so the loser keeps its package prefix instead of being dropped.
+            destination = project_dir / relpath
         if not destination.exists():
             write_text_atomic(destination, content)
             written += 1
     return written
+
+
+def _exists_with_other_content(destination: Path, content: str) -> bool:
+    return destination.is_file() and destination.read_text(encoding="utf-8") != content
 
 
 def _vendor_check(repo_root: Path, check: CheckDef, *, vendored: dict[str, Path]) -> CheckDef:
