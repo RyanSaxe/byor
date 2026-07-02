@@ -207,6 +207,22 @@ def test_instruction_falls_back_to_message(check_repo: Path, capsys: pytest.Capt
     assert "Instruction:\nAvoid print in library code.\n" in out
 
 
+# An error-severity match makes ast-grep restate its exit code on stderr
+# ("Error: 1 error(s) found in code." / "Help: ..."); that boilerplate must
+# not precede byor's own rendering.
+def test_error_severity_findings_do_not_leak_ast_greps_exit_summary(
+    check_repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = check_repo / "src.py"
+    source.write_text('print("hi")\n')
+
+    assert main(agent_check_args(check_repo, "--files", str(source))) == 2
+
+    captured = capsys.readouterr()
+    assert captured.out.startswith("BYOR found 1 issue.")
+    assert captured.err == ""
+
+
 def test_diagnostics_group_by_file_then_sort_by_line_and_rule_id(
     check_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

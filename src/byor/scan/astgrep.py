@@ -42,6 +42,15 @@ NOT_FOUND_MESSAGE = (
 
 VERSION_PATTERN = re.compile(r"\d+(\.\d+)+")
 
+# ast-grep restates its exit code on stderr when error-severity rules matched;
+# the JSON on stdout already carries those matches, so the two-line summary is
+# pure noise next to byor's own rendering. (The committed gate runs ast-grep
+# directly and keeps its native output.)
+EXIT_SUMMARY_PATTERN = re.compile(
+    r"Error: \d+ error\(s\) found in code\."
+    r"|Help: Scan succeeded and found error level diagnostics in the codebase\."
+)
+
 
 def resolve_ast_grep(command: str = "auto") -> Path:
     """Locate the ast-grep executable.
@@ -160,10 +169,16 @@ def scan_files(
     )
     matches = _parse_scan_output(result.stdout)
     if matches is None:
+        # A genuinely failed scan surfaces stderr untouched: it holds the cause.
         detail = result.stderr.strip() or result.stdout.strip()
         message = f"`{executable.name} scan` failed (exit {result.returncode})"
         raise ByorError(f"{message}:\n{detail}" if detail else message)
-    return ScanResult(matches=matches, warnings=result.stderr.strip())
+    return ScanResult(matches=matches, warnings=_without_exit_summary(result.stderr))
+
+
+def _without_exit_summary(stderr: str) -> str:
+    lines = stderr.strip().splitlines()
+    return "\n".join(line for line in lines if not EXIT_SUMMARY_PATTERN.fullmatch(line.strip())).strip()
 
 
 def ast_grep_version(executable: Path) -> str:
