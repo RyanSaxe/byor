@@ -163,41 +163,48 @@ def _load_or_default_repo_config(repo_root: Path) -> RepoConfig:
 
 def _options_from_args(args: argparse.Namespace, defaults: InitDefaults) -> InitOptions:
     interactive = not args.non_interactive
-    if args.private is not None:
-        private: bool = args.private
-    else:
-        private = _resolve_private(default=defaults.private, interactive=interactive)
-    if args.git_hooks is not None:
-        git_hooks: bool = args.git_hooks
-    else:
-        git_hooks = _resolve_git_hooks(default=defaults.git_hooks, interactive=interactive)
-    if args.gate is not None:
-        gate: bool = args.gate
-    else:
-        gate = _resolve_gate(default=defaults.gate, interactive=interactive)
     return InitOptions(
-        private=private,
-        git_hooks=git_hooks,
-        gate=gate,
+        private=_resolve_flag(
+            explicit=args.private,
+            default=defaults.private,
+            interactive=interactive,
+            question="Make this byor setup private (hide everything from git, don't commit)?",
+            choices=("no, share it with the team", "yes, keep it to myself"),
+        ),
+        git_hooks=_resolve_flag(
+            explicit=args.git_hooks,
+            default=defaults.git_hooks,
+            interactive=interactive,
+            question="Install git hook shims that run `byor sync` after merge and checkout?",
+        ),
+        gate=_resolve_flag(
+            explicit=args.gate,
+            default=defaults.gate,
+            interactive=interactive,
+            question="Install a blocking gate (pre-commit + CI) that enforces these rules?",
+        ),
         register=not args.no_register,
         replace_sgconfig=args.replace_sgconfig,
         profile=_resolve_profile(args, defaults),
     )
 
 
-def _resolve_private(*, default: bool | None, interactive: bool) -> bool:
+def _resolve_flag(
+    *,
+    explicit: bool | None,
+    default: bool | None,
+    interactive: bool,
+    question: str,
+    choices: tuple[str, str] = ("no", "yes"),
+) -> bool:
+    # An explicit CLI value wins; otherwise the global-config init default
+    # (None meaning "no") preselects the prompt or, non-interactively, decides.
+    if explicit is not None:
+        return explicit
     fallback = default if default is not None else False
-    return _prompt_private(default=fallback) if interactive else fallback
-
-
-def _resolve_gate(*, default: bool | None, interactive: bool) -> bool:
-    fallback = default if default is not None else False
-    return _prompt_gate(default=fallback) if interactive else fallback
-
-
-def _resolve_git_hooks(*, default: bool | None, interactive: bool) -> bool:
-    fallback = default if default is not None else False
-    return _prompt_git_hooks(default=fallback) if interactive else fallback
+    if not interactive:
+        return fallback
+    return prompt_choice(question, choices, default=1 if fallback else 0) == 1
 
 
 def _resolve_profile(args: argparse.Namespace, defaults: InitDefaults) -> str | None:
@@ -206,30 +213,3 @@ def _resolve_profile(args: argparse.Namespace, defaults: InitDefaults) -> str | 
     if args.profile is not None:
         return args.profile
     return defaults.profile
-
-
-def _prompt_private(*, default: bool) -> bool:
-    choice = prompt_choice(
-        "Make this byor setup private (hide everything from git, don't commit)?",
-        ("no, share it with the team", "yes, keep it to myself"),
-        default=1 if default else 0,
-    )
-    return choice == 1
-
-
-def _prompt_gate(*, default: bool) -> bool:
-    choice = prompt_choice(
-        "Install a blocking gate (pre-commit + CI) that enforces these rules?",
-        ("no", "yes"),
-        default=1 if default else 0,
-    )
-    return choice == 1
-
-
-def _prompt_git_hooks(*, default: bool) -> bool:
-    choice = prompt_choice(
-        "Install git hook shims that run `byor sync` after merge and checkout?",
-        ("no", "yes"),
-        default=1 if default else 0,
-    )
-    return choice == 1

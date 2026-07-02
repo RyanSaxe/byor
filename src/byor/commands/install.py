@@ -37,9 +37,9 @@ def run_install(args: argparse.Namespace) -> int:
         agents.append("skill")
 
     messages: list[str] = []
-    sgconfig_message = ensure_home_sgconfig(global_rules_dir(config_dir, config))
-    if sgconfig_message is not None:
-        messages.append(f"Wrote ~/{sgconfig_message.split()[-1]}")
+    sgconfig_path = ensure_home_sgconfig(global_rules_dir(config_dir, config))
+    if sgconfig_path is not None:
+        messages.append(f"Wrote ~/{sgconfig_path.name}")
     for agent in agents:
         messages.extend(install_agent(agent))
         if agent not in config.agents:

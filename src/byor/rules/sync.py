@@ -7,10 +7,8 @@ package, and self-heal flows.
 
 from __future__ import annotations
 
-import os
 import sys
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from byor.agents.install import install_agent
@@ -27,7 +25,7 @@ from byor.config import (
     repo_registry_path,
 )
 from byor.errors import ByorError, ConfigError
-from byor.io.fsio import write_text_atomic
+from byor.io.fsio import prune_empty_dirs, write_text_atomic
 from byor.io.paths import global_config_dir, resolve_repo_root, resolve_within
 from byor.rules.rules import (
     Rule,
@@ -43,11 +41,13 @@ from byor.scaffold.sgconfig import ensure_home_sgconfig
 if TYPE_CHECKING:
     import argparse
     from collections.abc import Iterable, Iterator
+    from pathlib import Path
 
 __all__ = (
     "CanonicalRules",
     "InstalledPackage",
     "MirrorResult",
+    "RepoPlans",
     "SkippedRule",
     "SyncPlan",
     "compute_packages_plan",
@@ -60,8 +60,7 @@ __all__ = (
     "mirror_contents",
     "mirror_global_rules",
     "repo_is_stale",
-    "repo_packages_plan",
-    "repo_sync_plan",
+    "repo_plans",
     "run_sync",
     "summarize_changes",
     "sync_repo",
@@ -161,7 +160,14 @@ def _effective_canonical(
     kept: list[Rule] = []
     skipped: list[SkippedRule] = []
     for rule in canonical.rules:
-        reason = _skip_reason(rule, project_ids, local_ids=local_ids, excluded=excluded, excluded_tags=excluded_tag_set)
+        reason = _skip_reason(
+            rule,
+            project_ids,
+            local_ids=local_ids,
+            global_ids=set(),
+            excluded=excluded,
+            excluded_tags=excluded_tag_set,
+        )
         if reason is None:
             kept.append(rule)
         else:
@@ -180,7 +186,11 @@ def compute_sync_plan(
     kept, skipped = _effective_canonical(
         project, local, excluded_rule_ids=excluded_rule_ids, excluded_tags=excluded_tags, canonical=canonical
     )
-    desired = {rule.path.relative_to(canonical.root).as_posix(): rule.content for rule in kept}
+    return _global_plan(kept, skipped, root=canonical.root)
+
+
+def _global_plan(kept: list[Rule], skipped: list[SkippedRule], *, root: Path) -> SyncPlan:
+    desired = {rule.path.relative_to(root).as_posix(): rule.content for rule in kept}
     return SyncPlan(desired=desired, skipped=skipped)
 
 
@@ -208,7 +218,7 @@ def compute_packages_plan(
     kept: list[Rule] = []
     for package in packages:
         for rule in package.rules:
-            reason = _package_skip_reason(
+            reason = _skip_reason(
                 rule,
                 project_ids,
                 local_ids=local_ids,
@@ -257,55 +267,60 @@ def mirror_global_rules(mirror_dir: Path, desired: dict[str, str]) -> MirrorResu
         if relpath not in desired:
             (mirror_dir / relpath).unlink()
             removed += 1
-    _prune_empty_dirs(mirror_dir)
+    prune_empty_dirs(mirror_dir)
     return MirrorResult(written=written, removed=removed)
 
 
-def repo_sync_plan(repo_root: Path, canonical: CanonicalRules) -> tuple[SyncPlan, Path]:
-    paths = load_repo_config(repo_root).paths
-    local_config = load_local_config(repo_root)
-    plan = compute_sync_plan(
-        load_rules(repo_root / paths.project_rules),
-        load_rules(repo_root / paths.personal_local_rules),
-        excluded_rule_ids=local_config.excluded_rule_ids,
-        excluded_tags=local_config.excluded_rule_tags,
-        canonical=canonical,
-    )
-    return plan, resolve_within(repo_root, repo_root / paths.personal_global_rules)
+@dataclass
+class RepoPlans:
+    global_plan: SyncPlan
+    global_dir: Path
+    packages_plan: SyncPlan
+    packages_dir: Path
 
 
-def repo_packages_plan(repo_root: Path, canonical: CanonicalRules) -> tuple[SyncPlan, Path]:
+def repo_plans(repo_root: Path, canonical: CanonicalRules) -> RepoPlans:
+    """Compute the global and packages mirror plans in one pass.
+
+    Loads the repo config, local config, and both rule scopes once and reuses
+    the effective-canonical result for both plans, so a self-heal does not read
+    and parse every rule file twice.
+    """
     paths = load_repo_config(repo_root).paths
     local_config = load_local_config(repo_root)
     project = load_rules(repo_root / paths.project_rules)
     local = load_rules(repo_root / paths.personal_local_rules)
-    kept_global, _ = _effective_canonical(
+    kept, skipped = _effective_canonical(
         project,
         local,
         excluded_rule_ids=local_config.excluded_rule_ids,
         excluded_tags=local_config.excluded_rule_tags,
         canonical=canonical,
     )
-    plan = compute_packages_plan(
+    packages_plan = compute_packages_plan(
         project,
         local,
         local_config=local_config,
-        kept_global_ids={rule.id for rule in kept_global},
+        kept_global_ids={rule.id for rule in kept},
         packages=load_installed_packages(canonical, local_config.packages),
     )
-    return plan, resolve_within(repo_root, repo_root / paths.personal_packages_rules)
+    return RepoPlans(
+        global_plan=_global_plan(kept, skipped, root=canonical.root),
+        global_dir=resolve_within(repo_root, repo_root / paths.personal_global_rules),
+        packages_plan=packages_plan,
+        packages_dir=resolve_within(repo_root, repo_root / paths.personal_packages_rules),
+    )
 
 
 def sync_repo(repo_root: Path, canonical: CanonicalRules) -> tuple[SyncPlan, MirrorResult]:
-    global_plan, global_dir = repo_sync_plan(repo_root, canonical)
-    global_result = mirror_global_rules(global_dir, global_plan.desired)
-    packages_plan, packages_dir = repo_packages_plan(repo_root, canonical)
-    packages_result = mirror_global_rules(packages_dir, packages_plan.desired)
+    plans = repo_plans(repo_root, canonical)
+    global_result = mirror_global_rules(plans.global_dir, plans.global_plan.desired)
+    packages_result = mirror_global_rules(plans.packages_dir, plans.packages_plan.desired)
     # `desired` stays the global mirror alone: it feeds the "N global rules"
     # sync count. Package changes still register through the mirror result.
     plan = SyncPlan(
-        desired=global_plan.desired,
-        skipped=global_plan.skipped + packages_plan.skipped,
+        desired=plans.global_plan.desired,
+        skipped=plans.global_plan.skipped + plans.packages_plan.skipped,
     )
     result = MirrorResult(
         written=global_result.written + packages_result.written,
@@ -315,9 +330,11 @@ def sync_repo(repo_root: Path, canonical: CanonicalRules) -> tuple[SyncPlan, Mir
 
 
 def repo_is_stale(repo_root: Path, canonical: CanonicalRules) -> bool:
-    global_plan, global_dir = repo_sync_plan(repo_root, canonical)
-    packages_plan, packages_dir = repo_packages_plan(repo_root, canonical)
-    return mirror_contents(global_dir) != global_plan.desired or mirror_contents(packages_dir) != packages_plan.desired
+    plans = repo_plans(repo_root, canonical)
+    return (
+        mirror_contents(plans.global_dir) != plans.global_plan.desired
+        or mirror_contents(plans.packages_dir) != plans.packages_plan.desired
+    )
 
 
 def heal_global(config_dir: Path) -> list[str]:
@@ -430,30 +447,12 @@ def _skip_reason(
     project_ids: set[str],
     *,
     local_ids: set[str],
-    excluded: set[str],
-    excluded_tags: set[str],
-) -> str | None:
-    if rule.id in project_ids:
-        return "overridden by project rule"
-    if rule.id in local_ids:
-        return "overridden by local rule"
-    if rule.id in excluded:
-        return "excluded in .byor/local.yml"
-    for tag in rule.tags:
-        if tag in excluded_tags:
-            return f"excluded by tag '{tag}' in .byor/local.yml"
-    return None
-
-
-def _package_skip_reason(
-    rule: Rule,
-    project_ids: set[str],
-    *,
-    local_ids: set[str],
     global_ids: set[str],
     excluded: set[str],
     excluded_tags: set[str],
 ) -> str | None:
+    # Precedence order: canonical global rules pass an empty `global_ids`;
+    # package rules pass the kept global IDs so a global rule shadows them.
     if rule.id in project_ids:
         return "overridden by project rule"
     if rule.id in local_ids:
@@ -466,14 +465,6 @@ def _package_skip_reason(
         if tag in excluded_tags:
             return f"excluded by tag '{tag}' in .byor/local.yml"
     return None
-
-
-def _prune_empty_dirs(root: Path) -> None:
-    # os.walk snapshots entries before children are pruned, so re-check emptiness.
-    for dirpath, _, _ in os.walk(root, topdown=False):
-        directory = Path(dirpath)
-        if directory != root and not any(directory.iterdir()):
-            directory.rmdir()
 
 
 def _count(number: int, noun: str) -> str:
