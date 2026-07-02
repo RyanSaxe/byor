@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 from support import (
+    git,
     install_agents,
     install_package,
     make_repo,
@@ -20,7 +21,7 @@ from support import (
     write_rule,
 )
 
-from byor.agents.opencode import OPENCODE_PLUGIN, OPENCODE_PLUGIN_RELPATH
+from byor.agents.opencode import OPENCODE_PLUGIN_RELPATH
 from byor.cli import main
 from byor.commands.doctor import collect_checks
 from byor.config import (
@@ -217,16 +218,81 @@ def test_doctor_flags_registered_repos_whose_path_is_gone(home: Path, capsys: py
     assert f"{gone} no longer exists" in capsys.readouterr().out
 
 
-def test_doctor_self_heals_a_missing_opencode_plugin(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_doctor_flags_a_missing_opencode_plugin(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = repo_with_agents(home, "opencode")
     plugin = home / OPENCODE_PLUGIN_RELPATH
     plugin.unlink()
     capsys.readouterr()
 
-    assert main(["doctor", "--repo", str(repo), "--quick"]) == 0
+    assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
 
-    assert plugin.read_text() == OPENCODE_PLUGIN
-    assert "~/.config/opencode/plugin/byor.ts is missing" not in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "~/.config/opencode/plugin/byor.ts is missing" in out
+    assert "run `byor install`" in out
+    # Doctor is read-only: reporting the problem must not rewrite the plugin.
+    assert not plugin.exists()
+
+
+def test_doctor_reports_a_malformed_agent_config_as_a_failing_check(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = repo_with_agents(home, "claude-code")
+    settings = home / ".claude" / "settings.json"
+    settings.write_text("{not json")
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
+
+    captured = capsys.readouterr()
+    assert "FAIL  agent_files" in captured.out
+    assert ".claude/settings.json is not valid JSON" in captured.out
+    assert "fix the JSON by hand" in captured.out
+    # The parse error is a check row, not an escaped top-level `byor:` error.
+    assert "byor:" not in captured.err
+    assert "Traceback" not in captured.err
+    # Doctor is read-only: the malformed file is left for the user to fix.
+    assert settings.read_text() == "{not json"
+
+
+def test_doctor_flags_a_drifted_skill_render(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = repo_with_agents(home, "skill")
+    skill = home / ".claude" / "skills" / "byor" / "SKILL.md"
+    edited = skill.read_text() + "\nlocal note\n"  # marker kept: managed but drifted
+    skill.write_text(edited)
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  agent_files" in out
+    assert "~/.claude/skills/byor/SKILL.md is out of date" in out
+    assert "run `byor install`" in out
+    # Doctor is read-only: the drifted render stays as the user left it.
+    assert skill.read_text() == edited
+
+
+def test_doctor_flags_stale_gate_files(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = home / "gated"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+    capsys.readouterr()
+    assert main(["doctor", "--repo", str(repo)]) == 0
+    assert "ok    gate_files" in capsys.readouterr().out
+
+    config = load_repo_config(repo)
+    config.checks.append(CheckDef("ruff", ["py"], "uv run ruff check"))
+    save_repo_config(repo, config)
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  gate_files" in out
+    assert "run `byor init --gate`" in out
+    # Doctor is read-only: the gate artifacts still lack the new check.
+    assert "ruff" not in (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
+    assert "ruff" not in (repo / ".pre-commit-config.yaml").read_text()
 
 
 def test_doctor_flags_a_missing_packages_visibility_file(home: Path) -> None:

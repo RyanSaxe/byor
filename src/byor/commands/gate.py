@@ -21,11 +21,16 @@ from byor.config import (
     save_repo_config,
 )
 from byor.errors import ByorError
-from byor.io.fsio import write_text_atomic
+from byor.io.fsio import marked_text_status, write_text_atomic
 from byor.rules.sync import load_canonical_rules, mirror_contents, sync_repo
-from byor.scaffold.ci import write_ci_workflow
+from byor.scaffold.ci import WORKFLOW_RELPATH, workflow_text, write_ci_workflow
 from byor.scaffold.githooks import install_precommit_shim
-from byor.scaffold.precommit import write_precommit_config
+from byor.scaffold.precommit import (
+    CONFIG_RELPATH,
+    GATE_MARKER,
+    precommit_config_text,
+    write_precommit_config,
+)
 from byor.scan.checks import load_effective_checks
 
 __all__ = (
@@ -33,6 +38,7 @@ __all__ = (
     "install_gate",
     "promote_everything",
     "regenerate_gate",
+    "stale_gate_files",
 )
 
 VENDORED_SCRIPTS_DIR = ".byor/scripts"
@@ -56,6 +62,25 @@ def install_gate(repo_root: Path, config_dir: Path, *, private: bool) -> list[st
 def regenerate_gate(repo_root: Path) -> list[str]:
     checks = load_repo_config(repo_root).checks
     return write_ci_workflow(repo_root, checks) + write_precommit_config(repo_root, checks)
+
+
+def stale_gate_files(repo_root: Path, checks: list[CheckDef]) -> list[str]:
+    """Gate file relpaths whose content drifted from `checks`, without writing.
+
+    Doctor uses this to report a stale gate instead of repairing it; the
+    comparison renders exactly what regenerate_gate would write and diffs it
+    against disk. A gate file the user rewrote without the BYOR marker is
+    user-owned — regeneration leaves it alone, so it is not stale either.
+    """
+    desired = {
+        WORKFLOW_RELPATH: workflow_text(checks),
+        CONFIG_RELPATH: precommit_config_text(checks),
+    }
+    return [
+        relpath
+        for relpath, content in desired.items()
+        if marked_text_status(repo_root / relpath, content, marker=GATE_MARKER) in ("missing", "drifted")
+    ]
 
 
 def heal_gate(repo_root: Path) -> list[str]:

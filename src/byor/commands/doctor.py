@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from byor.agents.install import agent_file_problems
+from byor.commands.gate import stale_gate_files
 from byor.config import (
     GlobalConfig,
     RepoConfig,
@@ -137,6 +138,9 @@ def _repo_checks(
     ]
     if not quick and repo_check.ok:
         checks.extend(_rule_checks(repo_root, repo_config.paths, config_dir=config_dir))
+        gate_check = _gate_check(repo_root, repo_config)
+        if gate_check is not None:
+            checks.append(gate_check)
     extra = _extra_checks_check(repo_root, repo_config, global_config=global_config)
     if extra is not None:
         checks.append(extra)
@@ -336,6 +340,19 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path) -> list
     return checks
 
 
+def _gate_check(repo_root: Path, repo_config: RepoConfig) -> Check | None:
+    if not repo_config.gate:
+        return None
+    stale = stale_gate_files(repo_root, repo_config.checks)
+    if stale:
+        return Check(
+            id="gate_files",
+            ok=False,
+            message=f"gate files are stale: {', '.join(stale)}; run `byor init --gate`",
+        )
+    return Check(id="gate_files", ok=True, message="gate files match the configured checks")
+
+
 def _registry_check(config_dir: Path, global_config: GlobalConfig) -> Check:
     repos = load_repo_registry(repo_registry_path(config_dir, global_config))
     problems = [f"{repo} no longer exists" for repo in repos if not repo.is_dir()]
@@ -376,13 +393,18 @@ def _extra_checks_check(
 def _agent_files_check(global_config: GlobalConfig) -> Check:
     if not global_config.agents:
         return Check(id="agent_files", ok=True, message="no AI agents configured")
-    problems = agent_file_problems(global_config.agents)
+    problems: list[str] = []
+    for agent in global_config.agents:
+        # A malformed harness config is itself a finding: report it per agent so
+        # one broken file cannot crash doctor or hide the other agents' health.
+        try:
+            agent_problems = agent_file_problems([agent])
+        except ConfigError as error:
+            problems.append(f"{error}; fix the JSON by hand")
+            continue
+        problems.extend(f"{problem}; run `byor install`" for problem in agent_problems)
     if problems:
-        return Check(
-            id="agent_files",
-            ok=False,
-            message=f"{'; '.join(problems)}; run `byor install`",
-        )
+        return Check(id="agent_files", ok=False, message="; ".join(problems))
     agents = ", ".join(global_config.agents)
     return Check(
         id="agent_files",

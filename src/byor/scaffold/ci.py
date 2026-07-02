@@ -17,7 +17,10 @@ if TYPE_CHECKING:
 
     from byor.config import CheckDef
 
-__all__ = ("write_ci_workflow",)
+__all__ = (
+    "workflow_text",
+    "write_ci_workflow",
+)
 
 WORKFLOW_RELPATH = ".github/workflows/byor-gate.yml"
 
@@ -25,13 +28,13 @@ GATE_MARKER = f"# {MANAGED_NOTICE}"
 
 
 def write_ci_workflow(repo_root: Path, checks: list[CheckDef]) -> list[str]:
-    result = write_marked_text(repo_root / WORKFLOW_RELPATH, _workflow_yaml(checks), marker=GATE_MARKER)
+    result = write_marked_text(repo_root / WORKFLOW_RELPATH, workflow_text(checks), marker=GATE_MARKER)
     if result == "written":
         return [f"Wrote {WORKFLOW_RELPATH}"]
     return []
 
 
-def _workflow_yaml(checks: list[CheckDef]) -> str:
+def workflow_text(checks: list[CheckDef]) -> str:
     steps = [
         "      - uses: actions/checkout@v4",
         "      - uses: astral-sh/setup-uv@v6",

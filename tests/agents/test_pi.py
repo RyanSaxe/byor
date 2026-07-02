@@ -40,17 +40,28 @@ def test_uninstall_removes_only_marker_bearing_files(home: Path, capsys: pytest.
     assert "pi" not in global_agents()
 
 
-def test_doctor_self_heals_a_missing_or_drifted_extension(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_doctor_flags_a_missing_or_drifted_extension_and_install_repairs_it(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     repo = repo_with_agents(home, "pi")
     extension = home / PI_EXTENSION_RELPATH
 
     for breakage in (extension.unlink, lambda: extension.write_text(PI_MARKER + "\n")):
         breakage()
+        broken = extension.read_text() if extension.is_file() else None
         capsys.readouterr()
 
-        assert main(["doctor", "--repo", str(repo), "--quick"]) == 0
+        assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
+        out = capsys.readouterr().out
+        assert "FAIL  agent_files" in out
+        assert PI_EXTENSION_RELPATH in out
+        assert "run `byor install`" in out
+        # Doctor is read-only: the broken extension stays exactly as it was.
+        assert (extension.read_text() if extension.is_file() else None) == broken
+
+        assert main(["hook", "install", "--agent", "pi"]) == 0
         assert extension.read_text() == PI_EXTENSION
-        assert PI_EXTENSION_RELPATH not in capsys.readouterr().out
+        assert main(["doctor", "--repo", str(repo), "--quick"]) == 0
 
 
 def test_pi_reads_the_skill_from_the_shared_agents_location(home: Path) -> None:

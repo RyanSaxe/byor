@@ -347,10 +347,10 @@ _COMMAND_ARGUMENTS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
 }
 
 
-# Commands whose body performs the heal itself, or must not self-heal: install
-# (the command that sets global state up), init (runs a full sync as a step),
-# and sync (whose --check variant must never write).
-SELF_SYNCING_COMMANDS = frozenset({"install", "init", "sync", "profile", "package"})
+# Commands that skip the self-heal preamble: install, init, sync, profile, and
+# package perform their own healing (and `sync --check` must never write), while
+# doctor is read-only diagnostics — it reports drift instead of repairing it.
+NO_SELF_HEAL_COMMANDS = frozenset({"install", "init", "sync", "profile", "package", "doctor"})
 
 
 def _is_hook_invocation(args: argparse.Namespace) -> bool:
@@ -377,16 +377,8 @@ _HANDLERS = {
 
 
 def run(args: argparse.Namespace) -> int:
-    if args.command not in SELF_SYNCING_COMMANDS and not _is_hook_invocation(args):
-        try:
-            heal_messages = _self_heal_preamble(args)
-        except ByorError:
-            # Doctor's job is reporting problems (e.g. a rule file that does
-            # not parse stops sync); its own checks render them as FAIL rows.
-            if args.command != "doctor":
-                raise
-            heal_messages = []
-        for message in heal_messages:
+    if args.command not in NO_SELF_HEAL_COMMANDS and not _is_hook_invocation(args):
+        for message in _self_heal_preamble(args):
             # stderr keeps stdout clean for JSON-emitting commands.
             sys.stderr.write(f"{message}\n")
     handler = _HANDLERS.get(args.command)
