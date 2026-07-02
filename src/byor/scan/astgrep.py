@@ -147,7 +147,17 @@ def scan_files(
     if config is not None:
         argv.extend(["--config", str(config)])
     argv.extend(str(file) for file in files)
-    result = subprocess.run(argv, capture_output=True, text=True, cwd=repo_root, check=False)
+    # ast-grep emits raw UTF-8 JSON; the locale code page would mojibake or
+    # crash on Windows, and "replace" keeps a stray bad byte from killing a scan.
+    result = subprocess.run(
+        argv,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=repo_root,
+        check=False,
+    )
     matches = _parse_scan_output(result.stdout)
     if matches is None:
         detail = result.stderr.strip() or result.stdout.strip()
@@ -175,7 +185,14 @@ def _reports_ast_grep_version(executable: Path) -> bool:
 
 def _run_version(executable: Path) -> subprocess.CompletedProcess[str] | None:
     try:
-        return subprocess.run([str(executable), "--version"], capture_output=True, text=True, check=False)
+        return subprocess.run(
+            [str(executable), "--version"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
     except OSError:
         return None
 

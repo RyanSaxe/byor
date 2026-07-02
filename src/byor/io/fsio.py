@@ -73,7 +73,9 @@ def write_text_atomic(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     handle_fd, temp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
     try:
-        with os.fdopen(handle_fd, "w", encoding="utf-8") as handle:
+        # newline="\n" so generated files (notably /bin/sh hook shims) never
+        # pick up CRLF from Windows' default newline translation.
+        with os.fdopen(handle_fd, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())

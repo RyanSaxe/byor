@@ -49,3 +49,11 @@ def test_load_rejects_invalid_yaml(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError, match="invalid YAML"):
         load_yaml_mapping(path)
+
+
+def test_load_rejects_non_utf8_bytes_with_config_error(tmp_path: Path) -> None:
+    path = tmp_path / "mojibake.yml"
+    path.write_bytes(b"key: \xff\xfe\n")
+
+    with pytest.raises(ConfigError, match="not valid UTF-8"):
+        load_yaml_mapping(path)

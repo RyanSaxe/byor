@@ -27,6 +27,16 @@ def test_write_text_atomic_creates_parents_overwrites_and_leaves_no_temp_files(
     assert [entry.name for entry in path.parent.iterdir()] == ["file.txt"]
 
 
+def test_write_text_atomic_writes_lf_bytes_on_every_platform(tmp_path: Path) -> None:
+    # Generated /bin/sh hook shims break under CRLF, so newline translation
+    # must stay off; on Windows the default text mode would write \r\n.
+    path = tmp_path / "hook.sh"
+
+    write_text_atomic(path, "#!/bin/sh\nexit 0\n")
+
+    assert path.read_bytes() == b"#!/bin/sh\nexit 0\n"
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX mode bits and umask are not meaningful")
 def test_write_text_atomic_preserves_mode_on_overwrite_and_honors_umask(
     tmp_path: Path,
