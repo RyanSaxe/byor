@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from byor import __version__
 from byor.agents.harness import HARNESS_CHOICES
 from byor.agents.install import AGENT_CHOICES, run_hook
+from byor.commands.disable import run_disable, run_enable
 from byor.commands.doctor import run_doctor
 from byor.commands.gate import heal_gate
 from byor.commands.heal import heal_global, heal_repo
@@ -32,6 +33,7 @@ from byor.commands.rules import (
     run_promote,
     run_remove,
 )
+from byor.config import disabled_entry, load_global_config
 from byor.errors import ByorError
 from byor.io.paths import global_config_dir, resolve_repo_root
 from byor.rules.sync import run_sync
@@ -57,6 +59,8 @@ COMMANDS = {
     "promote": "Move a personal rule into shared project rules",
     "exclude": "Disable a global rule in this repository",
     "include": "Re-enable a previously excluded global rule",
+    "disable": "Turn byor off for a repository or a directory of repositories",
+    "enable": "Turn byor back on for a disabled path",
     "profile": "List and apply local exclusion profiles",
     "package": "List and install opt-in rule/check packages",
     "list": "Show rules and where they come from",
@@ -64,7 +68,7 @@ COMMANDS = {
     "hook": "Install or uninstall AI agent integrations",
 }
 
-REPO_COMMANDS = frozenset(COMMANDS) - {"install", "hook", "profile", "package"}
+REPO_COMMANDS = frozenset(COMMANDS) - {"install", "hook", "profile", "package", "disable", "enable"}
 REPO_HELP = "Repository root (default: search upward from cwd)"
 
 
@@ -240,6 +244,14 @@ def _add_promote_arguments(command: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_target_path_argument(command: argparse.ArgumentParser, *, verb: str) -> None:
+    help_text = (
+        f"Directory to {verb}: a repository root or a prefix covering many repositories"
+        " (default: the enclosing repo root, or the cwd itself outside git)"
+    )
+    command.add_argument("path", nargs="?", type=Path, metavar="PATH", help=help_text)
+
+
 def _add_exclusion_arguments(command: argparse.ArgumentParser) -> None:
     command.add_argument(
         "rule_id",
@@ -343,6 +355,8 @@ _COMMAND_ARGUMENTS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
     "promote": _add_promote_arguments,
     "exclude": _add_exclusion_arguments,
     "include": _add_exclusion_arguments,
+    "disable": partial(_add_target_path_argument, verb="disable"),
+    "enable": partial(_add_target_path_argument, verb="re-enable"),
     "profile": _add_profile_arguments,
     "package": _add_package_arguments,
     "list": _add_list_arguments,
@@ -354,7 +368,14 @@ _COMMAND_ARGUMENTS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
 # Commands that skip the self-heal preamble: install, init, sync, profile, and
 # package perform their own healing (and `sync --check` must never write), while
 # doctor is read-only diagnostics — it reports drift instead of repairing it.
-NO_SELF_HEAL_COMMANDS = frozenset({"install", "init", "sync", "profile", "package", "doctor"})
+# disable and enable manage the off switch itself; healing the repo about to be
+# disabled would be backwards.
+NO_SELF_HEAL_COMMANDS = frozenset({"install", "init", "sync", "profile", "package", "doctor", "disable", "enable"})
+
+# Repo commands that stop with one stderr line in a disabled repo. init runs its
+# own re-enable prompt and doctor is read-only reporting, so both pass through.
+DISABLED_NOTICE_COMMANDS = REPO_COMMANDS - {"init", "doctor"}
+DISABLED_NOTICE = "byor: this repository is disabled for byor; run `byor enable` to re-enable\n"
 
 
 def _is_hook_invocation(args: argparse.Namespace) -> bool:
@@ -375,12 +396,18 @@ _HANDLERS = {
     "package": run_package,
     "exclude": run_exclusion,
     "include": run_exclusion,
+    "disable": run_disable,
+    "enable": run_enable,
     "agent-check": run_agent_check,
     "hook": run_hook,
 }
 
 
 def run(args: argparse.Namespace) -> int:
+    if _in_disabled_repo(args):
+        # A human asked, so say why nothing happens; hook mode stays silent.
+        sys.stderr.write(DISABLED_NOTICE)
+        return 0
     if args.command not in NO_SELF_HEAL_COMMANDS and not _is_hook_invocation(args):
         for message in _self_heal_preamble(args):
             # stderr keeps stdout clean for JSON-emitting commands.
@@ -388,10 +415,25 @@ def run(args: argparse.Namespace) -> int:
     return _HANDLERS[args.command](args)
 
 
+def _in_disabled_repo(args: argparse.Namespace) -> bool:
+    if args.command not in DISABLED_NOTICE_COMMANDS or _is_hook_invocation(args):
+        return False
+    if args.command == "sync" and args.all:
+        # A fan-out is not about the cwd repo; disabled repos are skipped inside.
+        return False
+    config = load_global_config(global_config_dir())
+    if not config.disabled_repos:
+        return False
+    return disabled_entry(resolve_repo_root(explicit=args.repo), config) is not None
+
+
 def _self_heal_preamble(args: argparse.Namespace) -> list[str]:
     config_dir = global_config_dir()
     messages = heal_global(config_dir)
     repo_root = resolve_repo_root(explicit=args.repo)
+    if disabled_entry(repo_root, load_global_config(config_dir)) is not None:
+        # Machine-level healing above still ran; a disabled repo is left alone.
+        return messages
     mirror_line = heal_repo(repo_root, config_dir)
     if mirror_line is not None:
         messages.append(mirror_line)

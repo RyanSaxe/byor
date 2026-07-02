@@ -76,6 +76,29 @@ The mental model: running byor *anything* makes this repo correct;
 `byor doctor` tells you what is wrong without touching it;
 `byor sync --all` makes every repo correct.
 
+## Turning byor off for a repo
+
+Global rules are opt-out: the post-edit hook applies them in any repo you
+edit, including repos that never ran `byor init`. When a repo should get no
+byor feedback at all — an old codebase, a team repo with conflicting
+standards — disable it without writing anything into the repo:
+
+```bash
+byor disable                   # this repo (outside git: the cwd itself)
+byor disable ~/work/clients    # a directory prefix: covers every repo under it
+byor enable                    # undo (an exact entry only, never a prefix)
+```
+
+Entries are resolved absolute paths recorded under `disabled_repos` in
+`~/.config/byor/config.yml`. In a covered repo the hook exits silently,
+self-heal leaves the repo alone (machine-level healing still runs), and
+`byor sync --all` skips it with a note. Explicit commands (`byor list`,
+`byor sync`, ...) print one line saying the repo is disabled instead of
+running; `byor init` asks to re-enable an exact entry before continuing, and
+`byor doctor` lists the disabled paths. Enabling a repo covered by a prefix
+entry names that entry rather than removing it, since lifting the prefix
+would re-enable every repo under it.
+
 ## What happens when...
 
 **A global rule changes.** `byor add`/`byor edit` with global scope sync

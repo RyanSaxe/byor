@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from byor.config import (
     PACKAGE_CHECKS_FILE,
     LocalConfig,
+    disabled_entry,
     global_packages_dir,
     global_rules_dir,
     load_global_config,
@@ -347,10 +348,12 @@ def summarize_changes(result: MirrorResult) -> str:
 
 
 def iter_registered_repos(config_dir: Path) -> Iterator[Path]:
-    registry_path = repo_registry_path(config_dir, load_global_config(config_dir))
-    for repo_root in load_repo_registry(registry_path):
+    config = load_global_config(config_dir)
+    for repo_root in load_repo_registry(repo_registry_path(config_dir, config)):
         if not repo_root.is_dir():
             sys.stderr.write(f"byor: skipping {repo_root}: path no longer exists\n")
+        elif disabled_entry(repo_root, config) is not None:
+            sys.stderr.write(f"byor: skipping {repo_root}: disabled for byor (run `byor enable`)\n")
         elif not repo_config_path(repo_root).is_file():
             sys.stderr.write(f"byor: skipping {repo_root}: no .byor/config.yml\n")
         else:

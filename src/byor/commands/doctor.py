@@ -118,6 +118,9 @@ def _global_checks(config_dir: Path, global_config: GlobalConfig, *, quick: bool
         _agent_files_check(global_config),
         _registry_check(config_dir, global_config),
     ]
+    disabled = _disabled_paths_check(global_config)
+    if disabled is not None:
+        checks.append(disabled)
     if not quick:
         checks.append(_global_rules_check(config_dir, global_config))
     return checks
@@ -470,6 +473,22 @@ def _registry_check(config_dir: Path, global_config: GlobalConfig) -> Check:
         ok=True,
         message="all registered repository paths exist",
     )
+
+
+def _disabled_paths_check(global_config: GlobalConfig) -> Check | None:
+    if not global_config.disabled_repos:
+        return None
+    listed = ", ".join(_home_display(entry) for entry in global_config.disabled_repos)
+    count = len(global_config.disabled_repos)
+    noun = "path" if count == 1 else "paths"
+    return Check(id="disabled_paths", ok=True, message=f"{count} {noun} disabled: {listed}")
+
+
+def _home_display(path: Path) -> str:
+    try:
+        return f"~/{path.relative_to(Path.home()).as_posix()}"
+    except ValueError:
+        return str(path)
 
 
 def _extra_checks_check(

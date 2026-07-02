@@ -25,6 +25,7 @@ __all__ = (
     "ProfileConfig",
     "RepoConfig",
     "RepoPaths",
+    "disabled_entry",
     "global_config_path",
     "global_packages_dir",
     "global_rules_dir",
@@ -133,6 +134,22 @@ class GlobalConfig:
     checks: list[CheckDef] = field(default_factory=list)
     init: InitDefaults = field(default_factory=InitDefaults)
     profiles: dict[str, ProfileConfig] = field(default_factory=dict)
+    disabled_repos: list[Path] = field(default_factory=list)
+    """Absolute paths `byor disable` turned off: repo roots or directory prefixes."""
+
+
+def disabled_entry(repo_root: Path, config: GlobalConfig) -> Path | None:
+    """Return the `disabled_repos` entry covering `repo_root`, if any.
+
+    An entry covers a path when it names it exactly or is an ancestor
+    directory (path-aware, so `/foo` never covers `/foobar`); the first
+    covering entry wins.
+    """
+    resolved = repo_root.resolve()
+    for entry in config.disabled_repos:
+        if resolved.is_relative_to(entry):
+            return entry
+    return None
 
 
 def rule_dir_relpaths(paths: RepoPaths) -> list[str]:
@@ -306,6 +323,7 @@ def load_global_config(config_dir: Path) -> GlobalConfig:
             profile=_optional_string(init, "profile", path=path),
         ),
         profiles=_profile_configs(data, path),
+        disabled_repos=[Path(entry) for entry in _string_list(data, "disabled_repos", path=path)],
     )
 
 
@@ -331,6 +349,12 @@ def save_global_config(config_dir: Path, config: GlobalConfig) -> None:
     _write_checks(data, config.checks)
     _write_init_defaults(data, config.init)
     _write_profiles(data, config.profiles)
+    # `byor enable` empties the list, so the key is dropped rather than left
+    # behind as `disabled_repos: []`.
+    if config.disabled_repos:
+        data["disabled_repos"] = [str(entry) for entry in config.disabled_repos]
+    else:
+        data.pop("disabled_repos", None)
     write_yaml_atomic(path, data)
 
 
