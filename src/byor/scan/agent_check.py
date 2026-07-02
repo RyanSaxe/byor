@@ -29,6 +29,8 @@ from byor.scan.linescope import Range, diff_ranges, edit_ranges, overlaps
 if TYPE_CHECKING:
     import argparse
 
+    from byor.config import GlobalConfig
+
 __all__ = (
     "Diagnostic",
     "collect_diagnostics",
@@ -80,21 +82,18 @@ def _run_files(
     scope: Scope,
 ) -> int:
     config_dir = global_config_dir()
-    scoped = _scoped_files(files, scope)
-    diagnostics = _diagnostics(repo_root, scoped, scope=scope, payload=None)
-    checks = load_effective_checks(repo_root, config_dir)
-    outcome = run_checks(
-        checks,
+    global_config = load_global_config(config_dir)
+    diagnostics, outcome = _scan(
         repo_root,
-        files=scoped,
-        whole_repo=scope == "file" and not scoped,
+        files,
+        scope=scope,
+        payload=None,
+        global_config=global_config,
+        config_dir=config_dir,
     )
-    for warning in outcome.warnings:
-        sys.stderr.write(f"{warning}\n")
     if args.format == "json":
         sys.stdout.write(f"{json.dumps(_json_payload(diagnostics, outcome), indent=2)}\n")
     else:
-        global_config = load_global_config(config_dir)
         concise = args.concise or global_config.output_concise
         for line in render_diagnostics(
             diagnostics,
@@ -147,13 +146,14 @@ def _hook_diagnostics(
     payload = _resolved_payload(parse_payload(harness, sys.stdin.read()), repo_root)
     if not payload.files:
         return 0
-    scope = _resolve_scope(args, harness)
-    scoped = _scoped_files(payload.files, scope)
-    diagnostics = _diagnostics(repo_root, scoped, scope=scope, payload=payload)
-    checks = load_effective_checks(repo_root, config_dir)
-    outcome = run_checks(checks, repo_root, files=scoped)
-    for warning in outcome.warnings:
-        sys.stderr.write(f"{warning}\n")
+    diagnostics, outcome = _scan(
+        repo_root,
+        payload.files,
+        scope=_resolve_scope(args, harness),
+        payload=payload,
+        global_config=global_config,
+        config_dir=config_dir,
+    )
     concise = args.concise or global_config.output_concise
     rendered = _render_feedback(
         diagnostics,
@@ -165,6 +165,31 @@ def _hook_diagnostics(
     if stdout:
         sys.stdout.write(f"{stdout}\n")
     return exit_code
+
+
+def _scan(
+    repo_root: Path,
+    files: list[Path],
+    *,
+    scope: Scope,
+    payload: EditPayload | None,
+    global_config: GlobalConfig,
+    config_dir: Path,
+) -> tuple[list[Diagnostic], CheckOutcome]:
+    # The shared middle of the `--files` and `--stdin-hook` flows; only how
+    # the results are rendered and exited on differs per caller.
+    scoped = _scoped_files(files, scope)
+    diagnostics = _diagnostics(repo_root, scoped, scope=scope, payload=payload, global_config=global_config)
+    checks = load_effective_checks(repo_root, config_dir)
+    outcome = run_checks(
+        checks,
+        repo_root,
+        files=scoped,
+        whole_repo=scope == "file" and not scoped,
+    )
+    for warning in outcome.warnings:
+        sys.stderr.write(f"{warning}\n")
+    return diagnostics, outcome
 
 
 def _scoped_files(raw_files: list[Path], scope: Scope) -> list[Path]:
@@ -219,14 +244,14 @@ def _diagnostics(
     *,
     scope: Scope,
     payload: EditPayload | None,
+    global_config: GlobalConfig,
 ) -> list[Diagnostic]:
     if scope != "file" and not files:
         return []
     if not _has_any_rules(repo_root):
         return []
     config = None if repo_config_path(repo_root).is_file() else home_sgconfig_path()
-    config_dir = global_config_dir()
-    executable = resolve_ast_grep(load_global_config(config_dir).ast_grep_command)
+    executable = resolve_ast_grep(global_config.ast_grep_command)
     result = scan_files(executable, repo_root, files=files, config=config)
     if result.warnings:
         sys.stderr.write(f"{result.warnings}\n")
