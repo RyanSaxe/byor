@@ -94,6 +94,23 @@ def test_excluding_the_package_rule_leaves_neither_copy(home: Path) -> None:
     assert not (mirror(repo) / "shared-id.yml").exists()
 
 
+# `packages: ["../EVILSRC"]` used to write rules above the packages mirror.
+def test_traversal_package_name_fails_sync_without_touching_the_repo(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_package_rule(home, "real-pkg", relpath="ok.yml", rule_id="ok-rule")
+    write_rule(home / "xdg" / "byor" / "EVILSRC" / "evil.yml", "evil-rule")
+    repo = make_repo(home)
+    (repo / ".byor" / "local.yml").write_text('version: 1\npackages:\n  - "../EVILSRC"\n')
+    capsys.readouterr()
+
+    assert main(["sync", "--repo", str(repo)]) == 1
+
+    assert "bare directory name" in capsys.readouterr().err
+    assert not (repo / ".byor" / "rules" / "personal" / "EVILSRC").exists()
+    assert not list((repo / ".byor" / "rules" / "personal" / "packages").rglob("*.yml"))
+
+
 def test_two_packages_with_the_same_rule_id_is_a_hard_error(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     write_package_rule(home, "pkg-a", relpath="dup.yml", rule_id="dup-id")
     write_package_rule(home, "pkg-b", relpath="dup.yml", rule_id="dup-id")

@@ -250,7 +250,7 @@ def load_local_config(repo_root: Path) -> LocalConfig:
         excluded_rule_tags=_string_list(section, "excluded_tags", path=path),
         excluded_checks=_string_list(checks, "excluded", path=path),
         excluded_check_tags=_string_list(checks, "excluded_tags", path=path),
-        packages=_string_list(data, "packages", path=path),
+        packages=_package_names(data, path=path),
     )
 
 
@@ -557,6 +557,18 @@ def _optional_positive_int(section: CommentedMap, key: str, *, path: Path) -> in
         msg = f"{path}: expected '{key}' to be a positive integer or null"
         raise ConfigError(msg)
     return value
+
+
+def _package_names(section: CommentedMap, *, path: Path) -> list[str]:
+    # Package names are joined onto the global packages dir and the repo's
+    # packages mirror, so a path-like name would escape both. local.yml is
+    # user-owned and hand-editable: validate at load, not just in `package add`.
+    names = _string_list(section, "packages", path=path)
+    for name in names:
+        if name in ("", ".", "..") or "\\" in name or name != Path(name).name:
+            msg = f"{path}: package name '{name}' must be a bare directory name, with no path separators or '..'"
+            raise ConfigError(msg)
+    return names
 
 
 def _string_list(section: CommentedMap, key: str, *, path: Path) -> list[str]:
