@@ -52,7 +52,7 @@ from byor.rules.sync import (
     mirror_contents,
     repo_plans,
 )
-from byor.scaffold.githooks import shim_problems
+from byor.scaffold.githooks import shim_findings
 from byor.scaffold.ignore import ignore_block_current, rule_visibility_ok
 from byor.scan.astgrep import ast_grep_version, resolve_ast_grep
 from byor.scan.checks import effective_checks
@@ -382,11 +382,13 @@ def _ignore_block_check(repo_root: Path) -> Check:
 
 
 def _git_shims_check(repo_root: Path) -> Check | None:
-    problems = shim_problems(repo_root)
-    if problems is None:
+    findings = shim_findings(repo_root)
+    if findings is None:
         return None
-    if problems:
-        return Check(id="git_shims", ok=False, message="; ".join(problems))
+    if findings.problems:
+        return Check(id="git_shims", ok=False, message="; ".join(findings.problems))
+    if findings.notes:
+        return Check(id="git_shims", ok=True, message="; ".join(findings.notes))
     return Check(id="git_shims", ok=True, message="git hook shims are installed and current")
 
 
