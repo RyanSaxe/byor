@@ -65,6 +65,16 @@ checks:
       - environment
 ```
 
+A check that outgrows one file shares code as a path-referenced subprocess,
+never a Python import — there is no package to import from, and `sys.path`
+tricks break when scripts move between the two homes. A repo script resolves
+its helper relative to itself (`Path(__file__).parent / "lib" / "helper.py"`).
+A `~/` script must instead spell out the literal
+`~/.config/byor/scripts/lib/helper.py` string, because `byor init --gate`
+vendors scripts by following exactly those literal references — copying the
+helper to `.byor/scripts/lib/helper.py` and rewriting the string in place — and
+a `__file__`-relative reference is invisible to that scan.
+
 Check tags are arbitrary user-defined labels, like rule tags. Use
 `byor list --tags` to inspect the existing vocabulary and reuse fitting tags;
 tags let profiles or `byor exclude --check-tag TAG` disable a group of checks in

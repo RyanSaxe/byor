@@ -9,20 +9,20 @@ Function-level docstrings should be rare in greenfield code because strong
 names, precise type signatures, and straightforward bodies usually explain the
 contract better than a redundant sentence. Keep one only for public APIs that
 need real argument and behavior documentation, or for complex signatures whose
-meaning requires one or more explanatory paragraphs.
+meaning requires one or more explanatory paragraphs. File discovery is shared
+with the sibling checks via the `lib/pyfiles.py` subprocess (see its
+docstring).
 """
 
 from __future__ import annotations
 
 import ast
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-PYTHON_SUFFIXES = frozenset({".py", ".pyi"})
-EXCLUDED_WALK_DIRS = frozenset({".git", ".venv", "venv", "node_modules", "__pycache__", ".tox", "dist", "build"})
+PYFILES_LIB = Path(__file__).resolve().parent / "lib" / "pyfiles.py"
 MAX_THIN_LINES = 3
 THIN_DOCSTRING_ADVICE = (
     "delete it if the signature and body are enough, or expand it into "
@@ -49,66 +49,13 @@ def main(argv: list[str]) -> int:
 
 
 def _python_files(argv: list[str]) -> list[Path]:
-    candidates = [Path(raw) for raw in argv] if argv else _repo_python_files()
-    return [path for path in candidates if path.suffix in PYTHON_SUFFIXES and path.is_file()]
-
-
-def _repo_python_files() -> list[Path]:
-    git = shutil.which("git")
-    if git is None:
-        return _walk_python_files(Path.cwd())
-    root = _git_root(Path.cwd(), git=git)
-    if root is None:
-        return _walk_python_files(Path.cwd())
-    try:
-        completed = subprocess.run(
-            (
-                git,
-                "-C",
-                str(root),
-                "ls-files",
-                "-co",
-                "--exclude-standard",
-                "--",
-                "*.py",
-                "*.pyi",
-            ),
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    except FileNotFoundError:
-        return _walk_python_files(root)
-    if completed.returncode != 0:
-        return _walk_python_files(root)
-    return [root / line for line in completed.stdout.splitlines() if line]
-
-
-def _git_root(start: Path, *, git: str) -> Path | None:
-    anchor = start if start.is_dir() else start.parent
-    try:
-        completed = subprocess.run(
-            (git, "-C", str(anchor), "rev-parse", "--show-toplevel"),
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    except FileNotFoundError:
-        return None
-    if completed.returncode != 0:
-        return None
-    root = completed.stdout.strip()
-    return Path(root) if root else None
-
-
-def _walk_python_files(root: Path) -> list[Path]:
-    return [
-        path
-        for path in root.rglob("*")
-        if path.suffix in PYTHON_SUFFIXES
-        and path.is_file()
-        and not EXCLUDED_WALK_DIRS.intersection(path.relative_to(root).parts)
-    ]
+    completed = subprocess.run(
+        (sys.executable, str(PYFILES_LIB), *argv),
+        check=True,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    return [Path(raw) for raw in completed.stdout.split("\0") if raw]
 
 
 def _check(path: Path) -> list[_Finding]:

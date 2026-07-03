@@ -217,6 +217,17 @@ resolves against the repo root). Make it executable, or name the interpreter in
 skill walks an agent through authoring one when a policy fits a script better
 than an ast-grep rule or an off-the-shelf tool.
 
+Checks that outgrow one file share code as a path-referenced subprocess, never
+a Python import — there is no package to import from, and `sys.path` tricks
+break when scripts move between the two homes. A repo script resolves its
+helper relative to itself (`Path(__file__).parent / "lib" / "helper.py"`). A
+`~/` script must instead spell out the literal
+`~/.config/byor/scripts/lib/helper.py` string, because gate generation vendors
+scripts by following exactly those literal references — copying the helper to
+`.byor/scripts/lib/helper.py` and rewriting the string in place — and a
+`__file__`-relative reference is invisible to that scan. byor's own Python
+checks share their file discovery this way (`.byor/scripts/lib/pyfiles.py`).
+
 ## Installing and removing integrations
 
 `byor install` sets up the agents you choose (plus the harness-neutral `skill`)
