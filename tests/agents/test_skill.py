@@ -13,10 +13,10 @@ import pytest
 from support import global_agents, install_agents, make_repo
 
 from byor.agents.install import MANAGED_MARKER
+from byor.agents.skill import global_skill_dirs
 from byor.cli import main
 from byor.io.yamlio import parse_yaml_mapping
 from byor.rules.rules import ALLOW_EXCEPTIONS_SENTENCE
-from byor.rules.skill import global_skill_dirs
 
 SKILL_NAME_PATTERN = r"[a-z0-9]+(-[a-z0-9]+)*"
 
