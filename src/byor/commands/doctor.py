@@ -15,7 +15,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from byor.agents.install import agent_file_problems
-from byor.commands.gate import stale_gate_files
+from byor.commands.gate import (
+    referenced_vendored_scripts,
+    stale_gate_files,
+    vendored_script_problems,
+)
 from byor.config import (
     GlobalConfig,
     RepoConfig,
@@ -141,6 +145,9 @@ def _repo_checks(
         gate_check = _gate_check(repo_root, repo_config)
         if gate_check is not None:
             checks.append(gate_check)
+        vendored_check = _vendored_scripts_check(repo_root, repo_config)
+        if vendored_check is not None:
+            checks.append(vendored_check)
     extra = _extra_checks_check(repo_root, repo_config, global_config=global_config)
     if extra is not None:
         checks.append(extra)
@@ -312,6 +319,10 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path) -> list
     ]
     try:
         local_config = load_local_config(repo_root)
+    except ConfigError as error:
+        checks.append(Check(id="local_config", ok=False, message=f"{error}; fix .byor/local.yml by hand"))
+        return checks
+    try:
         plan = compute_sync_plan(
             project,
             local,
@@ -329,7 +340,11 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path) -> list
             message="effective rule IDs are unique",
         )
     )
-    packages_plan, packages_dir = repo_packages_plan(repo_root, canonical)
+    try:
+        packages_plan, packages_dir = repo_packages_plan(repo_root, canonical)
+    except (DuplicateRuleIdError, RuleValidationError, ConfigError) as error:
+        checks.append(Check(id="package_rules", ok=False, message=str(error)))
+        return checks
     global_stale = mirror_contents(repo_root / paths.personal_global_rules) != plan.desired
     packages_stale = mirror_contents(packages_dir) != packages_plan.desired
     if global_stale or packages_stale:
@@ -343,7 +358,7 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path) -> list
 def _gate_check(repo_root: Path, repo_config: RepoConfig) -> Check | None:
     if not repo_config.gate:
         return None
-    stale = stale_gate_files(repo_root, repo_config.checks)
+    stale = stale_gate_files(repo_root, repo_config)
     if stale:
         return Check(
             id="gate_files",
@@ -351,6 +366,21 @@ def _gate_check(repo_root: Path, repo_config: RepoConfig) -> Check | None:
             message=f"gate files are stale: {', '.join(stale)}; run `byor init --gate`",
         )
     return Check(id="gate_files", ok=True, message="gate files match the configured checks")
+
+
+def _vendored_scripts_check(repo_root: Path, repo_config: RepoConfig) -> Check | None:
+    relpaths = referenced_vendored_scripts(repo_config.checks)
+    if not relpaths:
+        return None
+    problems = [problem for relpath in relpaths for problem in vendored_script_problems(repo_root, relpath)]
+    if problems:
+        return Check(id="vendored_scripts", ok=False, message="; ".join(problems))
+    noun = "script" if len(relpaths) == 1 else "scripts"
+    return Check(
+        id="vendored_scripts",
+        ok=True,
+        message=f"{len(relpaths)} vendored check {noun} present and current",
+    )
 
 
 def _registry_check(config_dir: Path, global_config: GlobalConfig) -> Check:
@@ -379,7 +409,11 @@ def _extra_checks_check(
 ) -> Check | None:
     if not repo_config.checks and not global_config.checks:
         return None
-    effective = effective_checks(repo_config, global_config, local_config=load_local_config(repo_root))
+    try:
+        local_config = load_local_config(repo_root)
+    except ConfigError as error:
+        return Check(id="extra_checks", ok=False, message=f"{error}; fix .byor/local.yml by hand")
+    effective = effective_checks(repo_config, global_config, local_config=local_config)
     if not effective:
         return Check(
             id="extra_checks",

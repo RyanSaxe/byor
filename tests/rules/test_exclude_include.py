@@ -9,7 +9,14 @@ repo.
 from pathlib import Path
 
 import pytest
-from support import make_repo, mirror, write_global_rule, write_rule
+from support import (
+    install_package,
+    make_repo,
+    mirror,
+    write_global_rule,
+    write_package_rule,
+    write_rule,
+)
 
 from byor.cli import main
 from byor.config import load_local_config
@@ -50,6 +57,31 @@ def test_include_leaves_rule_skipped_when_project_owns_the_id(home: Path, capsys
     assert not (mirror(repo) / "no-cast.yml").exists()
     out = capsys.readouterr().out
     assert "'no-cast' is still skipped: overridden by project rule" in out
+
+
+def test_exclude_fixes_a_package_rule_id_collision(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """The exact wedge the collision error recommends `byor exclude` for.
+
+    Two installed packages defining the same rule ID break sync, so the
+    self-heal preamble must degrade to a warning instead of blocking the very
+    command that fixes the collision.
+    """
+    write_package_rule(home, "pkg-a", relpath="dup.yml", rule_id="dup-id")
+    write_package_rule(home, "pkg-b", relpath="dup.yml", rule_id="dup-id")
+    repo = make_repo(home)
+    install_package(repo, "pkg-a")
+    install_package(repo, "pkg-b")
+    capsys.readouterr()
+
+    assert main(["exclude", "--repo", str(repo), "dup-id"]) == 0
+
+    captured = capsys.readouterr()
+    assert "byor: skipping repo self-heal" in captured.err
+    assert "Excluded 'dup-id' in .byor/local.yml" in captured.out
+    assert "dup-id" in load_local_config(repo).excluded_rule_ids
+
+    assert main(["list", "--repo", str(repo)]) == 0
+    assert "skipping repo self-heal" not in capsys.readouterr().err
 
 
 def test_exclude_is_idempotent(home: Path, capsys: pytest.CaptureFixture[str]) -> None:

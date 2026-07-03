@@ -84,6 +84,8 @@ class RepoConfig:
     checks: list[CheckDef] = field(default_factory=list)
     gate: bool = False
     """Whether byor keeps a byor-free pre-commit + CI gate regenerated for this repo."""
+    gate_branch: str | None = None
+    """Default branch recorded at gate install so regenerated CI never flaps across checkouts."""
 
 
 @dataclass
@@ -197,6 +199,7 @@ def load_repo_config(repo_root: Path) -> RepoConfig:
         ),
         checks=_check_defs(data, path),
         gate=_bool(data, "gate", path=path, default=False),
+        gate_branch=_optional_string(data, "gate_branch", path=path),
     )
 
 
@@ -219,6 +222,10 @@ def save_repo_config(repo_root: Path, config: RepoConfig) -> None:
     _write_checks(data, config.checks)
     if config.gate:
         data["gate"] = True
+    if config.gate_branch is not None:
+        data["gate_branch"] = config.gate_branch
+    else:
+        data.pop("gate_branch", None)
     write_yaml_atomic(path, data)
 
 

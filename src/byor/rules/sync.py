@@ -26,7 +26,7 @@ from byor.config import (
     repo_config_path,
     repo_registry_path,
 )
-from byor.errors import ConfigError
+from byor.errors import ByorError, ConfigError
 from byor.io.fsio import write_text_atomic
 from byor.io.paths import global_config_dir, resolve_repo_root, resolve_within
 from byor.rules.rules import (
@@ -343,9 +343,18 @@ def heal_global(config_dir: Path) -> list[str]:
 
 
 def heal_repo(repo_root: Path, config_dir: Path) -> str | None:
+    """Resync the repo mirrors quietly before a command runs.
+
+    Like heal_global, a broken repo must not fail unrelated commands: a sync
+    error (say, two installed packages colliding on a rule ID) degrades to a
+    warning so the command that fixes it — `byor exclude` — can still run.
+    """
     if not repo_config_path(repo_root).is_file():
         return None
-    _, result = sync_repo(repo_root, load_canonical_rules(config_dir))
+    try:
+        _, result = sync_repo(repo_root, load_canonical_rules(config_dir))
+    except ByorError as error:
+        return f"byor: skipping repo self-heal: {error} (run 'byor doctor')"
     if not result.changed:
         return None
     return f"byor: synced {summarize_changes(result)}"
@@ -387,10 +396,15 @@ def run_sync(args: argparse.Namespace) -> int:
 def _sync_all(config_dir: Path, canonical: CanonicalRules, *, check: bool) -> int:
     exit_code = 0
     for repo_root in iter_registered_repos(config_dir):
-        if check:
-            exit_code = max(exit_code, _report_staleness(repo_root, canonical))
-        else:
-            _sync_and_report(repo_root, canonical)
+        # One broken repo must not abort the fan-out: warn and keep going.
+        try:
+            if check:
+                exit_code = max(exit_code, _report_staleness(repo_root, canonical))
+            else:
+                _sync_and_report(repo_root, canonical)
+        except ByorError as error:
+            sys.stderr.write(f"byor: skipping {repo_root}: {error} (run 'byor doctor')\n")
+            exit_code = max(exit_code, error.exit_code)
     return exit_code
 
 

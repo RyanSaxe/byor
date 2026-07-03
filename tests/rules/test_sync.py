@@ -11,7 +11,15 @@ import shutil
 from pathlib import Path
 
 import pytest
-from support import install_agents, make_repo, mirror, write_global_rule, write_rule
+from support import (
+    install_agents,
+    install_package,
+    make_repo,
+    mirror,
+    write_global_rule,
+    write_package_rule,
+    write_rule,
+)
 
 from byor.cli import main
 from byor.config import load_repo_config, save_repo_config
@@ -225,6 +233,24 @@ def test_self_heal_skips_an_agent_with_a_broken_config(
     err = capsys.readouterr().err
     assert "byor: skipping claude-code self-heal" in err
     assert "run 'byor doctor'" in err
+
+
+def test_sync_all_continues_past_a_repo_whose_sync_fails(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    wedged = make_repo(home, name="wedged")
+    write_package_rule(home, "pkg-a", relpath="dup.yml", rule_id="dup-id")
+    write_package_rule(home, "pkg-b", relpath="dup.yml", rule_id="dup-id")
+    install_package(wedged, "pkg-a")
+    install_package(wedged, "pkg-b")
+    healthy = make_repo(home, name="healthy")
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
+    capsys.readouterr()
+
+    assert main(["sync", "--all"]) == 1
+
+    captured = capsys.readouterr()
+    assert (mirror(healthy) / "no-cast.yml").is_file()
+    assert f"byor: skipping {wedged}: Duplicate rule IDs" in captured.err
+    assert f"Synced 1 global rule into {healthy}" in captured.out
 
 
 def test_sync_all_syncs_registered_repos_and_skips_missing_paths(

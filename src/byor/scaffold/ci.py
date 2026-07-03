@@ -10,7 +10,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from byor.io.fsio import MANAGED_NOTICE, write_marked_text
-from byor.io.gitio import default_branch
 from byor.scaffold.precommit import AST_GREP_ENTRY
 
 if TYPE_CHECKING:
@@ -28,8 +27,8 @@ WORKFLOW_RELPATH = ".github/workflows/byor-gate.yml"
 GATE_MARKER = f"# {MANAGED_NOTICE}"
 
 
-def write_ci_workflow(repo_root: Path, checks: list[CheckDef]) -> list[str]:
-    text = workflow_text(checks, default_branch=default_branch(repo_root))
+def write_ci_workflow(repo_root: Path, checks: list[CheckDef], *, default_branch: str) -> list[str]:
+    text = workflow_text(checks, default_branch=default_branch)
     result = write_marked_text(repo_root / WORKFLOW_RELPATH, text, marker=GATE_MARKER)
     if result == "written":
         return [f"Wrote {WORKFLOW_RELPATH}"]

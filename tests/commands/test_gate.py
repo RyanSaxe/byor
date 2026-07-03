@@ -10,10 +10,10 @@ shim and commits nothing.
 from pathlib import Path
 
 import pytest
-from support import git, write_global_check, write_global_rule
+from support import git, install_package, write_global_check, write_global_rule, write_package_rule
 
 from byor.cli import main
-from byor.config import load_repo_config
+from byor.config import load_repo_config, save_repo_config
 
 
 def gate_repo(home: Path, *, extra: tuple[str, ...] = (), branch: str = "main") -> Path:
@@ -59,6 +59,38 @@ def test_gate_workflow_gates_pushes_to_a_non_main_default_branch(home: Path) -> 
     assert "on:\n  pull_request:\n  push:\n    branches: [trunk]\n" in workflow
 
 
+def test_gate_workflow_branch_is_stable_across_checkouts(home: Path) -> None:
+    """Without origin/HEAD the branch used to be re-detected on every heal.
+
+    `git checkout -b feature` plus any byor command silently rewrote the
+    committed workflow to gate pushes to `feature`; the branch recorded at
+    install time keeps regeneration (and doctor's staleness view) stable.
+    """
+    repo = gate_repo(home)
+    workflow = repo / ".github" / "workflows" / "byor-gate.yml"
+    assert load_repo_config(repo).gate_branch == "main"
+
+    git(repo, "commit", "--allow-empty", "-q", "-m", "init")
+    git(repo, "checkout", "-q", "-b", "feature")
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    assert "branches: [main]" in workflow.read_text()
+    assert main(["doctor", "--repo", str(repo)]) == 0
+
+
+def test_gate_without_a_recorded_branch_falls_back_to_detection(home: Path) -> None:
+    repo = gate_repo(home, branch="trunk")
+    config = load_repo_config(repo)
+    config.gate_branch = None
+    save_repo_config(repo, config)  # a config written before byor recorded the branch
+    (repo / ".github" / "workflows" / "byor-gate.yml").unlink()
+
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    workflow = (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
+    assert "branches: [trunk]" in workflow
+
+
 def test_gate_self_heals_when_a_check_is_added_later(home: Path) -> None:
     write_global_rule(home, "python/no-cast.yml", rule_id="no-cast")
     repo = gate_repo(home)
@@ -102,7 +134,12 @@ def test_gate_rewrites_vendored_home_script_dependencies(home: Path, monkeypatch
     helper = repo / ".byor" / "scripts" / "helper.py"
     assert runner.is_file()
     assert helper.is_file()
-    assert runner.read_text() == ('#!/usr/bin/env zsh\nexec ".byor/scripts/helper.py" "$@"\n')
+    assert runner.read_text() == (
+        "#!/usr/bin/env zsh\n"
+        "# Vendored by BYOR from ~/.config/byor/scripts/runner.sh. "
+        "Managed by BYOR. Manual edits may be overwritten.\n"
+        'exec ".byor/scripts/helper.py" "$@"\n'
+    )
 
 
 def test_gate_vendors_subdirectory_script_references(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -118,7 +155,62 @@ def test_gate_vendors_subdirectory_script_references(home: Path, monkeypatch: py
 
     runner = repo / ".byor" / "scripts" / "runner.sh"
     assert (repo / ".byor" / "scripts" / "sub" / "tool.py").is_file()
-    assert runner.read_text() == ('#!/usr/bin/env zsh\nexec ".byor/scripts/sub/tool.py" "$@"\n')
+    assert runner.read_text() == (
+        "#!/usr/bin/env zsh\n"
+        "# Vendored by BYOR from ~/.config/byor/scripts/runner.sh. "
+        "Managed by BYOR. Manual edits may be overwritten.\n"
+        'exec ".byor/scripts/sub/tool.py" "$@"\n'
+    )
+
+
+# A gate repo whose only extra check runs a vendored copy of ~/fix.sh.
+def script_check_repo(home: Path, monkeypatch: pytest.MonkeyPatch, *, content: str = "#!/bin/sh\necho one\n") -> Path:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    (home / "fix.sh").write_text(content)
+    write_global_check("fixer", "~/fix.sh")
+    return gate_repo(home)
+
+
+def test_gate_revendors_a_script_when_its_source_changes(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = script_check_repo(home, monkeypatch)
+    vendored = repo / ".byor" / "scripts" / "fix.sh"
+    assert "Vendored by BYOR from ~/fix.sh" in vendored.read_text()
+    assert "echo one" in vendored.read_text()
+
+    (home / "fix.sh").write_text("#!/bin/sh\necho two\n")
+    assert main(["list", "--repo", str(repo)]) == 0  # any command self-heals the gate
+
+    text = vendored.read_text()
+    assert "echo two" in text
+    assert "Vendored by BYOR from ~/fix.sh" in text
+
+
+def test_gate_leaves_a_vendored_script_alone_when_its_source_is_missing(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = script_check_repo(home, monkeypatch)
+    vendored = repo / ".byor" / "scripts" / "fix.sh"
+    (home / "fix.sh").unlink()  # a teammate's machine never has the source
+
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    assert "echo one" in vendored.read_text()
+
+
+def test_gate_never_rewrites_a_vendored_script_whose_marker_was_removed(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = script_check_repo(home, monkeypatch)
+    vendored = repo / ".byor" / "scripts" / "fix.sh"
+    owned = "#!/bin/sh\necho mine\n"
+    vendored.write_text(owned)  # stripping the marker takes ownership
+    (home / "fix.sh").write_text("#!/bin/sh\necho theirs\n")
+
+    assert main(["list", "--repo", str(repo)]) == 0
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+
+    assert vendored.read_text() == owned
 
 
 def test_gate_refuses_two_scripts_vendoring_to_the_same_name(
@@ -144,6 +236,33 @@ def test_gate_refuses_two_scripts_vendoring_to_the_same_name(
     assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 1
 
     assert "rename one of the scripts" in capsys.readouterr().err
+
+
+def test_gate_promote_keeps_both_package_rules_on_a_filename_collision(home: Path) -> None:
+    """Two packages shipping the same filename (distinct IDs) must both be vendored.
+
+    The loser used to be dropped silently, so the committed gate never
+    enforced it on CI or fresh clones; the collision now lands under a
+    package-prefixed path, and regenerating stays idempotent.
+    """
+    write_package_rule(home, "pkg-a", relpath="no-cast.yml", rule_id="a-no-cast")
+    write_package_rule(home, "pkg-b", relpath="no-cast.yml", rule_id="b-no-cast")
+    repo = home / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    install_package(repo, "pkg-a")
+    install_package(repo, "pkg-b")
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+
+    project = repo / ".byor" / "rules" / "project"
+    vendored = sorted(project.rglob("*.yml"))
+    ids = sorted(line for path in vendored for line in path.read_text().splitlines() if line.startswith("id: "))
+    assert ids == ["id: a-no-cast", "id: b-no-cast"]
+    # Both copies live in the committed project dir, visible to git.
+    visible = git(repo, "ls-files", "--others", "--exclude-standard", "--", str(project))
+    assert visible.count("no-cast.yml") == 2
 
 
 def test_private_gate_installs_a_local_shim_and_commits_nothing(home: Path) -> None:

@@ -7,10 +7,12 @@ the shared common hooks dir.
 """
 
 import os
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
-from support import git, make_repo
+from support import git, make_repo, write_global_rule
 
 from byor.cli import main
 from byor.scaffold.githooks import SHIM_CONTENT, SHIM_LINE, SHIM_MARKER
@@ -74,6 +76,35 @@ def test_core_hooks_path_repo_gets_the_line_instead_of_files(home: Path, capsys:
     assert SHIM_LINE in out
     assert not (repo / ".git" / "hooks" / "post-merge").exists()
     assert not (repo / ".git" / "hooks" / "post-checkout").exists()
+
+
+def test_precommit_shim_blocks_a_violating_file_whose_name_has_a_space(home: Path) -> None:
+    """The shim used to word-split staged filenames, scanning nothing.
+
+    `my file.py` became two bogus paths that agent-check silently dropped, so
+    a rule-violating commit passed unscanned. The hook runs for real here:
+    the staged file violates a synced global rule, so it must exit nonzero.
+    """
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
+    repo = home / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--private", "--gate"]) == 0
+    (repo / "my file.py").write_text("from typing import cast\n\nx = cast(int, 1)\n")
+    git(repo, "add", "my file.py")
+
+    # The subprocess resolves ~ from the environment, so point it at the sandbox.
+    env = {**os.environ, "HOME": str(home), "USERPROFILE": str(home)}
+    hook = repo / ".git" / "hooks" / "pre-commit"
+    # Git runs hooks through sh, and Windows cannot exec a shell script
+    # directly — invoke the shim the way git does (Git Bash ships sh there).
+    sh = shutil.which("sh")
+    if sh is None:
+        pytest.skip("running the hook requires an `sh` on PATH")
+    result = subprocess.run([sh, str(hook)], cwd=repo, env=env, capture_output=True, text=True, check=False)
+
+    assert result.returncode != 0
+    assert "no-cast" in result.stdout + result.stderr
 
 
 def test_shims_install_into_worktrees_common_hooks_dir(home: Path) -> None:
