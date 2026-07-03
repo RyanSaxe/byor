@@ -13,10 +13,12 @@ from byor.io.fsio import MANAGED_NOTICE, write_marked_text
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from typing import Literal
 
     from byor.config import CheckDef
 
 __all__ = (
+    "ast_grep_entry",
     "precommit_config_text",
     "write_precommit_config",
 )
@@ -26,27 +28,38 @@ CONFIG_RELPATH = ".pre-commit-config.yaml"
 # The single marker for both gate files (this config and the CI workflow),
 # so their staleness checks stay in lockstep by construction.
 GATE_MARKER = f"# {MANAGED_NOTICE}"
-AST_GREP_ENTRY = "uvx --from ast-grep-cli ast-grep scan --error"
+_AST_GREP_SCAN = "uvx --from ast-grep-cli ast-grep scan"
 
 
-def precommit_config_text(checks: list[CheckDef]) -> str:
-    return f"{GATE_MARKER}\nrepos:\n{_local_repo_block(checks)}"
+def ast_grep_entry(fail_on: Literal["all", "error"]) -> str:
+    """Render the gate's ast-grep command, shared by the pre-commit and CI files.
+
+    `fail_on: all` appends `--error`, escalating every rule to blocking;
+    `fail_on: error` keeps ast-grep's native exit, so only error-severity
+    rules block while warnings and infos still print.
+    """
+    return f"{_AST_GREP_SCAN} --error" if fail_on == "all" else _AST_GREP_SCAN
 
 
-def write_precommit_config(repo_root: Path, checks: list[CheckDef]) -> list[str]:
-    result = write_marked_text(repo_root / CONFIG_RELPATH, precommit_config_text(checks), marker=GATE_MARKER)
+def precommit_config_text(checks: list[CheckDef], *, fail_on: Literal["all", "error"]) -> str:
+    return f"{GATE_MARKER}\nrepos:\n{_local_repo_block(checks, fail_on)}"
+
+
+def write_precommit_config(repo_root: Path, checks: list[CheckDef], *, fail_on: Literal["all", "error"]) -> list[str]:
+    text = precommit_config_text(checks, fail_on=fail_on)
+    result = write_marked_text(repo_root / CONFIG_RELPATH, text, marker=GATE_MARKER)
     if result == "unmarked":
         return [
             f"{CONFIG_RELPATH} already exists; add this to its `repos:` list:",
-            _local_repo_block(checks),
+            _local_repo_block(checks, fail_on),
         ]
     if result == "written":
         return [f"Wrote {CONFIG_RELPATH}"]
     return []
 
 
-def _local_repo_block(checks: list[CheckDef]) -> str:
-    hooks = [_hook("byor-ast-grep", "ast-grep scan", entry=AST_GREP_ENTRY, extensions=[])]
+def _local_repo_block(checks: list[CheckDef], fail_on: Literal["all", "error"]) -> str:
+    hooks = [_hook("byor-ast-grep", "ast-grep scan", entry=ast_grep_entry(fail_on), extensions=[])]
     hooks.extend(
         _hook(f"byor-{check.name}", check.name, entry=check.run, extensions=check.extensions) for check in checks
     )

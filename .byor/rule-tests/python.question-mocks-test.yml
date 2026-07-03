@@ -1,0 +1,24 @@
+id: python.question-mocks
+valid:
+  # Parameters that merely resemble the fixture name are fine.
+  - |
+    def restore(monkey, patchwork):
+        return monkey
+invalid:
+  - import unittest.mock
+  # Aliasing the module does not hide it.
+  - import unittest.mock as mock
+  - from unittest.mock import patch
+  - from unittest import mock
+  # Aliasing the submodule does not hide it either.
+  - from unittest import mock as m
+  # The monkeypatch fixture, bare and typed.
+  - |
+    def test_env(monkeypatch):
+        monkeypatch.setenv("HOME", "/tmp")
+  - |
+    def test_env(monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("HOME", "/tmp")
+  - |
+    def helper(monkeypatch: pytest.MonkeyPatch = fixture) -> None:
+        monkeypatch.setenv("HOME", "/tmp")

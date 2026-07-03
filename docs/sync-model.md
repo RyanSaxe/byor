@@ -35,7 +35,9 @@ Relative paths below the global rules root are preserved
 A global rule is *not* copied when:
 
 - a project rule owns its ID (`overridden by project rule`),
-- a local rule owns its ID (`overridden by local rule`), or
+- a local rule owns its ID (`overridden by local rule`),
+- a surviving installed-package rule owns its ID
+  (`overridden by package rule`), or
 - it is listed in `.byor/local.yml` `excluded_rule_ids`
   (`excluded in .byor/local.yml`), or
 - one of its `metadata.byor.tags` entries is listed in `.byor/local.yml`
@@ -103,8 +105,10 @@ applies.
 `.byor/local.yml` and syncs. The package's rules mirror into
 `.byor/rules/personal/packages/NAME/` — a second generated copy alongside the
 global mirror, kept correct by the same self-heal — and its checks apply. A
-package rule an owned scope already provides (project, local, or a kept global
-rule) is skipped, and two installed packages claiming one ID is a hard error.
+package rule a repo-owned scope already provides (project or local) is
+skipped; a same-ID global rule is skipped instead, because opting into a
+package is an easy avenue to override your global setup. Two installed
+packages claiming one ID is a hard error.
 
 **A fresh clone, before byor is installed.** Tracked `.gitkeep` and
 `.ignore` files keep the rule directories present and ast-grep-visible, so
@@ -133,12 +137,23 @@ jobs:
 everything** — every effective global and package rule into `.byor/rules/project/`,
 every global and package check into `.byor/config.yml`, and any check that runs
 a `~/` script into a committed copy under `.byor/scripts/` with the command
-repointed. The emitted artifacts then run
+repointed. Each vendored copy carries a provenance marker recording its source:
+self-heal re-vendors the copy when that source changes on your machine, and
+removing the marker makes the copy user-owned, never rewritten. The emitted
+artifacts then run
 `uvx --from ast-grep-cli ast-grep scan --error` and each check directly, so the
 whole gate enforces with **no byor and no `~/.config/byor`** — just uv, ast-grep,
 and the check commands. pre-commit passes each check its staged matching files
 (via a `files:` filter from `extensions`); CI runs each check whole-repo,
-mirroring byor's two scan modes.
+mirroring byor's two scan modes. The workflow gates pushes to the branch
+recorded as `gate_branch` in `.byor/config.yml` at install time, so
+regenerating from a feature-branch checkout never rewrites it.
+
+`fail_on` in `.byor/config.yml` sets how strict the gate is. The default,
+`fail_on: all`, appends `--error` so every rule blocks regardless of severity.
+`fail_on: error` runs a bare `ast-grep scan`: only error-severity rules block,
+while warnings and infos still print. Both gate files render from the same
+setting, and doctor's staleness check respects it.
 
 The artifacts are byor-owned build products, like the rule mirror. A committed
 `gate: true` in `.byor/config.yml` marks the repo, and any self-healing byor

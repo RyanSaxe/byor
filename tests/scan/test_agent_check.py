@@ -282,6 +282,8 @@ def test_json_format_emits_one_issue_per_diagnostic(check_repo: Path, capsys: py
     }
 
 
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
 def stdin(monkeypatch: pytest.MonkeyPatch, payload: object) -> None:
     text = json.dumps(payload)
     monkeypatch.setattr(sys, "stdin", io.StringIO(text))
@@ -289,6 +291,8 @@ def stdin(monkeypatch: pytest.MonkeyPatch, payload: object) -> None:
 
 def test_stdin_hook_scans_the_edited_file_from_the_claude_payload(
     check_repo: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
     monkeypatch: pytest.MonkeyPatch,
     *,
     capsys: pytest.CaptureFixture[str],
@@ -304,6 +308,8 @@ def test_stdin_hook_scans_the_edited_file_from_the_claude_payload(
 
 def test_stdin_hook_without_a_file_path_scans_nothing(
     check_repo: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
     monkeypatch: pytest.MonkeyPatch,
     *,
     capsys: pytest.CaptureFixture[str],
@@ -318,6 +324,8 @@ def test_stdin_hook_without_a_file_path_scans_nothing(
 
 def test_edit_scope_keeps_only_violations_inside_the_edited_lines(
     check_repo: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
     monkeypatch: pytest.MonkeyPatch,
     *,
     capsys: pytest.CaptureFixture[str],
@@ -339,6 +347,8 @@ def test_edit_scope_keeps_only_violations_inside_the_edited_lines(
 
 def test_codex_hook_edit_scopes_an_apply_patch_and_emits_its_json(
     check_repo: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
     monkeypatch: pytest.MonkeyPatch,
     *,
     capsys: pytest.CaptureFixture[str],
@@ -358,6 +368,8 @@ def test_codex_hook_edit_scopes_an_apply_patch_and_emits_its_json(
 
 def test_codex_relative_patch_path_resolves_against_the_repo_root(
     check_repo: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
     monkeypatch: pytest.MonkeyPatch,
     *,
     capsys: pytest.CaptureFixture[str],
@@ -379,7 +391,12 @@ def test_codex_relative_patch_path_resolves_against_the_repo_root(
 
 
 def test_hook_mode_is_silent_in_an_uninitialized_repo(
-    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     bare = home / "bare"
     bare.mkdir()
@@ -423,7 +440,12 @@ def test_files_mode_is_silent_without_repo_or_global_rules(home: Path, capsys: p
 
 
 def test_hook_mode_applies_global_rules_in_a_repo_with_no_byor(
-    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     setup_global_rule(home)
     plain = home / "plain"
@@ -454,6 +476,8 @@ def test_failing_check_appends_a_named_section_and_exits_two(
 
 def test_failing_check_rides_the_harness_emitter_channel(
     check_repo: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
     monkeypatch: pytest.MonkeyPatch,
     *,
     capsys: pytest.CaptureFixture[str],
@@ -497,7 +521,12 @@ def test_files_mode_runs_global_checks_in_a_repo_with_no_byor(home: Path, capsys
 
 
 def test_hook_mode_runs_global_checks_in_a_repo_with_no_byor(
-    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     plain = home / "plain"
     plain.mkdir()
@@ -586,6 +615,8 @@ def test_diff_scope_keeps_uncommitted_lines_and_untracked_files(
 
 def test_edit_scope_falls_back_to_diff_when_the_edit_cannot_be_located(
     check_repo: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
     monkeypatch: pytest.MonkeyPatch,
     *,
     capsys: pytest.CaptureFixture[str],
@@ -607,6 +638,8 @@ def test_edit_scope_falls_back_to_diff_when_the_edit_cannot_be_located(
 
 def test_edit_scope_falls_all_the_way_to_file_scope_without_git(
     check_repo: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
     monkeypatch: pytest.MonkeyPatch,
     *,
     capsys: pytest.CaptureFixture[str],
@@ -625,6 +658,8 @@ def test_edit_scope_falls_all_the_way_to_file_scope_without_git(
 
 def test_edit_scope_keeps_a_multiline_match_touched_on_an_inner_line(
     check_repo: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
     monkeypatch: pytest.MonkeyPatch,
     *,
     capsys: pytest.CaptureFixture[str],
@@ -692,6 +727,8 @@ def test_scan_failure_is_a_clean_tool_error(check_repo: Path, capsys: pytest.Cap
 
 def test_hook_mode_fails_open_on_an_internal_error(
     check_repo: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
     monkeypatch: pytest.MonkeyPatch,
     *,
     capsys: pytest.CaptureFixture[str],

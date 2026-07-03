@@ -78,8 +78,8 @@ def regenerate_gate(repo_root: Path) -> list[str]:
     branch = _gate_branch(repo_root, repo_config)
     return (
         messages
-        + write_ci_workflow(repo_root, checks, default_branch=branch)
-        + write_precommit_config(repo_root, checks)
+        + write_ci_workflow(repo_root, checks, default_branch=branch, fail_on=repo_config.fail_on)
+        + write_precommit_config(repo_root, checks, fail_on=repo_config.fail_on)
     )
 
 
@@ -147,8 +147,10 @@ def stale_gate_files(repo_root: Path, repo_config: RepoConfig) -> list[str]:
     """
     checks = repo_config.checks
     desired = {
-        WORKFLOW_RELPATH: workflow_text(checks, default_branch=_gate_branch(repo_root, repo_config)),
-        CONFIG_RELPATH: precommit_config_text(checks),
+        WORKFLOW_RELPATH: workflow_text(
+            checks, default_branch=_gate_branch(repo_root, repo_config), fail_on=repo_config.fail_on
+        ),
+        CONFIG_RELPATH: precommit_config_text(checks, fail_on=repo_config.fail_on),
     }
     return [
         relpath

@@ -10,10 +10,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from byor.io.fsio import write_marked_text
-from byor.scaffold.precommit import AST_GREP_ENTRY, GATE_MARKER
+from byor.scaffold.precommit import GATE_MARKER, ast_grep_entry
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from typing import Literal
 
     from byor.config import CheckDef
 
@@ -25,21 +26,23 @@ __all__ = (
 WORKFLOW_RELPATH = ".github/workflows/byor-gate.yml"
 
 
-def write_ci_workflow(repo_root: Path, checks: list[CheckDef], *, default_branch: str) -> list[str]:
-    text = workflow_text(checks, default_branch=default_branch)
+def write_ci_workflow(
+    repo_root: Path, checks: list[CheckDef], *, default_branch: str, fail_on: Literal["all", "error"]
+) -> list[str]:
+    text = workflow_text(checks, default_branch=default_branch, fail_on=fail_on)
     result = write_marked_text(repo_root / WORKFLOW_RELPATH, text, marker=GATE_MARKER)
     if result == "written":
         return [f"Wrote {WORKFLOW_RELPATH}"]
     return []
 
 
-def workflow_text(checks: list[CheckDef], *, default_branch: str) -> str:
+def workflow_text(checks: list[CheckDef], *, default_branch: str, fail_on: Literal["all", "error"]) -> str:
     steps = [
         "      - uses: actions/checkout@v4",
         "      - uses: astral-sh/setup-uv@v6",
         "        with:",
         "          enable-cache: true",
-        f"      - run: {AST_GREP_ENTRY}",
+        f"      - run: {ast_grep_entry(fail_on)}",
     ]
     steps.extend(f"      - run: {check.run}" for check in checks)
     return (

@@ -13,12 +13,16 @@ import pytest
 from byor.io.paths import global_config_dir, resolve_repo_root
 
 
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
 def test_global_config_dir_prefers_xdg_config_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
 
     assert global_config_dir() == tmp_path / "xdg" / "byor"
 
 
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
 def test_global_config_dir_falls_back_to_home_dot_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     # Path.home() reads HOME on POSIX and USERPROFILE on Windows; patch the

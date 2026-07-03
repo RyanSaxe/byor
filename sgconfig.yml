@@ -3,3 +3,8 @@ ruleDirs:
   - .byor/rules/personal/local
   - .byor/rules/personal/global
   - .byor/rules/personal/packages
+# `ast-grep test -c sgconfig.yml` pins each project rule's valid/invalid
+# behavior; `ast-grep scan` ignores this key. byor's sgconfig upkeep only
+# appends missing ruleDirs, so this entry survives regeneration.
+testConfigs:
+  - testDir: .byor/rule-tests

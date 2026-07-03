@@ -166,7 +166,12 @@ def test_doctor_reports_current_git_shims_and_skips_repos_without_them(
 
 
 def test_doctor_reports_missing_ast_grep_with_the_install_message(
-    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     repo = make_repo(home)
     empty_bin = home / "empty-bin"
@@ -402,6 +407,8 @@ def test_doctor_flags_stale_gate_files(home: Path, capsys: pytest.CaptureFixture
     assert "ruff" not in (repo / ".pre-commit-config.yaml").read_text()
 
 
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
 def gated_script_repo(home: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
@@ -415,7 +422,12 @@ def gated_script_repo(home: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_doctor_flags_a_missing_vendored_script(
-    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     repo = gated_script_repo(home, monkeypatch)
     (repo / ".byor" / "scripts" / "fix.sh").unlink()
@@ -431,7 +443,12 @@ def test_doctor_flags_a_missing_vendored_script(
 
 
 def test_doctor_flags_a_drifted_vendored_script(
-    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     repo = gated_script_repo(home, monkeypatch)
     (home / "fix.sh").write_text("#!/bin/sh\necho changed\n")

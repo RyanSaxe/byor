@@ -27,7 +27,12 @@ def edit_args(repo: Path, rule_id: str, *, extra: tuple[str, ...] = ()) -> list[
 
 
 def test_edit_updates_a_project_rule_in_place(
-    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     repo = make_repo(home)
     target = write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
@@ -42,6 +47,8 @@ def test_edit_updates_a_project_rule_in_place(
     assert "Updated project rule 'no-cast' at .byor/rules/project/no-cast.yml" in out
 
 
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
 def test_edit_auto_prefers_project_over_global(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = make_repo(home)
     canonical = write_global_rule(home, "no-cast.yml", rule_id="no-cast")
@@ -56,7 +63,12 @@ def test_edit_auto_prefers_project_over_global(home: Path, monkeypatch: pytest.M
 
 
 def test_edit_global_opens_the_canonical_rule_and_fans_out(
-    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     first = make_repo(home, name="first")
     second = make_repo(home, name="second")
@@ -87,7 +99,12 @@ def test_edit_unknown_rule_id_fails_cleanly(home: Path, capsys: pytest.CaptureFi
 
 
 def test_edit_rejects_an_invalid_result_and_keeps_the_original(
-    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     repo = make_repo(home)
     target = write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
@@ -103,7 +120,12 @@ def test_edit_rejects_an_invalid_result_and_keeps_the_original(
 
 
 def test_edit_with_no_changes_is_a_quiet_no_op(
-    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     repo = make_repo(home)
     target = write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
@@ -118,7 +140,12 @@ def test_edit_with_no_changes_is_a_quiet_no_op(
 
 
 def test_edit_rejects_an_id_change_that_collides_with_another_scope(
-    home: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     repo = make_repo(home)
     write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")

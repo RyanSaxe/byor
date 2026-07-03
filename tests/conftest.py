@@ -12,6 +12,8 @@ import pytest
 
 
 @pytest.fixture
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
 def home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     """Create a sandbox for repos, global config, and the home directory.
 
@@ -25,6 +27,8 @@ def home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 
 @pytest.fixture(autouse=True)
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
 def clean_git_env(monkeypatch: pytest.MonkeyPatch) -> None:
     # GIT_* vars leak in when pytest itself runs inside a git hook (pre-commit)
     # and would redirect the nested git calls tests make at tmp repos.

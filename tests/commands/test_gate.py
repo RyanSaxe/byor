@@ -91,6 +91,25 @@ def test_gate_without_a_recorded_branch_falls_back_to_detection(home: Path) -> N
     assert "branches: [trunk]" in workflow
 
 
+def test_gate_fail_on_error_drops_the_error_flag_from_both_files(home: Path) -> None:
+    repo = gate_repo(home)
+    config = load_repo_config(repo)
+    config.fail_on = "error"
+    save_repo_config(repo, config)
+
+    # Any subsequent repo command regenerates the byor-owned artifacts.
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    precommit = (repo / ".pre-commit-config.yaml").read_text()
+    workflow = (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
+    assert "entry: uvx --from ast-grep-cli ast-grep scan\n" in precommit
+    assert "- run: uvx --from ast-grep-cli ast-grep scan\n" in workflow
+    assert "--error" not in precommit
+    assert "--error" not in workflow
+    # Doctor's staleness view renders from the same setting.
+    assert main(["doctor", "--repo", str(repo)]) == 0
+
+
 def test_gate_self_heals_when_a_check_is_added_later(home: Path) -> None:
     write_global_rule(home, "python/no-cast.yml", rule_id="no-cast")
     repo = gate_repo(home)
@@ -105,6 +124,8 @@ def test_gate_self_heals_when_a_check_is_added_later(home: Path) -> None:
     assert "later-check" in (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
 
 
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
 def test_gate_vendors_a_home_script_check_into_the_repo(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Redirect `~` into the sandbox on both POSIX (HOME) and Windows (USERPROFILE),
     # since os.path.expanduser reads different vars per platform.
@@ -119,6 +140,8 @@ def test_gate_vendors_a_home_script_check_into_the_repo(home: Path, monkeypatch:
     assert run == ".byor/scripts/fix.sh"
 
 
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
 def test_gate_rewrites_vendored_home_script_dependencies(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
@@ -142,6 +165,8 @@ def test_gate_rewrites_vendored_home_script_dependencies(home: Path, monkeypatch
     )
 
 
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
 def test_gate_vendors_subdirectory_script_references(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
@@ -164,6 +189,8 @@ def test_gate_vendors_subdirectory_script_references(home: Path, monkeypatch: py
 
 
 # A gate repo whose only extra check runs a vendored copy of ~/fix.sh.
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
 def script_check_repo(home: Path, monkeypatch: pytest.MonkeyPatch, *, content: str = "#!/bin/sh\necho one\n") -> Path:
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
@@ -172,6 +199,8 @@ def script_check_repo(home: Path, monkeypatch: pytest.MonkeyPatch, *, content: s
     return gate_repo(home)
 
 
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
 def test_gate_revendors_a_script_when_its_source_changes(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = script_check_repo(home, monkeypatch)
     vendored = repo / ".byor" / "scripts" / "fix.sh"
@@ -187,7 +216,10 @@ def test_gate_revendors_a_script_when_its_source_changes(home: Path, monkeypatch
 
 
 def test_gate_leaves_a_vendored_script_alone_when_its_source_is_missing(
-    home: Path, monkeypatch: pytest.MonkeyPatch
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo = script_check_repo(home, monkeypatch)
     vendored = repo / ".byor" / "scripts" / "fix.sh"
@@ -199,7 +231,10 @@ def test_gate_leaves_a_vendored_script_alone_when_its_source_is_missing(
 
 
 def test_gate_never_rewrites_a_vendored_script_whose_marker_was_removed(
-    home: Path, monkeypatch: pytest.MonkeyPatch
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo = script_check_repo(home, monkeypatch)
     vendored = repo / ".byor" / "scripts" / "fix.sh"
@@ -215,6 +250,8 @@ def test_gate_never_rewrites_a_vendored_script_whose_marker_was_removed(
 
 def test_gate_refuses_two_scripts_vendoring_to_the_same_name(
     home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
     monkeypatch: pytest.MonkeyPatch,
     *,
     capsys: pytest.CaptureFixture[str],

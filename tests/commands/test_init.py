@@ -37,6 +37,8 @@ TRACKED_FILES = (
 
 
 @pytest.fixture
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
 def repo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -224,7 +226,12 @@ def test_git_hooks_without_a_git_dir_fail_cleanly(repo: Path, capsys: pytest.Cap
 
 
 def test_init_ends_with_quick_doctor_surfacing_problems(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, *, capsys: pytest.CaptureFixture[str]
+    repo: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     empty_bin = repo.parent / "empty-bin"
     empty_bin.mkdir()
@@ -242,6 +249,8 @@ def test_init_ends_with_quick_doctor_surfacing_problems(
 
 def test_interactive_prompts_drive_private_and_git_hooks(
     repo: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
     monkeypatch: pytest.MonkeyPatch,
     *,
     capsys: pytest.CaptureFixture[str],
@@ -283,6 +292,8 @@ def test_explicit_flag_overrides_global_init_default(repo: Path) -> None:
     assert ".byor/" not in (repo / ".git" / "info" / "exclude").read_text()
 
 
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
 def test_global_default_seeds_interactive_prompt(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     git(repo, "init", "--quiet")
     seed_init_defaults(repo, InitDefaults(private=True))
