@@ -17,7 +17,7 @@ from byor.errors import ByorError
 from byor.io.output import write_line, write_lines
 from byor.io.paths import display_path, global_config_dir, resolve_repo_root
 from byor.rules.rules import load_rules
-from byor.rules.sync import SkippedRule, load_canonical_rules, repo_sync_plan
+from byor.rules.sync import SkippedRule, load_canonical_rules, repo_plans
 from byor.scan.checks import load_effective_checks
 
 if TYPE_CHECKING:
@@ -116,8 +116,7 @@ def collect_rules(repo_root: Path, scope: ListScope) -> list[ListedRule]:
 
 
 def collect_skipped(repo_root: Path, config_dir: Path) -> list[SkippedRule]:
-    plan, _ = repo_sync_plan(repo_root, load_canonical_rules(config_dir))
-    return plan.skipped
+    return repo_plans(repo_root, load_canonical_rules(config_dir)).global_plan.skipped
 
 
 def collect_checks(repo_root: Path, config_dir: Path) -> list[ListedCheck]:

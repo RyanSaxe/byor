@@ -23,7 +23,6 @@ if TYPE_CHECKING:
     from byor.config import RepoPaths
 
 __all__ = (
-    "ByorMetadata",
     "Rule",
     "check_id_conflicts",
     "discover_rule_files",
@@ -54,14 +53,6 @@ ALLOW_EXCEPTIONS_SENTENCE = (
 
 
 @dataclass
-class ByorMetadata:
-    rationale: str | None = None
-    agent_prompt: str | None = None
-    docs_url: str | None = None
-    tags: list[str] = field(default_factory=list)
-
-
-@dataclass
 class Rule:
     id: str
     language: str
@@ -71,12 +62,8 @@ class Rule:
     content: str
     """The raw file text, so sync can mirror the rule without rereading it."""
 
-    severity: str | None = None
-    byor: ByorMetadata = field(default_factory=ByorMetadata)
-
-    @property
-    def tags(self) -> list[str]:
-        return self.byor.tags
+    tags: list[str] = field(default_factory=list)
+    """metadata.byor.tags; other byor metadata reaches scans via ast-grep itself."""
 
 
 def discover_rule_files(rules_dir: Path) -> list[Path]:
@@ -110,8 +97,7 @@ def load_rule(path: Path) -> Rule:
         message=_string(data, "message", path=path),
         path=path,
         content=text,
-        severity=_lenient_string(data, "severity"),
-        byor=_byor_metadata(data),
+        tags=_byor_tags(data),
     )
 
 
@@ -176,17 +162,12 @@ def require_unique_ids(rules: list[Rule], where: str, *, hint: str | None = None
     raise DuplicateRuleIdError("\n".join(lines))
 
 
-def _byor_metadata(data: CommentedMap) -> ByorMetadata:
+def _byor_tags(data: CommentedMap) -> list[str]:
     metadata = data.get("metadata")
     block = metadata.get("byor") if isinstance(metadata, CommentedMap) else None
     if not isinstance(block, CommentedMap):
-        return ByorMetadata()
-    return ByorMetadata(
-        rationale=_lenient_string(block, "rationale"),
-        agent_prompt=_lenient_string(block, "agent_prompt"),
-        docs_url=_lenient_string(block, "docs_url"),
-        tags=_lenient_string_list(block, "tags"),
-    )
+        return []
+    return _lenient_string_list(block, "tags")
 
 
 def _string(section: CommentedMap, key: str, *, path: Path) -> str:
@@ -195,11 +176,6 @@ def _string(section: CommentedMap, key: str, *, path: Path) -> str:
         msg = f"{path}: expected '{key}' to be a string"
         raise RuleValidationError(msg)
     return value
-
-
-def _lenient_string(section: CommentedMap, key: str) -> str | None:
-    value = section.get(key)
-    return value if isinstance(value, str) else None
 
 
 def _lenient_string_list(section: CommentedMap, key: str) -> list[str]:

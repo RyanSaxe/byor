@@ -1,8 +1,8 @@
 """Write BYOR-managed text files atomically.
 
 Managed files need marker-aware updates that avoid clobbering user-owned content and preserve file
-permissions when rewritten. This module owns those low-level write primitives so command and
-scaffold code can stay declarative.
+permissions when rewritten. This module owns those low-level write and cleanup primitives so
+command and scaffold code can stay declarative.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from typing import Literal
 
 __all__ = (
     "marked_text_status",
+    "prune_empty_dirs",
     "write_marked_text",
     "write_text_atomic",
 )
@@ -51,6 +52,21 @@ def write_marked_text(path: Path, content: str, *, marker: str) -> MarkedWriteRe
         return "unchanged"
     write_text_atomic(path, content)
     return "written"
+
+
+def prune_empty_dirs(root: Path, *, keep_root: bool = True) -> None:
+    """Remove empty directories below `root`, deepest first.
+
+    Sync uses the default to keep a mirror directory in place after its last
+    rule is deleted; uninstall passes `keep_root=False` to remove the whole
+    skill tree once emptied. A missing `root` is a no-op either way.
+    """
+    # os.walk snapshots entries before children are pruned, so re-check emptiness.
+    for dirpath, _, _ in os.walk(root, topdown=False):
+        directory = Path(dirpath)
+        if (keep_root and directory == root) or any(directory.iterdir()):
+            continue
+        directory.rmdir()
 
 
 def write_text_atomic(path: Path, content: str) -> None:
