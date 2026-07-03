@@ -19,6 +19,7 @@ from byor.config import (
     InitDefaults,
     LocalConfig,
     RepoConfig,
+    disabled_entry,
     global_config_path,
     global_rules_dir,
     load_global_config,
@@ -72,11 +73,38 @@ class InitOptions:
 def run_init(args: argparse.Namespace) -> int:
     repo_root = resolve_repo_root(explicit=args.repo)
     config_dir = global_config_dir()
+    _require_enabled(repo_root, config_dir, interactive=not args.non_interactive)
     defaults = load_global_config(config_dir).init
     options = _options_from_args(args, defaults)
     write_lines(initialize_repo(repo_root, config_dir, options=options))
     write_line(f"Initialized BYOR in {repo_root}")
     return 0
+
+
+def _require_enabled(repo_root: Path, config_dir: Path, *, interactive: bool) -> None:
+    """Stop init in a disabled repo unless the user lifts the entry.
+
+    Only an exact entry is removable here: a prefix entry covers other paths
+    too, so lifting it on one child's confirmation would silently re-enable
+    all of them — the message names the entry and `byor enable` instead.
+    """
+    config = load_global_config(config_dir)
+    entry = disabled_entry(repo_root, config)
+    if entry is None:
+        return
+    if entry != repo_root.resolve():
+        msg = f"{repo_root} is disabled for byor by the entry {entry}; run `byor enable {entry}` to lift it"
+        raise ByorError(msg)
+    if not interactive:
+        msg = f"{repo_root} is disabled for byor; run `byor enable {repo_root}` first"
+        raise ByorError(msg)
+    question = "This repository is disabled for byor — enable it and continue?"
+    if prompt_choice(question, ("no", "yes"), default=0) != 1:
+        msg = f"aborted: the repository stays disabled; run `byor enable {repo_root}` to re-enable it"
+        raise ByorError(msg)
+    config.disabled_repos.remove(entry)
+    save_global_config(config_dir, config)
+    write_line(f"Enabled byor in {repo_root}")
 
 
 def initialize_repo(repo_root: Path, config_dir: Path, *, options: InitOptions) -> list[str]:

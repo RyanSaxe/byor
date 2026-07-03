@@ -3,7 +3,9 @@
 Global rules and checks apply in every repo by default. A repo tunes that with
 **exclusions** — and a **profile** is a named, reusable bundle of exclusions.
 Use these when a user wants a repo to *not* enforce something, rather than to
-capture a new rule.
+capture a new rule. To turn byor off entirely for a repo (or a directory of
+repos), use `byor disable [PATH]` instead — recorded in the global config,
+nothing written into the repo; `byor enable` undoes it.
 
 ## Tags make a group addressable
 

@@ -25,6 +25,7 @@ from byor.config import (
     load_global_config,
     load_local_config,
     load_repo_config,
+    repo_config_path,
     save_local_config,
     save_repo_config,
 )
@@ -32,6 +33,7 @@ from byor.errors import (
     AstGrepNotFoundError,
     ByorError,
     ConfigError,
+    RepoNotInitializedError,
     RuleValidationError,
     UnsafeOverwriteError,
 )
@@ -113,6 +115,28 @@ def repo_context(args: argparse.Namespace) -> RepoContext:
     )
 
 
+def _rule_context(args: argparse.Namespace, *, scope: str) -> RepoContext:
+    """Build the context, tolerating a missing repo for global-scope work.
+
+    Global rules live in the user's config dir and work everywhere without
+    `byor init`, so global (and auto, which can only find global rules here)
+    lookups must not demand one. The default paths then point at directories
+    that do not exist, so the project and local scopes simply read as empty.
+    """
+    try:
+        return repo_context(args)
+    except RepoNotInitializedError:
+        if scope not in ("global", "auto"):
+            raise
+        config_dir = global_config_dir()
+        return RepoContext(
+            repo_root=resolve_repo_root(explicit=args.repo),
+            config_dir=config_dir,
+            paths=RepoPaths(),
+            canonical=load_canonical_rules(config_dir),
+        )
+
+
 def run_add(args: argparse.Namespace) -> int:
     template = RULE_TEMPLATE.format(rule_id=args.id or "REPLACE_ME", language=args.language or "Python")
     if args.allow_exceptions:
@@ -121,7 +145,7 @@ def run_add(args: argparse.Namespace) -> int:
         write_line(template.rstrip())
         write_line("Rerun with --from FILE or --edit to create the rule.")
         return 0
-    context = repo_context(args)
+    context = _rule_context(args, scope=args.scope)
     scope: RuleScope = args.scope
     draft: Path | None = None
     if args.from_file is None:
@@ -161,7 +185,7 @@ def run_add(args: argparse.Namespace) -> int:
 
 
 def run_edit(args: argparse.Namespace) -> int:
-    context = repo_context(args)
+    context = _rule_context(args, scope=args.scope)
     scope, found = _find_rule(context, args.rule_id, requested=args.scope)
     draft = _edit_in_draft(found.content)
     if draft is None:
@@ -182,7 +206,7 @@ def run_edit(args: argparse.Namespace) -> int:
 
 
 def run_remove(args: argparse.Namespace) -> int:
-    context = repo_context(args)
+    context = _rule_context(args, scope=args.scope)
     scope, rule = _find_rule(context, args.rule_id, requested=args.scope)
     rule.path.unlink()
     write_line(f"Removed {scope} rule '{rule.id}' at {display_path(rule.path, context.repo_root)}")
@@ -470,10 +494,11 @@ def _finish(context: RepoContext, *, fan_out: bool) -> None:
 
     Global-scope mutations fan out to every registered repo and
     reload the canonical rules the mutation just changed; everything else
-    syncs the current repo with the rules already in hand.
+    syncs the current repo with the rules already in hand. A global mutation
+    made outside any byor repo has no current repo to sync, only the fan-out.
     """
     canonical = load_canonical_rules(context.config_dir) if fan_out else context.canonical
-    repos = [context.repo_root]
+    repos = [context.repo_root] if repo_config_path(context.repo_root).is_file() else []
     if fan_out:
         repos.extend(repo for repo in iter_registered_repos(context.config_dir) if repo != context.repo_root)
     for repo in repos:

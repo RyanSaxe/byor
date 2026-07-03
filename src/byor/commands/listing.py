@@ -8,11 +8,12 @@ see consistent rule metadata.
 from __future__ import annotations
 
 import json
+import sys
 from collections import Counter
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Literal
 
-from byor.config import load_repo_config
+from byor.config import load_repo_config, repo_config_path
 from byor.errors import ByorError
 from byor.io.output import write_line, write_lines
 from byor.io.paths import display_path, global_config_dir, resolve_repo_root
@@ -29,6 +30,7 @@ __all__ = (
     "ListedRule",
     "TagSummary",
     "collect_checks",
+    "collect_global_rules",
     "collect_rules",
     "collect_skipped",
     "render_listing",
@@ -68,8 +70,18 @@ def run_list(args: argparse.Namespace) -> int:
     repo_root = resolve_repo_root(explicit=args.repo)
     config_dir = global_config_dir()
     scope: ListScope = args.scope
-    rules = collect_rules(repo_root, scope)
-    skipped = collect_skipped(repo_root, config_dir) if scope == "all" else []
+    skipped: list[SkippedRule] = []
+    if repo_config_path(repo_root).is_file() or scope not in ("global", "all"):
+        # Outside a byor repo this raises the `byor init` error: only the
+        # global portion of a listing exists without a repo.
+        rules = collect_rules(repo_root, scope)
+        if scope == "all":
+            skipped = collect_skipped(repo_root, config_dir)
+    else:
+        rules = collect_global_rules(config_dir)
+        if scope == "all":
+            # stderr keeps --json output parseable.
+            sys.stderr.write("byor: not a byor repo; project, local, and package scopes are omitted\n")
     checks = collect_checks(repo_root, config_dir)
     rules, skipped, checks = _filter_by_tags(rules, skipped, checks=checks, args=args)
     if args.json:
@@ -112,6 +124,20 @@ def collect_rules(repo_root: Path, scope: ListScope) -> list[ListedRule]:
         )
         for name in wanted
         for rule in load_rules(repo_root / directories[name])
+    ]
+
+
+def collect_global_rules(config_dir: Path) -> list[ListedRule]:
+    """Canonical global rules, for listing outside a byor repo.
+
+    Inside a repo the `global` rows come from the synced mirror; with no repo
+    there is no mirror, so the canonical files are what ast-grep actually reads
+    (via `~/sgconfig.yml`). Their paths render absolute, since no repo root
+    exists to relativize against.
+    """
+    return [
+        ListedRule(scope="global", id=rule.id, path=str(rule.path), tags=list(rule.tags))
+        for rule in load_canonical_rules(config_dir).rules
     ]
 
 

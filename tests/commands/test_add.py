@@ -87,6 +87,49 @@ def test_add_global_rule_fans_out_to_registered_repos(home: Path, capsys: pytest
     assert f"Synced 1 updated global rule into {second}" in out
 
 
+def test_add_global_rule_works_outside_any_repo(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Global rules work everywhere without init, so adding one needs no repo.
+    registered = make_repo(home, name="registered")
+    plain = home / "plain"
+    plain.mkdir()
+    monkeypatch.chdir(plain)
+    source = write_rule(home / "source.yml", "no-cast")
+    capsys.readouterr()
+
+    assert main(["add", "--scope", "global", "--from", str(source)]) == 0
+
+    canonical = home / "xdg" / "byor" / "rules" / "no-cast.yml"
+    assert canonical.read_text() == source.read_text()
+    assert (mirror(registered) / "no-cast.yml").is_file()
+    assert f"Synced 1 updated global rule into {registered}" in capsys.readouterr().out
+
+
+def test_add_project_rule_outside_a_repo_still_requires_init(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    plain = home / "plain"
+    plain.mkdir()
+    monkeypatch.chdir(plain)
+    source = write_rule(home / "source.yml", "team-rule")
+
+    assert main(["add", "--scope", "project", "--from", str(source)]) == 1
+
+    assert "byor init" in capsys.readouterr().err
+    assert not (plain / ".byor").exists()
+
+
 # monkeypatch isolates process state (env, cwd, stdio): an external boundary
 # ast-grep-ignore: python.question-mocks
 def test_add_edit_writes_the_edited_template(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:

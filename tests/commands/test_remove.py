@@ -56,6 +56,29 @@ def test_remove_global_rule_deletes_the_canonical_file_and_fans_out(
     assert f"Synced 1 removed global rule into {second}" in out
 
 
+def test_remove_global_rule_works_outside_any_repo(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    registered = make_repo(home, name="registered")
+    canonical = write_global_rule(home, "no-cast.yml", rule_id="no-cast")
+    main(["sync", "--all"])
+    plain = home / "plain"
+    plain.mkdir()
+    monkeypatch.chdir(plain)
+    capsys.readouterr()
+
+    assert main(["remove", "no-cast"]) == 0
+
+    assert not canonical.exists()
+    assert not (mirror(registered) / "no-cast.yml").exists()
+    assert f"Synced 1 removed global rule into {registered}" in capsys.readouterr().out
+
+
 def test_remove_unknown_rule_id_fails_cleanly(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
 

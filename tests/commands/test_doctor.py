@@ -467,7 +467,9 @@ def test_doctor_flags_registered_repos_whose_path_is_gone(home: Path, capsys: py
 
     assert main(["doctor", "--repo", str(repo)]) == 1
 
-    assert f"{gone} no longer exists" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert f"{gone} no longer exists" in out
+    assert "run `byor sync --all --prune`" in out
 
 
 def test_doctor_flags_a_missing_opencode_plugin(home: Path, capsys: pytest.CaptureFixture[str]) -> None:

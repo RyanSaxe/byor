@@ -199,6 +199,19 @@ def test_global_config_round_trips_checks_and_init_defaults(tmp_path: Path) -> N
     assert load_global_config(tmp_path) == config
 
 
+def test_global_config_round_trips_disabled_repos_and_omits_the_empty_list(tmp_path: Path) -> None:
+    config = GlobalConfig(disabled_repos=[tmp_path / "legacy", tmp_path / "clients"])
+
+    save_global_config(tmp_path, config)
+
+    assert load_global_config(tmp_path) == config
+
+    save_global_config(tmp_path, GlobalConfig())
+
+    assert load_global_config(tmp_path).disabled_repos == []
+    assert "disabled_repos" not in (tmp_path / "config.yml").read_text()
+
+
 def test_global_config_rejects_malformed_profiles(tmp_path: Path) -> None:
     (tmp_path / "config.yml").write_text("version: 1\nprofiles:\n  existing: bad\n")
 
