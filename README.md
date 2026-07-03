@@ -92,6 +92,9 @@ more), not just Python. `byor install` registers your editor and agent
 integrations machine-wide. `byor init` is **optional**: run it only when you want
 rules or checks scoped to a repository, or shared with contributors — your
 personal global rules and checks already work in every repo without it.
+On a repo the team has not adopted byor for, `byor init --private` keeps the
+whole footprint out of git (nothing tracked, ignored via `.git/info/exclude`);
+see [docs/sync-model.md](docs/sync-model.md).
 [docs/ai-agents.md](docs/ai-agents.md) covers what each step writes.
 
 After that one-time bootstrap, let your AI coding agent handle the rest: open it

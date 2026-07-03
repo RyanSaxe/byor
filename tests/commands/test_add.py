@@ -147,6 +147,45 @@ def test_add_rejects_invalid_rule_file(home: Path, capsys: pytest.CaptureFixture
     assert not (repo / ".byor" / "rules" / "project" / "broken.yml").exists()
 
 
+# Schema-valid, but the kind-ambiguous pattern makes ast-grep itself refuse
+# the rule; installed anyway it would break every later scan in the repo.
+KIND_AMBIGUOUS_RULE = (
+    "id: with-open\nlanguage: Python\nmessage: Avoid this.\nrule:\n  pattern: with open($$$ARGS) as $F\n"
+)
+
+
+def test_add_rejects_a_rule_ast_grep_cannot_load(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = make_repo(home)
+    source = home / "source.yml"
+    source.write_text(KIND_AMBIGUOUS_RULE)
+
+    assert main(add_args(repo, "--scope", "project", "--from", str(source))) == 1
+
+    captured = capsys.readouterr()
+    assert "ast-grep cannot load rule 'with-open'" in captured.err
+    assert "Traceback" not in captured.err
+    assert not (repo / ".byor" / "rules" / "project" / "with-open.yml").exists()
+
+
+def test_add_degrades_to_schema_validation_when_ast_grep_is_missing(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = make_repo(home)
+    source = home / "source.yml"
+    source.write_text(KIND_AMBIGUOUS_RULE)
+    monkeypatch.setenv("BYOR_AST_GREP", str(home / "missing-ast-grep"))
+
+    assert main(add_args(repo, "--scope", "project", "--from", str(source))) == 0
+
+    assert "skipped checking that ast-grep can load this rule" in capsys.readouterr().err
+    assert (repo / ".byor" / "rules" / "project" / "with-open.yml").is_file()
+
+
 def test_add_rejects_duplicate_id_within_scope(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
     write_rule(repo / ".byor" / "rules" / "project" / "existing.yml", "no-cast")
@@ -188,6 +227,9 @@ def test_allow_exceptions_prefills_the_template(home: Path, capsys: pytest.Captu
     assert main(add_args(repo, "--scope", "project", "--allow-exceptions")) == 0
 
     assert ALLOW_EXCEPTIONS_SENTENCE in capsys.readouterr().out
+    # Pin the placement the sentence teaches: an end-of-line directive gets
+    # relocated (and silently invalidated) when a formatter splits the line.
+    assert "on its own line directly above the offending line" in ALLOW_EXCEPTIONS_SENTENCE
 
 
 def test_allow_exceptions_appends_to_an_existing_agent_prompt(home: Path) -> None:

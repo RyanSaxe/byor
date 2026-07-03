@@ -228,5 +228,22 @@ def test_scan_failure_raises_with_ast_grep_message(tmp_path: Path) -> None:
     (tmp_path / "sgconfig.yml").write_text("ruleDirs: 5\n")
     (tmp_path / "src.py").write_text("x = 1\n")
 
-    with pytest.raises(ByorError, match="scan` failed"):
+    with pytest.raises(ByorError, match="scan` failed") as excinfo:
         scan_files(resolve_ast_grep(), tmp_path, files=[tmp_path / "src.py"])
+
+    # A genuinely failed scan must keep ast-grep's own stderr visible.
+    assert "Error:" in str(excinfo.value)
+
+
+# ast-grep restates its exit code on stderr whenever an error-severity rule
+# matched ("Error: 1 error(s) found in code." / "Help: Scan succeeded and
+# found error level diagnostics..."); the JSON already carries those matches.
+def test_scan_with_error_severity_matches_drops_the_exit_summary(tmp_path: Path) -> None:
+    error_rule = CAST_RULE.replace("severity: warning", "severity: error")
+    project = ast_grep_project(tmp_path, rule=error_rule)
+    (project / "src.py").write_text('x = cast(int, "1")\n')
+
+    result = scan_files(resolve_ast_grep(), project, files=[project / "src.py"])
+
+    assert result.warnings == ""
+    assert result.matches[0].severity == "error"

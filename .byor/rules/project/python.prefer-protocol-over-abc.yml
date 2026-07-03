@@ -30,8 +30,8 @@ metadata:
       typing.Protocol. Keep ABC only when nominal inheritance, shared abstract
       behavior, or framework integration is actually required. If this is
       genuinely necessary, add `# ast-grep-ignore:
-      python.prefer-protocol-over-abc` at the end of the offending line, with a
-      short comment on the line above explaining why.
+      python.prefer-protocol-over-abc` on its own line directly above the
+      offending line, with a short comment above it explaining why.
     tags:
     - python
     - typing

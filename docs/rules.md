@@ -32,8 +32,8 @@ metadata:
       signature, introducing a protocol, or restructuring the value flow. Keep a
       cast only when the needed invariant cannot be expressed by Python's type
       system. If this is genuinely necessary, add `# ast-grep-ignore:
-      python.no-typing-cast` at the end of the offending line, with a short
-      comment on the line above explaining the type-system limitation.
+      python.no-typing-cast` on its own line directly above the offending line,
+      with a short comment above it explaining the type-system limitation.
     tags:
       - python
       - typing
@@ -61,18 +61,30 @@ suppression idiom native to `ast-grep scan` and `ast-grep lsp`:
 
 ```python
 # <short reason>
-some_offending_line()  # ast-grep-ignore: <rule-id>
+# ast-grep-ignore: <rule-id>
+some_offending_line()
 ```
 
-The `ast-grep-ignore` directive goes at the end of the offending line, naming
-the rule id (a bare `ast-grep-ignore` silences every rule on that line). Put the
-reason on the comment line above — the same idiom as `# noqa` or `# type: ignore`.
+The `ast-grep-ignore` directive goes on its own line directly above the
+violation, naming the rule id (a bare `ast-grep-ignore` silences every rule on
+the line below). Put the reason on the comment line above it. ast-grep also
+honors the directive at the end of the offending line itself, but a formatter
+that splits that line relocates the comment and silently invalidates it — the
+line above is immune to reformatting.
 
 `byor add --allow-exceptions` ends the new rule's `agent_prompt` with the
 standard sentence:
 
-> If this is genuinely necessary, add `# ast-grep-ignore: <rule-id>` at the end
-> of the offending line, with a short comment on the line above explaining why.
+> If this is genuinely necessary, add `# ast-grep-ignore: <rule-id>` on its own
+> line directly above the offending line, with a short comment above it
+> explaining why.
+
+In a repo with a committed gate (see [sync-model.md](sync-model.md)), only
+suppress rules the repo commits. The gate's runner knows nothing about your
+personal global or package rules, and ast-grep treats a suppression naming an
+unknown rule as an error (`unused-suppression`) — so committing that hatch
+fails the build by design. Promote the rule to project scope first, then
+suppress it.
 
 ## Rule IDs
 

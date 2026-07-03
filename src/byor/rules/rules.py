@@ -46,9 +46,12 @@ SUPPRESSION_COMMENT = "# ast-grep-ignore: <rule-id>"
 # The standard exception sentence an agent_prompt ends with when a rule
 # tolerates exceptions. `byor add --allow-exceptions` appends it;
 # the capture skill includes it when the user allows exceptions.
+# It teaches the own-line placement: a formatter that splits the offending
+# line relocates an end-of-line directive and silently invalidates it,
+# while a comment line directly above the violation survives reformatting.
 ALLOW_EXCEPTIONS_SENTENCE = (
-    f"If this is genuinely necessary, add `{SUPPRESSION_COMMENT}` at the end of "
-    "the offending line, with a short comment on the line above explaining why."
+    f"If this is genuinely necessary, add `{SUPPRESSION_COMMENT}` on its own line "
+    "directly above the offending line, with a short comment above it explaining why."
 )
 
 

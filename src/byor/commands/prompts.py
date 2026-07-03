@@ -7,6 +7,7 @@ behavior.
 
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING
 
 from byor.io.output import write_line
@@ -38,8 +39,12 @@ def print_options(intro: str, options: Sequence[str]) -> None:
 
 
 def ask(question: str, default: str) -> str:
+    # input() echoes its prompt even when stdin is a pipe about to EOF, so a
+    # non-TTY caller would see a question no one can answer; the prompt text
+    # is withheld while a piped answer (or the EOF default) still applies.
+    prompt = f"{question} [{default}]: " if sys.stdin.isatty() else ""
     try:
-        answer = input(f"{question} [{default}]: ").strip()
+        answer = input(prompt).strip()
     except EOFError:
         return default
     return answer or default

@@ -36,9 +36,9 @@ script:
 - accepts a list of file paths as its arguments;
 - treats an empty argument list as "scan the whole repository", using the
   repository's normal ignored-file rules (for git repos, `git ls-files -co
-  --exclude-standard` is the right shape). This is required because CI and
-  generated gates may run checks without filenames, while hooks and agent
-  feedback usually pass a narrowed file list;
+  --exclude-standard` is the right shape). This is required, not optional:
+  generated CI gates run checks with no filenames, so a script that quietly
+  no-ops without arguments passes every CI run while enforcing nothing;
 - exits nonzero, with concise plain-text output, when any file still violates —
   that output is fed verbatim into the agent's context, so keep it short and
   free of ANSI color;
@@ -57,6 +57,7 @@ global config for a personal standard, or to `.byor/config.yml` for a project
 one:
 
 ```yaml
+version: 1 # required at the top of every byor config; keep it when hand-creating one
 checks:
   - name: no-banned-env
     extensions: [py]

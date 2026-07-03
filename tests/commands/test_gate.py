@@ -54,6 +54,21 @@ def test_gate_promotes_rules_and_checks_and_writes_portable_artifacts(
     assert "ruff-check" in workflow
 
 
+def test_gate_prints_the_pre_commit_install_hint_until_a_hook_exists(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Nothing installs the framework hook for the user: without this hint the
+    # gate looks green while enforcing nothing on local commits.
+    repo = gate_repo(home)
+
+    assert "run `uvx pre-commit install`" in capsys.readouterr().out
+
+    # Any pre-commit hook file counts as active; its internals are not inspected.
+    (repo / ".git" / "hooks" / "pre-commit").write_text("#!/bin/sh\nexec pre-commit run\n")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+    assert "uvx pre-commit install" not in capsys.readouterr().out
+
+
 def test_gate_workflow_gates_pushes_to_a_non_main_default_branch(home: Path) -> None:
     repo = gate_repo(home, branch="trunk")
 
@@ -424,6 +439,51 @@ def test_gate_promote_keeps_both_package_rules_on_a_filename_collision(home: Pat
     # Both copies live in the committed project dir, visible to git.
     visible = git(repo, "ls-files", "--others", "--exclude-standard", "--", str(project))
     assert visible.count("no-cast.yml") == 2
+
+
+def test_gate_promote_message_pluralizes_each_noun(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
+    write_global_check("ruff", "ruff-check")
+    capsys.readouterr()
+
+    gate_repo(home)
+
+    assert "Promoted 1 rule (no-cast) and 1 check (ruff) into tracked config" in capsys.readouterr().out
+
+
+def test_gate_promote_message_lists_the_promoted_ids(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
+    write_global_rule(home, "no-print.yml", rule_id="no-print")
+    capsys.readouterr()
+
+    gate_repo(home)
+
+    assert "Promoted 2 rules (no-cast, no-print) and 0 checks into tracked config" in capsys.readouterr().out
+
+
+def test_gate_reports_existing_violations_after_install(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
+    repo = home / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    (repo / "bad.py").write_text("value = cast(int, 1)\nother = cast(str, 2)\n")
+    capsys.readouterr()
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+
+    out = capsys.readouterr().out
+    assert "2 existing violations across 1 file; run `byor agent-check` to see them" in out
+
+
+def test_gate_says_nothing_about_violations_when_the_repo_is_clean(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
+    capsys.readouterr()
+
+    gate_repo(home)
+
+    assert "existing violation" not in capsys.readouterr().out
 
 
 def test_private_gate_installs_a_local_shim_and_commits_nothing(home: Path) -> None:

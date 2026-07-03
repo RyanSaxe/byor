@@ -13,9 +13,9 @@ metadata:
     agent_prompt: >
       Move this behavior to a module-level function unless it is genuinely part
       of the class contract or is required by a framework API. If this is
-      genuinely necessary, add `# ast-grep-ignore: python.no-staticmethod` at
-      the end of the offending line, with a short comment on the line above
-      explaining why.
+      genuinely necessary, add `# ast-grep-ignore: python.no-staticmethod` on
+      its own line directly above the offending line, with a short comment
+      above it explaining why.
     tags:
     - python
     - oop

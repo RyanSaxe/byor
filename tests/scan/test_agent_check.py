@@ -118,8 +118,9 @@ def test_one_diagnostic_renders_the_spec_block(check_repo: Path, capsys: pytest.
 
     assert main(agent_check_args(check_repo, "--files", str(source))) == 2
 
+    # A human (e.g. the pre-commit gate) invoked --files: no agent phrasing.
     assert capsys.readouterr().out == (
-        "BYOR found 1 issue in AI-written code.\n"
+        "BYOR found 1 issue.\n"
         "\n"
         "src.py:2:5\n"
         "Rule: no-python-cast\n"
@@ -145,7 +146,7 @@ def test_concise_render_keeps_location_severity_and_instruction() -> None:
         instruction="Use the logger instead.",
     )
 
-    assert render_diagnostics([diagnostic], style="concise") == [
+    assert render_diagnostics([diagnostic], style="concise", audience="agent") == [
         "BYOR found 1 issue in AI-written code.",
         "",
         "src.py:2:5  [warning] no-print",
@@ -160,9 +161,7 @@ def test_concise_flag_trims_the_verbose_block(check_repo: Path, capsys: pytest.C
     args = agent_check_args(check_repo, "--files", str(source), "--concise")
     assert main(args) == 2
 
-    assert capsys.readouterr().out == (
-        f"BYOR found 1 issue in AI-written code.\n\nsrc.py:2:5  [warning] no-python-cast\n{CAST_PROMPT}\n"
-    )
+    assert capsys.readouterr().out == (f"BYOR found 1 issue.\n\nsrc.py:2:5  [warning] no-python-cast\n{CAST_PROMPT}\n")
 
 
 def test_global_concise_setting_applies_without_the_flag(
@@ -208,6 +207,22 @@ def test_instruction_falls_back_to_message(check_repo: Path, capsys: pytest.Capt
     assert "Instruction:\nAvoid print in library code.\n" in out
 
 
+# An error-severity match makes ast-grep restate its exit code on stderr
+# ("Error: 1 error(s) found in code." / "Help: ..."); that boilerplate must
+# not precede byor's own rendering.
+def test_error_severity_findings_do_not_leak_ast_greps_exit_summary(
+    check_repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = check_repo / "src.py"
+    source.write_text('print("hi")\n')
+
+    assert main(agent_check_args(check_repo, "--files", str(source))) == 2
+
+    captured = capsys.readouterr()
+    assert captured.out.startswith("BYOR found 1 issue.")
+    assert captured.err == ""
+
+
 def test_diagnostics_group_by_file_then_sort_by_line_and_rule_id(
     check_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -239,7 +254,7 @@ def test_limit_caps_rendered_diagnostics_and_notes_the_remainder() -> None:
         for line in range(1, 4)
     ]
 
-    rendered = render_diagnostics(diagnostics, style="concise", limit=2)
+    rendered = render_diagnostics(diagnostics, style="concise", limit=2, audience="agent")
 
     # The summary still counts all three; only two are rendered, with a note.
     assert rendered[0] == "BYOR found 3 issues in AI-written code."
@@ -254,7 +269,7 @@ def test_renders_every_diagnostic_without_truncation(check_repo: Path, capsys: p
     assert main(agent_check_args(check_repo, "--files", str(source))) == 2
 
     out = capsys.readouterr().out
-    assert out.startswith("BYOR found 21 issues in AI-written code.\n")
+    assert out.startswith("BYOR found 21 issues.\n")
     assert out.count("Rule: no-python-cast") == 21
     assert "more diagnostics" not in out
 
@@ -303,7 +318,10 @@ def test_stdin_hook_scans_the_edited_file_from_the_claude_payload(
 
     assert main(agent_check_args(check_repo, "--stdin-hook", "claude-code")) == 2
 
-    assert "Rule: no-python-cast" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    # Agents key on this exact hook-mode header; --files says "BYOR found N issues."
+    assert "BYOR found 1 issue in AI-written code.\n" in out
+    assert "Rule: no-python-cast" in out
 
 
 def test_stdin_hook_without_a_file_path_scans_nothing(
@@ -388,6 +406,95 @@ def test_codex_relative_patch_path_resolves_against_the_repo_root(
 
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert "src.py:1:5" in context
+
+
+def test_hook_mode_resolves_the_repo_from_the_edited_file_not_cwd(
+    check_repo: Path,
+    home: Path,
+    *,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A session in repo A editing a file in repo B must apply B's rules, not A's.
+
+    Repo resolution used to start at the session cwd, so the cwd repo's rules
+    and checks ran against the other repo's file while that repo's own
+    error-severity rule stayed silent.
+    """
+    other = make_repo(home, name="other")
+    (other / ".byor" / "rules" / "project" / "no-print.yml").write_text(PRINT_RULE)
+    add_repo_check(check_repo, "cwd-lint", extensions=["py"], run=failing_check_command(check_repo, "cwd repo check"))
+    source = other / "src.py"
+    source.write_text('print("hi")\n')
+    monkeypatch.chdir(check_repo)
+    stdin(monkeypatch, {"tool_input": {"file_path": str(source)}})
+    capsys.readouterr()
+
+    assert main(["agent-check", "--stdin-hook", "claude-code"]) == 2
+
+    out = capsys.readouterr().out
+    assert "Rule: no-print" in out
+    assert "cwd repo check" not in out
+
+
+def test_hook_mode_stays_silent_for_a_file_outside_any_repo(
+    check_repo: Path,
+    home: Path,
+    *,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    outside = home / "elsewhere"
+    outside.mkdir()
+    source = outside / "src.py"
+    source.write_text('x = cast(int, "1")\n')
+    monkeypatch.chdir(check_repo)
+    stdin(monkeypatch, {"tool_input": {"file_path": str(source)}})
+
+    assert main(["agent-check", "--stdin-hook", "claude-code"]) == 0
+
+    assert capsys.readouterr().out == ""
+
+
+def test_hook_mode_stays_silent_for_a_nonexistent_file(
+    check_repo: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ghost = check_repo / "missing" / "ghost.py"
+    monkeypatch.chdir(check_repo)
+    stdin(monkeypatch, {"tool_input": {"file_path": str(ghost)}})
+
+    assert main(["agent-check", "--stdin-hook", "claude-code"]) == 0
+
+    assert capsys.readouterr().out == ""
+
+
+def test_hook_mode_explicit_repo_flag_beats_file_based_resolution(
+    check_repo: Path,
+    home: Path,
+    *,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    outside = home / "elsewhere"
+    outside.mkdir()
+    source = outside / "src.py"
+    source.write_text('x = cast(int, "1")\n')
+    stdin(monkeypatch, {"tool_input": {"file_path": str(source)}})
+
+    assert main(agent_check_args(check_repo, "--stdin-hook", "claude-code")) == 2
+
+    assert "Rule: no-python-cast" in capsys.readouterr().out
 
 
 def test_hook_mode_is_silent_in_an_uninitialized_repo(

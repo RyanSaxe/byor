@@ -41,7 +41,7 @@ Exit codes:
 Text output groups by file and sorts by line, then rule ID:
 
 ```text
-BYOR found 1 issue in AI-written code.
+BYOR found 1 issue.
 
 src/example.py:3:9
 Rule: python.no-typing-cast
@@ -51,7 +51,7 @@ Code:
   3 | value = cast(int, "3")
 
 Instruction:
-Do not use typing.cast here. Fix the type by narrowing, changing the signature, introducing a protocol, or restructuring the value flow. Keep a cast only when the needed invariant cannot be expressed by Python's type system. If this is genuinely necessary, add `# ast-grep-ignore: python.no-typing-cast` at the end of the offending line, with a short comment on the line above explaining the type-system limitation.
+Do not use typing.cast here. Fix the type by narrowing, changing the signature, introducing a protocol, or restructuring the value flow. Keep a cast only when the needed invariant cannot be expressed by Python's type system. If this is genuinely necessary, add `# ast-grep-ignore: python.no-typing-cast` on its own line directly above the offending line, with a short comment above it explaining the type-system limitation.
 ```
 
 Every in-scope diagnostic is rendered — the agent sees the full set, never a
@@ -66,10 +66,10 @@ the agent on every matching edit, while keeping the guidance it needs to
 self-correct:
 
 ```text
-BYOR found 1 issue in AI-written code.
+BYOR found 1 issue.
 
 src/example.py:3:9  [warning] python.no-typing-cast
-Do not use typing.cast here. Fix the type by narrowing, changing the signature, introducing a protocol, or restructuring the value flow. Keep a cast only when the needed invariant cannot be expressed by Python's type system. If this is genuinely necessary, add `# ast-grep-ignore: python.no-typing-cast` at the end of the offending line, with a short comment on the line above explaining the type-system limitation.
+Do not use typing.cast here. Fix the type by narrowing, changing the signature, introducing a protocol, or restructuring the value flow. Keep a cast only when the needed invariant cannot be expressed by Python's type system. If this is genuinely necessary, add `# ast-grep-ignore: python.no-typing-cast` on its own line directly above the offending line, with a short comment above it explaining the type-system limitation.
 ```
 
 To make it the default in every repo, including hook runs, opt in globally in
@@ -103,12 +103,18 @@ back to `diff` then `file` when the edit contents cannot be located. Under
 reads that harness's post-edit JSON payload on stdin, normalizes it to the
 edited file(s) and edit text, and replies in the harness's own feedback format
 (claude-code via stderr + exit 2; codex/copilot via a JSON envelope on
-stdout). Codex payloads carry an `apply_patch` envelope, which byor parses
-for the added lines. Payloads without a recognizable file — including malformed
-ones — exit 0 without scanning. In a repo with no `.byor/config.yml`, hook mode
+stdout). A codex payload carries the patch text in `tool_input.command` as an
+`apply_patch` envelope; byor reads the changed files and their added lines
+from its `*** Add File:` / `*** Update File:` sections, following `*** Move
+to:` renames to the destination path. Payloads without a recognizable file — including malformed
+ones — exit 0 without scanning. Hook mode resolves the repository from the
+edited file, not the session's working directory — an agent editing a file in
+another repo gets that repo's rules (`--repo` still overrides). In a repo with no `.byor/config.yml`, hook mode
 scans the edit against your synced global rules and global checks instead;
 it stays silent only when you have neither (no `~/sgconfig.yml` from
-`byor install` and no global `checks:`).
+`byor install` and no global `checks:`). Hook feedback uses the same
+rendering, but its summary line reads `BYOR found N issues in AI-written
+code.` — there the diagnostics describe the agent's own edit.
 
 ## Extra checks
 
@@ -129,15 +135,17 @@ the in-scope files whose extension is listed in `extensions` are appended as
 trailing arguments (an empty `extensions` matches every in-scope file), so **a
 check command must accept a list of file paths**. When no file paths are
 provided, the command must treat that as a whole-repo scan while respecting
-normal ignored-file rules; generated CI gates intentionally run checks that way.
+normal ignored-file rules; generated CI gates intentionally run checks that way,
+so a check that quietly no-ops without arguments passes every CI run while
+enforcing nothing.
 The command runs without a shell — that is what keeps a committed check string from being a
 shell-injection vector — so there is no `&&`, pipe, redirection, or alias.
 Anything multi-step (autofix, then format, then report the rest) belongs in a
 script the check points at; byor expands a leading `~`/`~/` in the command so
 that script can live under `~/.config/byor` and resolve in every repo (see
-[Check scripts](#check-scripts)). Checks merge by `name` with the repo config
-winning over the global one, and `.byor/local.yml` disables them per repo by
-name or by tag:
+[Check scripts](#check-scripts)). Checks merge by `name` — a repo check wins
+over a same-named package check, which wins over a global one — and
+`.byor/local.yml` disables them per repo by name or by tag:
 
 ```yaml
 checks:
@@ -199,7 +207,8 @@ EOF
   [ "$#" -eq 0 ] && exit 0
 fi
 
-fixed=$(uvx ruff check --fix-only --show-fixes "$@" 2>/dev/null) # apply + summarize
+# F401 stays unfixable: autofixing it deletes a just-added import before the agent's next edit adds its usage.
+fixed=$(uvx ruff check --fix-only --show-fixes --unfixable F401 "$@" 2>/dev/null) # apply + summarize
 reformatted=""
 case "$(uvx ruff format "$@" 2>&1)" in
 *reformatted*) reformatted="ruff format reformatted the file(s)." ;;

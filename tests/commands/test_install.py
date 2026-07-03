@@ -5,6 +5,8 @@ agent list — never a repository. The tests pin idempotency (re-running merges 
 duplicates) and a clean failure for an unknown agent name.
 """
 
+import io
+import sys
 from pathlib import Path
 
 import pytest
@@ -43,3 +45,34 @@ def test_install_is_idempotent_and_merges_without_duplicates() -> None:
 def test_unknown_agent_fails_cleanly(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["install", "--non-interactive", "--agents", "frobnicate"]) == 1
     assert "Unknown agents: frobnicate" in capsys.readouterr().err
+
+
+# A piped `byor install` used to print 'Enter numbers separated by commas [1]:'
+# before falling back to the default; a prompt no one can answer is noise.
+@pytest.mark.usefixtures("home")
+def test_install_suppresses_the_prompt_when_stdin_is_not_a_tty(
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+
+    assert main(["install"]) == 0
+
+    assert "Enter numbers separated by commas" not in capsys.readouterr().out
+    assert global_agents() == ["claude-code", "skill"]  # the prompt's default still applies
+
+
+@pytest.mark.usefixtures("home")
+def test_install_still_reads_a_piped_answer(
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "stdin", io.StringIO("2\n"))
+
+    assert main(["install"]) == 0
+
+    assert global_agents() == ["codex", "skill"]

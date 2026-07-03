@@ -128,8 +128,8 @@ def test_rule_with_excluded_tag_is_skipped_and_its_copy_removed(home: Path, caps
 
 
 def test_project_rule_with_same_id_suppresses_global_copy(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    repo = make_repo(home)
     write_global_rule(home, "no-cast.yml", rule_id="no-cast")
+    repo = make_repo(home)  # init syncs the global copy in
     write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
     capsys.readouterr()
 
@@ -140,8 +140,8 @@ def test_project_rule_with_same_id_suppresses_global_copy(home: Path, capsys: py
 
 
 def test_local_rule_with_same_id_suppresses_global_copy(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    repo = make_repo(home)
     write_global_rule(home, "no-cast.yml", rule_id="no-cast")
+    repo = make_repo(home)  # init syncs the global copy in
     write_rule(repo / ".byor" / "rules" / "personal" / "local" / "no-cast.yml", "no-cast")
     capsys.readouterr()
 
@@ -149,6 +149,24 @@ def test_local_rule_with_same_id_suppresses_global_copy(home: Path, capsys: pyte
 
     assert not (mirror(repo) / "no-cast.yml").exists()
     assert "  no-cast: overridden by local rule" in capsys.readouterr().out
+
+
+# The post-merge/post-checkout shims run `byor sync` on every pull, so a
+# steady-state sync must not narrate forever: when nothing changed it prints
+# nothing (silence is the unix success signal); `byor list` keeps skips
+# visible on demand.
+def test_steady_state_sync_prints_nothing(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
+    repo = make_repo(home)
+    write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
+    assert main(sync_args(repo)) == 0  # removes the mirrored copy and reports the skip
+    capsys.readouterr()
+
+    assert main(sync_args(repo)) == 0
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
 
 
 def test_duplicate_canonical_global_ids_fail_cleanly(home: Path, capsys: pytest.CaptureFixture[str]) -> None:

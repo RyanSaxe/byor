@@ -385,7 +385,13 @@ def _sync_all(config_dir: Path, canonical: CanonicalRules, *, check: bool) -> in
 
 
 def _sync_and_report(repo_root: Path, canonical: CanonicalRules) -> None:
-    plan, _ = sync_repo(repo_root, canonical)
+    plan, result = sync_repo(repo_root, canonical)
+    # A steady-state sync (the post-merge/post-checkout shims run one on every
+    # pull) must not narrate forever: silence is the unix success signal, so a
+    # sync that changed nothing prints nothing; `byor list` keeps skips
+    # visible on demand.
+    if not result.changed:
+        return
     sys.stdout.write(f"Synced {_count(len(plan.desired), 'global rule')} into {repo_root}\n")
     if plan.skipped:
         sys.stdout.write(f"Skipped {_count(len(plan.skipped), 'global rule')}:\n")

@@ -22,12 +22,19 @@ from byor.commands.doctor import quick_doctor_problems
 from byor.config import (
     LocalConfig,
     RepoPaths,
+    load_global_config,
     load_local_config,
     load_repo_config,
     save_local_config,
     save_repo_config,
 )
-from byor.errors import ByorError, ConfigError, UnsafeOverwriteError
+from byor.errors import (
+    AstGrepNotFoundError,
+    ByorError,
+    ConfigError,
+    RuleValidationError,
+    UnsafeOverwriteError,
+)
 from byor.io.fsio import write_text_atomic
 from byor.io.output import write_line
 from byor.io.paths import display_path, global_config_dir, resolve_repo_root
@@ -51,6 +58,7 @@ from byor.rules.sync import (
     summarize_changes,
     sync_repo,
 )
+from byor.scan.astgrep import resolve_ast_grep, rule_load_error
 from byor.scan.checks import load_effective_checks
 
 if TYPE_CHECKING:
@@ -140,6 +148,7 @@ def run_add(args: argparse.Namespace) -> int:
             raise UnsafeOverwriteError(msg)
         rule = replace(rule, path=destination)
         _check_conflicts(context, scope, rule=rule, removed=set())
+        _require_loadable_by_ast_grep(context, rule)
     except ByorError as error:
         raise _with_draft_hint(error, draft) from error
     if draft is not None:
@@ -161,6 +170,7 @@ def run_edit(args: argparse.Namespace) -> int:
     try:
         rule = replace(load_rule(draft), path=found.path)
         _check_conflicts(context, scope, rule=rule, removed={found.path})
+        _require_loadable_by_ast_grep(context, rule)
     except ByorError as error:
         raise _with_draft_hint(error, draft) from error
     draft.unlink()
@@ -366,6 +376,25 @@ def _find_rule(
     where = "any scope" if requested == "auto" else f"{requested} rules"
     msg = f"No rule with ID '{rule_id}' found in {where}."
     raise ByorError(msg)
+
+
+def _require_loadable_by_ast_grep(context: RepoContext, rule: Rule) -> None:
+    """Reject a rule that ast-grep itself cannot load.
+
+    Schema validation alone accepts patterns ast-grep cannot parse, and one
+    such rule on disk breaks every later scan in the repo. When ast-grep is
+    unavailable the check degrades to schema-only validation with a warning:
+    add and edit must not hard-require ast-grep.
+    """
+    try:
+        executable = resolve_ast_grep(load_global_config(context.config_dir).ast_grep_command)
+    except AstGrepNotFoundError:
+        sys.stderr.write("byor: warning: ast-grep not found; skipped checking that ast-grep can load this rule\n")
+        return
+    error = rule_load_error(executable, rule.content)
+    if error is not None:
+        msg = f"ast-grep cannot load rule '{rule.id}'; the rule was not saved:\n{error}"
+        raise RuleValidationError(msg)
 
 
 def _load_source_rule(source: Path) -> Rule:
