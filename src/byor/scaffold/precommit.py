@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from byor.config import CheckDef
 
 __all__ = (
+    "AST_GREP_CLI_VERSION",
     "ast_grep_entry",
     "precommit_config_text",
     "write_precommit_config",
@@ -28,7 +29,13 @@ CONFIG_RELPATH = ".pre-commit-config.yaml"
 # The single marker for both gate files (this config and the CI workflow),
 # so their staleness checks stay in lockstep by construction.
 GATE_MARKER = f"# {MANAGED_NOTICE}"
-_AST_GREP_SCAN = "uvx --from ast-grep-cli ast-grep scan"
+
+# The one home of the ast-grep the committed gate runs. Pinned so a gated
+# repo's enforcement never drifts with upstream releases; bumping it here (in
+# step with pyproject's tested ast-grep-cli) regenerates every gate on heal.
+AST_GREP_CLI_VERSION = "0.42.3"
+
+_AST_GREP_SCAN = f"uvx --from ast-grep-cli=={AST_GREP_CLI_VERSION} ast-grep scan"
 
 
 def ast_grep_entry(fail_on: Literal["all", "error"]) -> str:

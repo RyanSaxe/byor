@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from byor.io.fsio import write_text_atomic
+from byor.io.fsio import marked_text_status, write_marked_text, write_text_atomic
 
 
 def test_write_text_atomic_creates_parents_overwrites_and_leaves_no_temp_files(
@@ -25,6 +25,27 @@ def test_write_text_atomic_creates_parents_overwrites_and_leaves_no_temp_files(
 
     assert path.read_text() == "second"
     assert [entry.name for entry in path.parent.iterdir()] == ["file.txt"]
+
+
+# A zero-byte managed file has no user content to protect; classifying it as
+# unmarked (user-owned) made a truncated skill or hook permanently unhealable.
+def test_marked_text_status_treats_an_empty_file_as_missing(tmp_path: Path) -> None:
+    path = tmp_path / "SKILL.md"
+    path.touch()
+
+    assert marked_text_status(path, "<!-- m -->\ncontent\n", marker="<!-- m -->") == "missing"
+    assert write_marked_text(path, "<!-- m -->\ncontent\n", marker="<!-- m -->") == "written"
+    assert path.read_text() == "<!-- m -->\ncontent\n"
+
+
+def test_write_text_atomic_writes_lf_bytes_on_every_platform(tmp_path: Path) -> None:
+    # Generated /bin/sh hook shims break under CRLF, so newline translation
+    # must stay off; on Windows the default text mode would write \r\n.
+    path = tmp_path / "hook.sh"
+
+    write_text_atomic(path, "#!/bin/sh\nexit 0\n")
+
+    assert path.read_bytes() == b"#!/bin/sh\nexit 0\n"
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX mode bits and umask are not meaningful")

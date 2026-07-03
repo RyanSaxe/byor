@@ -52,6 +52,7 @@ def git(repo: Path, *argv: str) -> str:
         cwd=repo,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=True,
     )
     return result.stdout

@@ -44,7 +44,11 @@ def new_yaml() -> YAML:
 
 
 def load_yaml_mapping(path: Path) -> CommentedMap:
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as error:
+        msg = f"{path}: not valid UTF-8: {error}"
+        raise ConfigError(msg) from error
     return parse_yaml_mapping(text, source=path)
 
 

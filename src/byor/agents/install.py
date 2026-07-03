@@ -150,10 +150,30 @@ def agent_file_problems(agents: Sequence[str]) -> list[str]:
 
 def _install_skill() -> list[str]:
     messages: list[str] = []
+    desired = skill_files()
+    keep = {relpath for relpath, _ in desired}
     for base in global_skill_dirs():
-        for relpath, content in skill_files():
+        for relpath, content in desired:
             path = base / relpath
             messages.extend(_write_managed_path(path, content, display=_home_display(path)))
+        messages.extend(_remove_stale_skill_files(base, keep=keep))
+    return messages
+
+
+# Delete byor-marked markdown the current render no longer ships: files a
+# byor upgrade renamed or removed would otherwise linger forever, feeding
+# agents stale guidance. Unmarked files are user-owned and stay.
+def _remove_stale_skill_files(base: Path, *, keep: set[str]) -> list[str]:
+    if not base.is_dir():
+        return []
+    messages: list[str] = []
+    for path in sorted(base.rglob("*.md")):
+        relpath = path.relative_to(base).as_posix()
+        if relpath in keep or MANAGED_MARKER not in path.read_text(encoding="utf-8"):
+            continue
+        path.unlink()
+        messages.append(f"Removed stale {_home_display(path)}")
+    prune_empty_dirs(base)
     return messages
 
 

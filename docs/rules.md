@@ -83,9 +83,11 @@ unique within the canonical global rules directory. The recommended pattern is
 [a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*
 ```
 
-`add` and `edit` warn on IDs outside this pattern but accept whatever ast-grep
-accepts. Duplicates are rejected before ast-grep ever sees them (ast-grep
-treats duplicate IDs as a hard error).
+`add` and `edit` warn on IDs outside this pattern but require a bare name: an
+ID with a path separator, backslash, or `..` component is rejected, because
+the rule is written to a `<rule-id>.yml` file. Duplicates are also rejected
+before ast-grep ever sees them (ast-grep treats duplicate IDs as a hard
+error).
 
 ## Scopes
 
@@ -213,8 +215,9 @@ byor include --tag TAG
 `exclude` adds the ID to `global.excluded_rule_ids` in `.byor/local.yml`
 (private, gitignored) and syncs, removing the generated copy. `include`
 removes the ID and syncs; if a project or local rule still owns the ID, the
-global rule stays skipped and `include` says so. These commands only affect
-global rules.
+global rule stays skipped and `include` says so. These commands affect global
+and installed-package rules; project and local rules are repo files you edit
+directly.
 
 Tag exclusions add entries under `global.excluded_tags` and skip any personal
 global rule with a matching `metadata.byor.tags` value. Tags are user-defined

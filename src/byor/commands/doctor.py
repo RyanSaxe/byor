@@ -16,8 +16,10 @@ from typing import TYPE_CHECKING
 
 from byor.agents.install import agent_file_problems
 from byor.commands.gate import (
+    directly_invoked_vendored_scripts,
     referenced_vendored_scripts,
     stale_gate_files,
+    transitive_vendored_scripts,
     vendored_script_problems,
 )
 from byor.config import (
@@ -27,6 +29,7 @@ from byor.config import (
     global_rules_dir,
     load_global_config,
     load_local_config,
+    load_package_checks,
     load_repo_config,
     load_repo_registry,
     repo_config_path,
@@ -152,7 +155,7 @@ def _repo_checks(
         shims_check = _git_shims_check(repo_root)
         if shims_check is not None:
             checks.append(shims_check)
-    extra = _extra_checks_check(repo_root, repo_config, global_config=global_config)
+    extra = _extra_checks_check(repo_root, repo_config, global_config=global_config, config_dir=config_dir)
     if extra is not None:
         checks.append(extra)
     return checks
@@ -194,7 +197,15 @@ def _home_sgconfig_check(config_dir: Path, global_config: GlobalConfig) -> Check
     rules_dir = global_rules_dir(config_dir, global_config)
     expected = Path(os.path.relpath(rules_dir, Path.home())).as_posix()
     rule_dirs = data.get("ruleDirs")
-    if not isinstance(rule_dirs, list) or expected not in rule_dirs:
+    if not isinstance(rule_dirs, list):
+        # `byor install` cannot repair a malformed ruleDirs — it refuses to
+        # rewrite the user's file — so the only real remedy is a hand edit.
+        return Check(
+            id="home_sgconfig",
+            ok=False,
+            message=f"~/sgconfig.yml has a non-list ruleDirs; edit it by hand so ruleDirs lists {expected}",
+        )
+    if expected not in rule_dirs:
         return Check(
             id="home_sgconfig",
             ok=False,
@@ -393,10 +404,21 @@ def _gate_check(repo_root: Path, repo_config: RepoConfig) -> Check | None:
 
 
 def _vendored_scripts_check(repo_root: Path, repo_config: RepoConfig) -> Check | None:
-    relpaths = referenced_vendored_scripts(repo_config.checks)
-    if not relpaths:
+    direct = referenced_vendored_scripts(repo_config.checks)
+    if not direct:
         return None
-    problems = [problem for relpath in relpaths for problem in vendored_script_problems(repo_root, relpath)]
+    relpaths = transitive_vendored_scripts(repo_root, direct)
+    invoked = directly_invoked_vendored_scripts(repo_config.checks)
+    transitive_only = set(relpaths) - set(direct)
+    problems = [
+        problem
+        for relpath in relpaths
+        for problem in vendored_script_problems(
+            repo_root,
+            relpath,
+            executable_required=relpath in invoked or relpath in transitive_only,
+        )
+    ]
     if problems:
         return Check(id="vendored_scripts", ok=False, message="; ".join(problems))
     noun = "script" if len(relpaths) == 1 else "scripts"
@@ -430,14 +452,23 @@ def _extra_checks_check(
     repo_config: RepoConfig,
     *,
     global_config: GlobalConfig,
+    config_dir: Path,
 ) -> Check | None:
-    if not repo_config.checks and not global_config.checks:
-        return None
     try:
         local_config = load_local_config(repo_root)
     except ConfigError as error:
         return Check(id="extra_checks", ok=False, message=f"{error}; fix .byor/local.yml by hand")
-    effective = effective_checks(repo_config, global_config, local_config=local_config)
+    try:
+        package_checks = [
+            (f"package:{name}", check)
+            for name in local_config.packages
+            for check in load_package_checks(config_dir, global_config, name=name)
+        ]
+    except ConfigError as error:
+        return Check(id="extra_checks", ok=False, message=str(error))
+    if not repo_config.checks and not global_config.checks and not package_checks:
+        return None
+    effective = effective_checks(repo_config, global_config, local_config=local_config, package_checks=package_checks)
     if not effective:
         return Check(
             id="extra_checks",

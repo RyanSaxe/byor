@@ -36,7 +36,14 @@ def git_repo(home: Path, *init_extra: str) -> Path:
 def scan(repo: Path) -> str:
     # resolve_ast_grep applies PATHEXT, so it finds ast-grep.cmd on Windows
     # where a bare "ast-grep" argv entry would not.
-    result = subprocess.run([str(resolve_ast_grep()), "scan"], cwd=repo, capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        [str(resolve_ast_grep()), "scan"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
     return result.stdout
 
 

@@ -8,6 +8,7 @@ auditable without mixing it with rule or scan logic.
 from __future__ import annotations
 
 import argparse
+import io
 import sys
 from functools import partial
 from pathlib import Path
@@ -393,7 +394,21 @@ def _self_heal_preamble(args: argparse.Namespace) -> list[str]:
     return messages + heal_gate(repo_root)
 
 
+def _force_utf8_stdio() -> None:
+    """Pin stdin/stdout/stderr to UTF-8 regardless of the locale.
+
+    Harness hook payloads arrive as UTF-8 JSON and agent feedback must leave as
+    UTF-8, but Windows pipes default to the ANSI code page. "replace" keeps a
+    stray bad byte from crashing a hook or dropping all feedback. Test doubles
+    (StringIO) are not TextIOWrappers and pass through untouched.
+    """
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    _force_utf8_stdio()
     args = build_parser().parse_args(argv)
     try:
         return run(args)

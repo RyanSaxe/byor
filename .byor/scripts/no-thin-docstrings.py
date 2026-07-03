@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # /// script
-# requires-python = ">=3.10"
+# requires-python = ">=3.12"
 # dependencies = []
 # ///
 """Reject thin docstrings on classes, methods, and functions.
@@ -65,8 +65,8 @@ def _check(path: Path) -> list[_Finding]:
         return [_Finding(path, 1, "file is not valid UTF-8; fix the encoding")]
     try:
         module = ast.parse(source, filename=str(path))
-    except SyntaxError:
-        return []
+    except SyntaxError as error:
+        return [_Finding(path, error.lineno or 1, _parse_failure_message(error))]
     findings: list[_Finding] = []
     for node in ast.walk(module):
         if not isinstance(node, DOC_NODES):
@@ -78,6 +78,11 @@ def _check(path: Path) -> list[_Finding]:
             message = f"thin docstring on {_label(node)}; {THIN_DOCSTRING_ADVICE}"
             findings.append(_Finding(path, _docstring_line(node), message))
     return findings
+
+
+def _parse_failure_message(error: SyntaxError) -> str:
+    runtime = ".".join(str(part) for part in sys.version_info[:2])
+    return f"cannot be parsed by Python {runtime} ({error.msg}); fix the syntax or run this check on a newer Python"
 
 
 def _meaningful_lines(docstring: str) -> list[str]:

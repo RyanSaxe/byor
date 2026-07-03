@@ -117,6 +117,27 @@ def test_local_config_round_trips_excluded_checks(tmp_path: Path) -> None:
     assert load_local_config(tmp_path).excluded_check_tags == ["strict"]
 
 
+# A `..`-style package name would traverse out of the packages mirror when the
+# name is joined onto packages_root, so load_local_config rejects it outright.
+@pytest.mark.parametrize("name", ["..", ".", "", "../evil", "a/b", "a\\b", "evil/.."])
+def test_local_config_rejects_path_like_package_names(tmp_path: Path, name: str) -> None:
+    path = tmp_path / ".byor" / "local.yml"
+    path.parent.mkdir()
+    quoted = name.replace("\\", "\\\\")
+    path.write_text(f'version: 1\npackages:\n  - "{quoted}"\n')
+
+    with pytest.raises(ConfigError, match="bare directory name"):
+        load_local_config(tmp_path)
+
+
+def test_local_config_accepts_bare_package_names(tmp_path: Path) -> None:
+    path = tmp_path / ".byor" / "local.yml"
+    path.parent.mkdir()
+    path.write_text("version: 1\npackages:\n  - python-strict_v1.0\n")
+
+    assert load_local_config(tmp_path).packages == ["python-strict_v1.0"]
+
+
 def test_local_config_round_trips(tmp_path: Path) -> None:
     config = LocalConfig(
         excluded_rule_ids=["no-python-cast"],

@@ -38,10 +38,15 @@ def git_stdout(repo_root: Path, *args: str) -> str | None:
     if git is None:
         return None
     try:
+        # git emits raw UTF-8; decoding with the locale code page mojibakes or
+        # crashes on Windows. "replace" because this output is parsed/displayed,
+        # never round-tripped byte-for-byte.
         result = subprocess.run(
             [git, "-C", str(repo_root), *args],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
     except OSError:

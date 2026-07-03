@@ -142,7 +142,18 @@ def _run_one(check: EffectiveCheck, repo_root: Path, *, files: list[Path], outco
     command = [_expand_home(token) for token in shlex.split(check.definition.run)]
     argv = command + [str(file) for file in files]
     try:
-        result = subprocess.run(argv, cwd=repo_root, capture_output=True, text=True, check=False)
+        # Check output is displayed, not round-tripped: decode as UTF-8 with
+        # "replace" so a non-UTF-8 byte (or a non-UTF-8 Windows locale) cannot
+        # raise UnicodeDecodeError past the OSError handler below.
+        result = subprocess.run(
+            argv,
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
     except OSError as error:
         outcome.warnings.append(f"byor: check '{check.name}' could not run ({argv[0]}): {error}")
         return

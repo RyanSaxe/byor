@@ -7,6 +7,7 @@ command and scaffold code can stay declarative.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import stat
 import tempfile
@@ -37,6 +38,10 @@ def marked_text_status(path: Path, content: str, *, marker: str) -> MarkedTextSt
     if not path.is_file():
         return "missing"
     existing = path.read_text(encoding="utf-8")
+    if not existing:
+        # A zero-byte file has no user content to protect: treat it as missing
+        # so a truncated managed file self-heals instead of festering.
+        return "missing"
     if marker not in existing:
         return "unmarked"
     if existing == content:
@@ -61,19 +66,24 @@ def prune_empty_dirs(root: Path, *, keep_root: bool = True) -> None:
     rule is deleted; uninstall passes `keep_root=False` to remove the whole
     skill tree once emptied. A missing `root` is a no-op either way.
     """
-    # os.walk snapshots entries before children are pruned, so re-check emptiness.
+    # os.walk snapshots entries before children are pruned, and a concurrent
+    # sync may add or remove entries mid-walk: rmdir is itself the atomic
+    # emptiness check, so a non-empty or already-removed directory is skipped.
     for dirpath, _, _ in os.walk(root, topdown=False):
         directory = Path(dirpath)
-        if (keep_root and directory == root) or any(directory.iterdir()):
+        if keep_root and directory == root:
             continue
-        directory.rmdir()
+        with contextlib.suppress(OSError):
+            directory.rmdir()
 
 
 def write_text_atomic(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     handle_fd, temp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
     try:
-        with os.fdopen(handle_fd, "w", encoding="utf-8") as handle:
+        # newline="\n" so generated files (notably /bin/sh hook shims) never
+        # pick up CRLF from Windows' default newline translation.
+        with os.fdopen(handle_fd, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())

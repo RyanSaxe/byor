@@ -226,10 +226,21 @@ def compute_packages_plan(
 
 
 def mirror_contents(mirror_dir: Path) -> dict[str, str]:
-    return {
-        path.relative_to(mirror_dir).as_posix(): path.read_text(encoding="utf-8")
-        for path in discover_rule_files(mirror_dir)
-    }
+    contents: dict[str, str] = {}
+    for path in discover_rule_files(mirror_dir):
+        text = _read_if_present(path)
+        if text is not None:
+            contents[path.relative_to(mirror_dir).as_posix()] = text
+    return contents
+
+
+def _read_if_present(path: Path) -> str | None:
+    # A concurrent sync (byor's own git-hook shims run `byor sync`) may remove
+    # a file between discovery and read; skip it and converge on the next heal.
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
 
 
 def mirror_global_rules(mirror_dir: Path, desired: dict[str, str]) -> MirrorResult:
@@ -240,18 +251,21 @@ def mirror_global_rules(mirror_dir: Path, desired: dict[str, str]) -> MirrorResu
     the `.ignore` file that keeps the git-ignored copies visible to ast-grep,
     which the mirror restores because the directory is wholly byor-owned.
     """
-    write_rule_visibility_file(mirror_dir)
+    write_rule_visibility_file(mirror_dir, force=True)
     actual = mirror_contents(mirror_dir)
+    removed = 0
+    # Remove before writing: after a case-only rename, a case-insensitive
+    # filesystem resolves the stale old name to the same file as the new one,
+    # so writing first would let this loop delete the just-written rule.
+    for relpath in actual:
+        if relpath not in desired:
+            (mirror_dir / relpath).unlink(missing_ok=True)  # concurrent syncs race here
+            removed += 1
     written = 0
     for relpath, content in desired.items():
         if actual.get(relpath) != content:
             write_text_atomic(mirror_dir / relpath, content)
             written += 1
-    removed = 0
-    for relpath in actual:
-        if relpath not in desired:
-            (mirror_dir / relpath).unlink()
-            removed += 1
     prune_empty_dirs(mirror_dir)
     return MirrorResult(written=written, removed=removed)
 

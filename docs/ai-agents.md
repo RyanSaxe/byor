@@ -105,8 +105,10 @@ edited file(s) and edit text, and replies in the harness's own feedback format
 (claude-code via stderr + exit 2; codex/copilot via a JSON envelope on
 stdout). Codex payloads carry an `apply_patch` envelope, which byor parses
 for the added lines. Payloads without a recognizable file — including malformed
-ones — exit 0 without scanning, and hook mode is silent in a repo with no
-`.byor/config.yml`, so a hook can never block the agent loop.
+ones — exit 0 without scanning. In a repo with no `.byor/config.yml`, hook mode
+scans the edit against your synced global rules and global checks instead;
+it stays silent only when you have neither (no `~/sgconfig.yml` from
+`byor install` and no global `checks:`).
 
 ## Extra checks
 
@@ -187,7 +189,13 @@ export NO_COLOR=1 # the agent reads this output; keep it plain text
 unset FORCE_COLOR CLICOLOR_FORCE
 
 if [ "$#" -eq 0 ]; then
-  set -- $(git ls-files -co --exclude-standard -- '*.py' '*.pyi')
+  # Rebuild "$@" one line at a time so spaces and glob characters survive;
+  # newlines in filenames are out of scope for this teaching example.
+  while IFS= read -r file; do
+    [ -n "$file" ] && set -- "$@" "$file"
+  done <<EOF
+$(git ls-files -co --exclude-standard -- '*.py' '*.pyi')
+EOF
   [ "$#" -eq 0 ] && exit 0
 fi
 
@@ -284,7 +292,8 @@ byor can reliably integrate with, so byor omits them until that changes.
 ### skill
 
 The `byor` skill is a hub `SKILL.md` plus reference files
-(`references/patterns.md`, `references/checks.md`, `references/setup.md`),
+(`references/patterns.md`, `references/checks.md`, `references/setup.md`,
+`references/packages.md`, `references/profiles.md`),
 following the Agent Skills progressive-disclosure pattern so the shared
 rule-authoring guidance lives in one place. It does two things: **capture** (the
 default) and **setup**.

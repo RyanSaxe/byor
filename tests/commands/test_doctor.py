@@ -20,6 +20,7 @@ from support import (
     make_repo,
     repo_with_agents,
     write_global_check,
+    write_package_check,
     write_package_rule,
     write_rule,
 )
@@ -89,6 +90,36 @@ def test_doctor_surfaces_configured_checks_with_origin(home: Path, capsys: pytes
     out = capsys.readouterr().out
     assert "extra_checks" in out
     assert "checks: ruff (repo)" in out
+
+
+# Doctor was the only surface that merged checks without package checks, so a
+# package-origin check could never be verified through it.
+def test_doctor_extra_checks_includes_package_checks(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write_package_check(home, "docs", name="docs-check", run="docs-check-cmd")
+    repo = make_repo(home)
+    install_package(repo, "docs")
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 0
+
+    assert "docs-check (package:docs)" in capsys.readouterr().out
+
+
+# ~/sgconfig.yml with a non-list ruleDirs cannot be repaired by `byor install`
+# (it raises pointing at an init-only flag), so the remedy must say hand-edit.
+def test_doctor_tells_the_user_to_hand_edit_a_malformed_home_sgconfig(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    (home / "sgconfig.yml").write_text("ruleDirs: not-a-list\n")
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  home_sgconfig" in out
+    assert "edit it by hand" in out
+    assert "run `byor install`" not in out
 
 
 def test_doctor_extra_checks_reports_when_all_are_excluded(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -263,6 +294,20 @@ def test_doctor_flags_a_missing_rule_visibility_file(home: Path, capsys: pytest.
     out = capsys.readouterr().out
     assert "FAIL  rules_visible" in out
     assert ".byor/rules/personal/local" in out
+
+
+# A user-owned mirror .ignore that hides rules used to fail rules_visible
+# forever: the prescribed `byor init` respected the file's ownership and
+# left it byte-identical, so the remediation could never converge.
+def test_doctor_rules_visible_remediation_converges_for_mirror_dirs(home: Path) -> None:
+    repo = make_repo(home)
+    ignore = repo / ".byor" / "rules" / "personal" / "global" / ".ignore"
+    ignore.write_text("# my own ignore file\n")
+    assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
+
+    assert main(["init", "--repo", str(repo), "--non-interactive"]) == 0
+
+    assert main(["doctor", "--repo", str(repo), "--quick"]) == 0
 
 
 def test_doctor_flags_duplicate_project_and_local_ids(home: Path) -> None:
@@ -440,6 +485,113 @@ def test_doctor_flags_a_missing_vendored_script(
     assert ".byor/scripts/fix.sh is missing" in out
     # Doctor is read-only: the script is not restored.
     assert not (repo / ".byor" / "scripts" / "fix.sh").exists()
+
+
+# The docs bless naming the interpreter in `run` instead of setting the exec
+# bit; doctor used to false-FAIL that documented shape.
+def test_doctor_accepts_a_non_executable_interpreter_invoked_vendored_script(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    (home / "lint.sh").write_text("echo hi\n")
+    write_global_check("linter", "sh ~/lint.sh")
+    repo = home / "gated"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+    vendored = repo / ".byor" / "scripts" / "lint.sh"
+    vendored.chmod(0o644)
+
+    assert main(["doctor", "--repo", str(repo)]) == 0
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="os.access(X_OK) is vacuous on Windows")
+def test_doctor_flags_a_non_executable_directly_invoked_vendored_script(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = gated_script_repo(home, monkeypatch)
+    (repo / ".byor" / "scripts" / "fix.sh").chmod(0o644)
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  vendored_scripts" in out
+    assert "chmod +x .byor/scripts/fix.sh" in out
+    # chmod alone does not survive a Windows checkout: the git index mode does.
+    assert "git update-index --chmod=+x .byor/scripts/fix.sh" in out
+
+
+# A vendored runner that calls a second vendored script hid that dependency
+# from doctor, which only tokenized check.run: delete the helper and doctor
+# stayed green while the committed gate broke.
+def test_doctor_flags_a_missing_transitively_referenced_vendored_script(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    scripts = home / ".config" / "byor" / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "runner.sh").write_text('#!/bin/sh\nexec "${HOME}/.config/byor/scripts/helper.py" "$@"\n')
+    (scripts / "helper.py").write_text("#!/usr/bin/env python3\nprint('ok')\n")
+    write_global_check("runner", "~/.config/byor/scripts/runner.sh")
+    repo = home / "gated"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+    (repo / ".byor" / "scripts" / "helper.py").unlink()
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  vendored_scripts" in out
+    assert ".byor/scripts/helper.py is missing" in out
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="os.access(X_OK) is vacuous on Windows")
+def test_doctor_flags_a_non_executable_transitively_referenced_vendored_script(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    scripts = home / ".config" / "byor" / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "runner.sh").write_text('#!/bin/sh\nexec "${HOME}/.config/byor/scripts/helper.py" "$@"\n')
+    (scripts / "helper.py").write_text("#!/usr/bin/env python3\nprint('ok')\n")
+    write_global_check("runner", "~/.config/byor/scripts/runner.sh")
+    repo = home / "gated"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+    (repo / ".byor" / "scripts" / "helper.py").chmod(0o644)
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  vendored_scripts" in out
+    assert "chmod +x .byor/scripts/helper.py" in out
+    assert "git update-index --chmod=+x .byor/scripts/helper.py" in out
 
 
 def test_doctor_flags_a_drifted_vendored_script(

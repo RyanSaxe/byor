@@ -10,10 +10,11 @@ shim and commits nothing.
 from pathlib import Path
 
 import pytest
-from support import git, install_package, write_global_check, write_global_rule, write_package_rule
+from support import git, install_package, write_global_check, write_global_rule, write_package_rule, write_rule
 
 from byor.cli import main
-from byor.config import load_repo_config, save_repo_config
+from byor.config import CheckDef, load_repo_config, save_repo_config
+from byor.scaffold.precommit import AST_GREP_CLI_VERSION
 
 
 def gate_repo(home: Path, *, extra: tuple[str, ...] = (), branch: str = "main") -> Path:
@@ -38,7 +39,8 @@ def test_gate_promotes_rules_and_checks_and_writes_portable_artifacts(
     assert config.gate is True
 
     precommit = (repo / ".pre-commit-config.yaml").read_text()
-    assert "uvx --from ast-grep-cli ast-grep scan --error" in precommit
+    # The gate pins ast-grep so enforcement never drifts with upstream releases.
+    assert f"uvx --from ast-grep-cli=={AST_GREP_CLI_VERSION} ast-grep scan --error" in precommit
     assert "ruff-check" in precommit
     # A check's extensions become a pre-commit files filter (byor-faithful scoping).
     assert r"files: \.(py)$" in precommit
@@ -47,7 +49,7 @@ def test_gate_promotes_rules_and_checks_and_writes_portable_artifacts(
     # Push runs are limited to the default branch so PR branches are not gated twice.
     assert "on:\n  pull_request:\n  push:\n    branches: [main]\n" in workflow
     assert "astral-sh/setup-uv@v6" in workflow
-    assert "uvx --from ast-grep-cli ast-grep scan --error" in workflow
+    assert f"uvx --from ast-grep-cli=={AST_GREP_CLI_VERSION} ast-grep scan --error" in workflow
     assert "npm install" not in workflow
     assert "ruff-check" in workflow
 
@@ -78,6 +80,21 @@ def test_gate_workflow_branch_is_stable_across_checkouts(home: Path) -> None:
     assert main(["doctor", "--repo", str(repo)]) == 0
 
 
+# Doctor's drift remediation says "run `byor init --gate`", which users run
+# from whatever branch they are on; re-recording gate_branch there resurrected
+# the CI branch flap the recorded value exists to prevent.
+def test_rerunning_init_gate_keeps_the_recorded_branch(home: Path) -> None:
+    repo = gate_repo(home)
+    git(repo, "commit", "--allow-empty", "-q", "-m", "init")
+    git(repo, "checkout", "-q", "-b", "feature")
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+
+    assert load_repo_config(repo).gate_branch == "main"
+    workflow = (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
+    assert "branches: [main]" in workflow
+
+
 def test_gate_without_a_recorded_branch_falls_back_to_detection(home: Path) -> None:
     repo = gate_repo(home, branch="trunk")
     config = load_repo_config(repo)
@@ -102,8 +119,8 @@ def test_gate_fail_on_error_drops_the_error_flag_from_both_files(home: Path) -> 
 
     precommit = (repo / ".pre-commit-config.yaml").read_text()
     workflow = (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
-    assert "entry: uvx --from ast-grep-cli ast-grep scan\n" in precommit
-    assert "- run: uvx --from ast-grep-cli ast-grep scan\n" in workflow
+    assert f"entry: uvx --from ast-grep-cli=={AST_GREP_CLI_VERSION} ast-grep scan\n" in precommit
+    assert f"- run: uvx --from ast-grep-cli=={AST_GREP_CLI_VERSION} ast-grep scan\n" in workflow
     assert "--error" not in precommit
     assert "--error" not in workflow
     # Doctor's staleness view renders from the same setting.
@@ -188,10 +205,117 @@ def test_gate_vendors_subdirectory_script_references(home: Path, monkeypatch: py
     )
 
 
-# A gate repo whose only extra check runs a vendored copy of ~/fix.sh.
+# Deleting the now-redundant home helper used to flag false drift, and the
+# prescribed re-vendor rewrote the committed copy back to a `~/...` path.
+def test_gate_keeps_a_rewritten_reference_when_its_home_source_disappears(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    scripts = home / ".config" / "byor" / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "runner.sh").write_text('#!/usr/bin/env zsh\nexec "${HOME}/.config/byor/scripts/helper.py" "$@"\n')
+    (scripts / "helper.py").write_text("#!/usr/bin/env python3\nprint('ok')\n")
+    write_global_check("runner", "~/.config/byor/scripts/runner.sh")
+    repo = gate_repo(home)
+    (scripts / "helper.py").unlink()  # redundant now that the repo carries a copy
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 0
+    assert main(["list", "--repo", str(repo)]) == 0  # self-heal must not corrupt
+
+    runner = repo / ".byor" / "scripts" / "runner.sh"
+    assert 'exec ".byor/scripts/helper.py" "$@"' in runner.read_text()
+    assert "Re-vendored" not in capsys.readouterr().err
+
+
+# A repo-origin `~/...` check used to reach the committed gate verbatim,
+# passing locally while failing on every teammate machine and CI runner.
 # monkeypatch isolates process state (env, cwd, stdio): an external boundary
 # ast-grep-ignore: python.question-mocks
-def script_check_repo(home: Path, monkeypatch: pytest.MonkeyPatch, *, content: str = "#!/bin/sh\necho one\n") -> Path:
+def test_gate_vendors_home_scripts_referenced_by_repo_checks(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    (home / "fix.sh").write_text("#!/bin/sh\necho hi\n")
+    repo = home / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet", "--initial-branch=main")
+    assert main(["init", "--repo", str(repo), "--non-interactive"]) == 0
+    config = load_repo_config(repo)
+    config.checks.append(CheckDef("fixer", ["py"], "~/fix.sh"))
+    save_repo_config(repo, config)
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+
+    run = next(c.run for c in load_repo_config(repo).checks if c.name == "fixer")
+    assert run == ".byor/scripts/fix.sh"
+    workflow = (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
+    assert ".byor/scripts/fix.sh" in workflow
+    assert "~/fix.sh" not in workflow
+
+
+# The collision fallback only covered packages: a global rule whose filename
+# matched a project rule was silently dropped from the gate.
+def test_gate_promote_keeps_a_global_rule_colliding_with_a_project_filename(home: Path) -> None:
+    write_global_rule(home, "python/no-cast.yml", rule_id="global-no-cast")
+    repo = home / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    assert main(["init", "--repo", str(repo), "--non-interactive"]) == 0
+    project = repo / ".byor" / "rules" / "project"
+    write_rule(project / "python" / "no-cast.yml", "proj-no-cast")
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+
+    ids = sorted(
+        line for path in project.rglob("*.yml") for line in path.read_text().splitlines() if line.startswith("id: ")
+    )
+    assert ids == ["id: global-no-cast", "id: proj-no-cast"]
+
+
+# Case-insensitive filesystems merge Lint.py and lint.py into one file, so
+# the collision must be refused even where the checkout is case-sensitive.
+def test_gate_refuses_two_scripts_vendoring_to_case_variant_names(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    (home / "toolsA").mkdir()
+    (home / "toolsB").mkdir()
+    (home / "toolsA" / "Lint.py").write_text("print('upper')\n")
+    (home / "toolsB" / "lint.py").write_text("print('lower')\n")
+    write_global_check("check-upper", "~/toolsA/Lint.py")
+    write_global_check("check-lower", "~/toolsB/lint.py")
+    repo = home / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    capsys.readouterr()
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 1
+
+    assert "rename one of the scripts" in capsys.readouterr().err
+
+
+# A gate repo whose only extra check runs a vendored copy of ~/fix.sh.
+def script_check_repo(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    content: str = "#!/bin/sh\necho one\n",
+) -> Path:
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
     (home / "fix.sh").write_text(content)
@@ -326,3 +450,25 @@ def test_gate_does_not_clobber_an_existing_precommit_config(home: Path, capsys: 
 
     assert (repo / ".pre-commit-config.yaml").read_text() == "repos: []\n"
     assert "already exists" in capsys.readouterr().out
+
+
+# The pre-commit writer already printed adoption guidance; the CI writer used
+# to no-op silently, leaving the user with gate: true and no CI enforcement.
+def test_gate_does_not_clobber_an_existing_ci_workflow_but_prints_guidance(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_global_rule(home, "python/no-cast.yml", rule_id="no-cast")
+    repo = home / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    workflow = repo / ".github" / "workflows" / "byor-gate.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text("name: my own gate\n")
+    capsys.readouterr()
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+
+    assert workflow.read_text() == "name: my own gate\n"
+    out = capsys.readouterr().out
+    assert ".github/workflows/byor-gate.yml already exists" in out
+    assert "ast-grep scan" in out

@@ -7,6 +7,7 @@ invocation must scan the repo, while hook-style invocation can still pass explic
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -160,8 +161,47 @@ def test_pyfiles_nul_delimits_space_containing_filenames(tmp_path: Path) -> None
     assert [Path(entry).name for entry in _pyfiles(cwd=repo)] == ["with space.py"]
 
 
+def test_pyfiles_no_args_discovers_newline_and_non_ascii_filenames(tmp_path: Path) -> None:
+    # Newline-splitting git output mangles a newline filename, and git's
+    # core.quotePath quoting turns a non-ASCII name into a dropped file.
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    (repo / "模块.py").write_text("x = 1\n")
+    newline_name = "line\nbreak.py"
+    try:
+        (repo / newline_name).write_text("x = 1\n")
+    except OSError:
+        pytest.skip("this filesystem cannot create a filename containing a newline")
+
+    discovered = {Path(entry).name for entry in _pyfiles(cwd=repo)}
+
+    assert discovered == {"模块.py", newline_name}
+
+
 NO_SUPPRESSION_COMMAND = (sys.executable, str(SCRIPTS_DIR / "no-suppression-comments.py"))
 MODULE_CONTRACT_COMMAND = (sys.executable, str(SCRIPTS_DIR / "module-contract.py"))
+
+
+@pytest.mark.parametrize("script_name", ["module-contract.py", "no-thin-docstrings.py"])
+def test_ast_check_scripts_report_files_the_interpreter_cannot_parse(tmp_path: Path, *, script_name: str) -> None:
+    # Broken (or newer-than-the-interpreter) syntax must fail loudly instead
+    # of silently passing the gate.
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    (repo / "future.py").write_text("def broken(:\n    pass\n")
+
+    completed = subprocess.run(
+        (sys.executable, str(SCRIPTS_DIR / script_name)),
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    assert "future.py:1: cannot be parsed by Python" in completed.stdout
 
 
 def test_no_suppression_comments_ignores_markers_inside_strings(tmp_path: Path) -> None:
@@ -201,6 +241,33 @@ def test_no_suppression_comments_still_scans_broken_files(tmp_path: Path) -> Non
 
 
 RUFF_SCRIPT_COMMAND = (sys.executable, str(SCRIPTS_DIR / "ruff.py"))
+EXAMPLE_RUFF_SH = Path(__file__).resolve().parents[1] / "examples" / "config" / "scripts" / "ruff.sh"
+
+
+def test_example_ruff_sh_whole_repo_scan_survives_space_containing_filenames(tmp_path: Path) -> None:
+    # The old unquoted $(git ls-files ...) fallback word-split "my report.py"
+    # into two bogus paths, failing the check on a clean repo.
+    sh = shutil.which("sh")
+    if sh is None:
+        pytest.skip("running the example check script requires an `sh` on PATH")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    (repo / "ruff.toml").write_text("")
+    (repo / "my report.py").write_text("x = 1\n")
+
+    completed = subprocess.run(
+        (sh, str(EXAMPLE_RUFF_SH)),
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert completed.stdout == ""
+
+
 GOOD_MODULE_DOCSTRING = (
     '"""Serve as a fixture module for the module contract tests.\n'
     "\n"
