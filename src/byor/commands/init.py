@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from byor.commands.doctor import quick_doctor_problems
 from byor.commands.gate import install_gate
+from byor.commands.package import add_package_to_local
 from byor.commands.profile import add_profile_to_local
 from byor.commands.prompts import prompt_choice
 from byor.config import (
@@ -67,7 +68,8 @@ class InitOptions:
     gate: bool
     register: bool
     replace_sgconfig: bool
-    profile: str | None
+    profiles: list[str]
+    packages: list[str]
 
 
 def run_init(args: argparse.Namespace) -> int:
@@ -130,9 +132,7 @@ def initialize_repo(repo_root: Path, config_dir: Path, *, options: InitOptions) 
         messages.extend(install_git_shims(repo_root))
     if options.register and register_repo(repo_root, repo_registry_path(config_dir, global_config)):
         messages.append("Registered repository for `byor sync --all`")
-    if options.profile is not None:
-        add_profile_to_local(repo_root, global_config, name=options.profile)
-        messages.append(f"Added profile '{options.profile}' to .byor/local.yml")
+    messages.extend(_apply_profiles_and_packages(repo_root, config_dir, global_config=global_config, options=options))
     _, sync_result = sync_repo(repo_root, load_canonical_rules(config_dir))
     if sync_result.changed:
         messages.append(f"Synced {summarize_changes(sync_result)}")
@@ -143,6 +143,23 @@ def initialize_repo(repo_root: Path, config_dir: Path, *, options: InitOptions) 
             messages.append(note)
     # Run doctor --quick, surfacing only the problems it finds.
     messages.extend(quick_doctor_problems(repo_root, config_dir))
+    return messages
+
+
+def _apply_profiles_and_packages(
+    repo_root: Path,
+    config_dir: Path,
+    *,
+    global_config: GlobalConfig,
+    options: InitOptions,
+) -> list[str]:
+    messages: list[str] = []
+    for name in options.profiles:
+        add_profile_to_local(repo_root, global_config, name=name)
+        messages.append(f"Added profile '{name}' to .byor/local.yml")
+    for name in options.packages:
+        add_package_to_local(repo_root, config_dir, global_config=global_config, name=name)
+        messages.append(f"Installed package '{name}' in .byor/local.yml")
     return messages
 
 
@@ -242,7 +259,8 @@ def _options_from_args(args: argparse.Namespace, defaults: InitDefaults) -> Init
         ),
         register=not args.no_register,
         replace_sgconfig=args.replace_sgconfig,
-        profile=_resolve_profile(args, defaults),
+        profiles=_resolve_profiles(args, defaults),
+        packages=_resolve_packages(args, defaults),
     )
 
 
@@ -264,9 +282,29 @@ def _resolve_flag(
     return prompt_choice(question, choices, default=1 if fallback else 0) == 1
 
 
-def _resolve_profile(args: argparse.Namespace, defaults: InitDefaults) -> str | None:
+def _resolve_profiles(args: argparse.Namespace, defaults: InitDefaults) -> list[str]:
+    # Any explicit CLI selection replaces the global-config defaults; the
+    # singular and plural spellings merge when both are configured.
     if args.no_profile:
-        return None
-    if args.profile is not None:
-        return args.profile
-    return defaults.profile
+        return []
+    explicit = _named_selection(args.profile, args.profiles)
+    if explicit:
+        return explicit
+    return _named_selection(defaults.profile, defaults.profiles)
+
+
+def _resolve_packages(args: argparse.Namespace, defaults: InitDefaults) -> list[str]:
+    if args.no_package:
+        return []
+    explicit = _named_selection(args.package, args.packages)
+    if explicit:
+        return explicit
+    return _named_selection(defaults.package, defaults.packages)
+
+
+def _named_selection(single: str | None, multiple: list[str] | None) -> list[str]:
+    names = [] if single is None else [single]
+    for name in multiple or []:
+        if name not in names:
+            names.append(name)
+    return names

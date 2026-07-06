@@ -141,9 +141,31 @@ def _add_init_arguments(command: argparse.ArgumentParser) -> None:
         help="Apply a configured profile before the initial sync",
     )
     profile.add_argument(
+        "--profiles",
+        nargs="+",
+        metavar="NAME",
+        help="Apply several configured profiles before the initial sync",
+    )
+    profile.add_argument(
         "--no-profile",
         action="store_true",
-        help="Skip applying init.profile from global config",
+        help="Skip applying init.profile/init.profiles from global config",
+    )
+    package = command.add_mutually_exclusive_group()
+    package.add_argument(
+        "--package",
+        help="Install an opt-in package before the initial sync",
+    )
+    package.add_argument(
+        "--packages",
+        nargs="+",
+        metavar="NAME",
+        help="Install several opt-in packages before the initial sync",
+    )
+    package.add_argument(
+        "--no-package",
+        action="store_true",
+        help="Skip installing init.package/init.packages from global config",
     )
 
 

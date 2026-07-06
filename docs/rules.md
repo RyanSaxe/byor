@@ -276,12 +276,17 @@ later:
 
 ```bash
 byor init --profile existing
+byor init --profiles legacy prototyping
 byor profile add existing
 ```
 
 ```yaml
 init:
   profile: existing
+  # or several; `profile` and `profiles` merge when both are set
+  profiles:
+    - legacy
+    - prototyping
 ```
 
 The profile `rules` section maps onto `.byor/local.yml`'s `global` section.
@@ -321,6 +326,14 @@ Install and list packages the way you apply profiles:
 ```bash
 byor package list
 byor package add python-strict
+byor init --packages python-strict web-conventions   # or at init time
+```
+
+```yaml
+init:
+  # installed by every non-interactive init; `package` and `packages` merge
+  packages:
+    - python-strict
 ```
 
 `byor package add` records the opt-in in `.byor/local.yml` (private, gitignored)

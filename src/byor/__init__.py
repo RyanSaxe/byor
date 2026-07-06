@@ -5,6 +5,6 @@ command, scan, and scaffold behavior. Its module contract still records that cho
 public API drift is visible during dogfood checks.
 """
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 __all__ = ("__version__",)

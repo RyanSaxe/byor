@@ -76,7 +76,7 @@ Apply a profile to a repo — additively, never clearing existing exclusions:
 ```bash
 byor profile list             # what is configured
 byor profile add existing     # merge its exclusions into this repo
-byor init --profile existing  # or at init time
+byor init --profile existing  # or at init time (--profiles a b for several)
 ```
 
 Profiles only subtract, and only from global rules/checks; project and local

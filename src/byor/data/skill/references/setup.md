@@ -48,6 +48,8 @@ byor profile list
 byor init
 # or
 byor init --profile <name>
+# or several at once
+byor init --profiles <name> <name>
 ```
 
 Apply one to an already-initialized repo with `byor profile add <name>`. For
