@@ -276,12 +276,17 @@ later:
 
 ```bash
 byor init --profile existing
+byor init --profiles legacy prototyping
 byor profile add existing
 ```
 
 ```yaml
 init:
   profile: existing
+  # or several; `profile` and `profiles` merge when both are set
+  profiles:
+    - legacy
+    - prototyping
 ```
 
 The profile `rules` section maps onto `.byor/local.yml`'s `global` section.

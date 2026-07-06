@@ -141,6 +141,41 @@ def test_init_no_profile_skips_global_profile_default(repo: Path) -> None:
     assert load_local_config(repo).excluded_rule_tags == []
 
 
+def test_init_applies_multiple_profiles(repo: Path) -> None:
+    save_global_config(
+        config_dir(repo),
+        GlobalConfig(
+            profiles={
+                "legacy": ProfileConfig(excluded_rule_tags=["legacy-risk"], excluded_checks=["ty"]),
+                "prototyping": ProfileConfig(excluded_rule_tags=["greenfield", "legacy-risk"]),
+            }
+        ),
+    )
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--profiles", "legacy", "prototyping"]) == 0
+
+    local = load_local_config(repo)
+    assert local.excluded_rule_tags == ["legacy-risk", "greenfield"]
+    assert local.excluded_checks == ["ty"]
+
+
+def test_init_merges_singular_and_plural_profile_defaults(repo: Path) -> None:
+    save_global_config(
+        config_dir(repo),
+        GlobalConfig(
+            init=InitDefaults(profile="legacy", profiles=["prototyping", "legacy"]),
+            profiles={
+                "legacy": ProfileConfig(excluded_rule_tags=["legacy-risk"]),
+                "prototyping": ProfileConfig(excluded_rule_tags=["greenfield"]),
+            },
+        ),
+    )
+
+    assert main(["init", "--repo", str(repo), "--non-interactive"]) == 0
+
+    assert load_local_config(repo).excluded_rule_tags == ["legacy-risk", "greenfield"]
+
+
 def test_init_is_idempotent(repo: Path) -> None:
     main(["init", "--repo", str(repo), "--non-interactive"])
     snapshot = {path: path.read_text() for path in repo.rglob("*") if path.is_file()}

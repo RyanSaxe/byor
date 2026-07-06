@@ -141,9 +141,15 @@ def _add_init_arguments(command: argparse.ArgumentParser) -> None:
         help="Apply a configured profile before the initial sync",
     )
     profile.add_argument(
+        "--profiles",
+        nargs="+",
+        metavar="NAME",
+        help="Apply several configured profiles before the initial sync",
+    )
+    profile.add_argument(
         "--no-profile",
         action="store_true",
-        help="Skip applying init.profile from global config",
+        help="Skip applying init.profile/init.profiles from global config",
     )
 
 
