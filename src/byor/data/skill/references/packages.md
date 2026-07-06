@@ -53,6 +53,7 @@ installs, so give them specific names.
 ```bash
 byor package list                 # packages available to install
 byor package add python-strict    # opt this repo in (records it in .byor/local.yml)
+byor init --packages a b          # or opt in at init time (init.packages sets a default)
 byor list --scope package         # the installed package rules ast-grep now reads
 ```
 

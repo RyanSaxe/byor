@@ -326,6 +326,14 @@ Install and list packages the way you apply profiles:
 ```bash
 byor package list
 byor package add python-strict
+byor init --packages python-strict web-conventions   # or at init time
+```
+
+```yaml
+init:
+  # installed by every non-interactive init; `package` and `packages` merge
+  packages:
+    - python-strict
 ```
 
 `byor package add` records the opt-in in `.byor/local.yml` (private, gitignored)

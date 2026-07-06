@@ -110,6 +110,8 @@ class InitDefaults:
     # `profile` predates `profiles`; both are honored and merged at init.
     profile: str | None = None
     profiles: list[str] = field(default_factory=list)
+    package: str | None = None
+    packages: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -324,6 +326,8 @@ def load_global_config(config_dir: Path) -> GlobalConfig:
             gate=_optional_bool(init, "gate", path=path),
             profile=_optional_string(init, "profile", path=path),
             profiles=_string_list(init, "profiles", path=path),
+            package=_optional_string(init, "package", path=path),
+            packages=_string_list(init, "packages", path=path),
         ),
         profiles=_profile_configs(data, path),
         disabled_repos=[Path(entry) for entry in _string_list(data, "disabled_repos", path=path)],
@@ -512,6 +516,10 @@ def _write_init_defaults(data: CommentedMap, init: InitDefaults) -> None:
         values["profile"] = init.profile
     if init.profiles:
         values["profiles"] = list(init.profiles)
+    if init.package is not None:
+        values["package"] = init.package
+    if init.packages:
+        values["packages"] = list(init.packages)
     if values:
         _update_section(data, "init", values=values)
 

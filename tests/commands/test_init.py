@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from support import git, write_global_rule
+from support import git, package_mirror, write_global_rule, write_package_rule
 
 from byor.cli import main
 from byor.config import (
@@ -174,6 +174,36 @@ def test_init_merges_singular_and_plural_profile_defaults(repo: Path) -> None:
     assert main(["init", "--repo", str(repo), "--non-interactive"]) == 0
 
     assert load_local_config(repo).excluded_rule_tags == ["legacy-risk", "greenfield"]
+
+
+def test_init_installs_requested_packages(repo: Path) -> None:
+    write_package_rule(repo.parent, "python-strict", relpath="no-cast.yml", rule_id="pkg-no-cast")
+    write_package_rule(repo.parent, "web", relpath="no-x.yml", rule_id="web-no-x")
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--packages", "python-strict", "web"]) == 0
+
+    assert load_local_config(repo).packages == ["python-strict", "web"]
+    assert (package_mirror(repo) / "python-strict" / "no-cast.yml").is_file()
+    assert (package_mirror(repo) / "web" / "no-x.yml").is_file()
+
+
+def test_init_merges_singular_and_plural_package_defaults(repo: Path) -> None:
+    write_package_rule(repo.parent, "python-strict", relpath="no-cast.yml", rule_id="pkg-no-cast")
+    write_package_rule(repo.parent, "web", relpath="no-x.yml", rule_id="web-no-x")
+    seed_init_defaults(repo, InitDefaults(package="python-strict", packages=["web", "python-strict"]))
+
+    assert main(["init", "--repo", str(repo), "--non-interactive"]) == 0
+
+    assert load_local_config(repo).packages == ["python-strict", "web"]
+
+
+def test_init_no_package_skips_global_package_default(repo: Path) -> None:
+    write_package_rule(repo.parent, "python-strict", relpath="no-cast.yml", rule_id="pkg-no-cast")
+    seed_init_defaults(repo, InitDefaults(package="python-strict"))
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--no-package"]) == 0
+
+    assert load_local_config(repo).packages == []
 
 
 def test_init_is_idempotent(repo: Path) -> None:
