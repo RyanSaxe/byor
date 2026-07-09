@@ -50,7 +50,18 @@ ALWAYS_SELECT = (
     "RUF012",
     "RUF016",
     "RUF018",
+    # Dynamic code execution. ruff already owns eval (S307) and exec (S102),
+    # including their builtins.* spellings, so byor pins them here instead of
+    # maintaining redundant ast-grep rules. See _run_nesting_pass for the one
+    # invariant ruff can express only in preview.
+    "S102",
+    "S307",
 )
+
+# Guard-clause depth limit from the style guide (max three levels of nesting).
+# ruff's too-many-nested-blocks (PLR1702) enforces this but is preview-only, so
+# it rides its own pass rather than the stable ALWAYS_SELECT set.
+MAX_NESTED_BLOCKS = 3
 
 
 @dataclass(frozen=True)
@@ -159,8 +170,35 @@ def _run_all_passes(targets: list[str]) -> str:
         ),
         env=env,
     )
+    nesting = _ruff_json(
+        ruff,
+        (
+            "check",
+            "--quiet",
+            "--output-format",
+            "json",
+            "--ignore-noqa",
+            "--force-exclude",
+            "--select",
+            "PLR1702",
+            # explicit-preview-rules keeps this pass to exactly PLR1702 instead
+            # of pulling in every unstable preview rule.
+            "--config",
+            "lint.preview = true",
+            "--config",
+            "lint.explicit-preview-rules = true",
+            "--config",
+            f"lint.pylint.max-nested-blocks = {MAX_NESTED_BLOCKS}",
+            "--config",
+            "lint.per-file-ignores = {}",
+            "--config",
+            "lint.extend-per-file-ignores = {}",
+            *targets,
+        ),
+        env=env,
+    )
 
-    return _report(fixed, formatted, diagnostics=_dedupe((*normal, *always)))
+    return _report(fixed, formatted, diagnostics=_dedupe((*normal, *always, *nesting)))
 
 
 def _ruff_command() -> tuple[str, ...]:

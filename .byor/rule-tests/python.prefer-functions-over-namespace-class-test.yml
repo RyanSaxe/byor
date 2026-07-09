@@ -1,0 +1,48 @@
+id: python.prefer-functions-over-namespace-class
+valid:
+  # A stateful class with __init__ is a real object.
+  - |
+    class Cart:
+        def __init__(self):
+            self.items = []
+
+        def add(self, item):
+            self.items.append(item)
+  # Class-level data (constants, config, dataclass fields) is state.
+  - |
+    class Config:
+        timeout: int = 30
+
+        def load(self):
+            return self.timeout
+  # A base class means Protocol, ABC, mixin, or framework integration.
+  - |
+    class Reader(Protocol):
+        def read(self): ...
+  # A dataclass carries state through its annotated fields.
+  - |
+    @dataclasses.dataclass
+    class Point:
+        x: int
+
+        def shifted(self):
+            return self.x + 1
+  # A class with only data and no methods is not a namespace of functions.
+  - |
+    class Limits:
+        low: int = 0
+        high: int = 10
+invalid:
+  # One stateless method: this is the "just a function" smell.
+  - |
+    class TaxCalculator:
+        def calculate(self, amount, rate):
+            return amount * rate
+  # Several stateless methods: a class used purely as a namespace.
+  - |
+    class MathUtils:
+        def add(self, a, b):
+            return a + b
+
+        def mul(self, a, b):
+            return a * b
