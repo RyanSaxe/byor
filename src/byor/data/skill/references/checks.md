@@ -14,15 +14,16 @@ feedback that is really about something else, prefer the tool built for it.
 - **Known lint classes** (unused variables, shadowing, mutable defaults) — the
   language's linter, which already ships a tested rule for them.
 
-Before drafting an ast-grep rule, check whether the linter already has a rule
-for that exact shape — including preview or off-by-default rules you can pin on.
-A banned `eval`/`exec`, a positional-argument limit, or a nesting-depth cap all
-have ruff codes (`S307`, `S102`, `PLR1702`), so selecting them is more accurate
-and better maintained than reimplementing the pattern. Reserve ast-grep for
-shapes the linter genuinely cannot express. When a rule must hold regardless of
-a project's own linter config, pin its code in the always-on pass
-(`ALWAYS_SELECT` in `.byor/scripts/ruff.py`) rather than duplicating it as an
-ast-grep rule; a preview-only code rides its own pass with preview enabled.
+Before drafting an ast-grep rule, check whether the project's linter or type
+checker already has a rule for that exact shape — including preview or
+off-by-default rules you can turn on. A banned call, a positional-argument
+limit, or a nesting-depth cap are usually built-in linter rules (ruff, ESLint,
+golangci-lint, clippy, and the like); selecting one is more accurate and better
+maintained than reimplementing the pattern in ast-grep. Reserve ast-grep for
+shapes the linter and type checker genuinely cannot express. When such a rule
+must hold regardless of a project's own linter config, wire the selection into
+the byor `check` that runs the linter so it always applies, rather than
+duplicating it as an ast-grep rule.
 
 When the user's feedback fits one of these better than ast-grep, say so, and
 offer to set it up: configure the tool, then wire it in so it runs everywhere
