@@ -1,0 +1,67 @@
+id: python.no-error-swallowing-return
+valid:
+  # A specific exception returning None is deliberate absence-signaling.
+  - |
+    def load():
+        try:
+            return read_config()
+        except FileNotFoundError:
+            return None
+  # A specific tuple of exceptions is still a targeted catch.
+  - |
+    def load():
+        try:
+            return read_config()
+        except (OSError, UnicodeDecodeError):
+            return None
+  # A named fallback is a meaningful recovery, not a swallow.
+  - |
+    def load():
+        try:
+            return read_config()
+        except Exception:
+            return DEFAULT_CONFIG
+  # Logging before returning means the blind catch is at least handled.
+  - |
+    def load():
+        try:
+            return read_config()
+        except Exception:
+            log("bad config")
+            return None
+  # Re-raising propagates the error.
+  - |
+    def load():
+        try:
+            return read_config()
+        except Exception:
+            raise
+invalid:
+  # A bare except returning None hides every failure.
+  - |
+    def load():
+        try:
+            return read_config()
+        except:
+            return None
+  # A blind Exception catch returning a falsy numeric default.
+  - |
+    def divide(a, b):
+        try:
+            return a / b
+        except Exception:
+            return 0
+  # `except Exception as e` returning an empty container swallows just as much.
+  - |
+    def items():
+        try:
+            return fetch()
+        except Exception as error:
+            return []
+  # A bare return discards the exception and returns None implicitly.
+  - |
+    def load():
+        try:
+            return read_config()
+        except BaseException:
+            return

@@ -1,0 +1,57 @@
+id: python.prefer-functions-over-namespace-class
+language: Python
+severity: warning
+message: A stateless, method-only class reads better as module-level functions.
+rule:
+  kind: class_definition
+  all:
+    # Base classes mean Protocol, ABC, mixin, or framework integration, which
+    # are all legitimate reasons for a stateless class.
+    - not:
+        has:
+          field: superclasses
+          kind: argument_list
+    - has:
+        field: body
+        kind: block
+        has:
+          any:
+            - kind: function_definition
+            - kind: decorated_definition
+    - not:
+        has:
+          field: body
+          kind: block
+          has:
+            any:
+              # An __init__ gives the class instance state, so it is a real object.
+              - kind: function_definition
+                has:
+                  field: name
+                  kind: identifier
+                  regex: ^__init__$
+              # Class-level data: constants, config, or annotated (dataclass) fields.
+              - kind: expression_statement
+                has:
+                  kind: assignment
+metadata:
+  byor:
+    rationale: >
+      The style guide treats functions as the default and classes as tools for
+      state, inheritance, or cohesive object behavior. A class with no base
+      classes, no __init__, and no class-level data is being used as a namespace
+      for functions that would read better at module level.
+    agent_prompt: >
+      Move these methods to module-level functions and delete the class,
+      calling them directly. Keep a class only when it carries state (add
+      __init__ or class attributes), implements an interface (subclass a
+      Protocol or ABC), or integrates with a framework that requires a class.
+      If this class must stay as-is, add `# ast-grep-ignore:
+      python.prefer-functions-over-namespace-class` on its own line directly
+      above the class, with a short comment above it explaining why.
+    tags:
+    - python
+    - design
+    - oop
+    - style-guide
+    - greenfield

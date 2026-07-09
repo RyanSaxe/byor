@@ -1,0 +1,80 @@
+id: python.no-error-swallowing-return
+language: Python
+severity: warning
+message: This blind except swallows the error and returns a default.
+rule:
+  kind: except_clause
+  all:
+    # Only a blind catch is a swallow. A specific `except FileNotFoundError:
+    # return None` is deliberate absence-signaling, not error hiding, so the
+    # rule fires only on bare `except:` or `except Exception`/`BaseException`.
+    - any:
+        - has:
+            any:
+              - kind: identifier
+                regex: ^(Exception|BaseException)$
+              - kind: as_pattern
+                has:
+                  kind: identifier
+                  regex: ^(Exception|BaseException)$
+        - not:
+            has:
+              any:
+                - kind: identifier
+                - kind: dotted_name
+                - kind: attribute
+                - kind: tuple
+                - kind: as_pattern
+    - has:
+        kind: block
+        has:
+          kind: return_statement
+          all:
+            # The return must be the block's only statement, so a handler that
+            # logs, cleans up, or re-raises before returning is not flagged.
+            # Positions ignore comments so a comment cannot hide the swallow.
+            - nthChild:
+                position: 1
+                ofRule:
+                  not:
+                    kind: comment
+            - nthChild:
+                position: 1
+                reverse: true
+                ofRule:
+                  not:
+                    kind: comment
+            - any:
+                - pattern: return None
+                - pattern: return 0
+                - pattern: return 0.0
+                - pattern: return False
+                - pattern: "return []"
+                - pattern: "return {}"
+                - pattern: "return ''"
+                - pattern: 'return ""'
+                # A bare `return` has no value node to match.
+                - not:
+                    has:
+                      pattern: $VALUE
+metadata:
+  byor:
+    rationale: >
+      A blind except (bare, Exception, or BaseException) whose only action is
+      returning a falsy default hides every error, including bugs, from callers,
+      reviewers, and debuggers. Catching a specific exception to signal a
+      documented absence is fine; catching everything to return a default is
+      not.
+    agent_prompt: >
+      Do not swallow every exception here. Catch the specific exception you
+      expect, let unexpected errors propagate, or replace the default with a
+      meaningful fallback the caller can act on (a named default value, a
+      recomputed result, or a re-raise with context). If absorbing all errors
+      into a falsy default is genuinely correct for this boundary, add
+      `# ast-grep-ignore: python.no-error-swallowing-return` on its own line
+      directly above the return, with a short comment above it explaining why.
+    tags:
+    - python
+    - error-handling
+    - style-guide
+    - greenfield
