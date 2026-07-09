@@ -489,3 +489,45 @@ def test_ruff_script_fails_loudly_when_ruff_cannot_run(tmp_path: Path) -> None:
     assert completed.returncode == 2
     assert "ruff failed to run" in completed.stdout
     assert "ruff.toml" in completed.stdout
+
+
+def test_ruff_script_flags_dynamic_execution_regardless_of_project_config(tmp_path: Path) -> None:
+    # The empty ruff.toml selects no project rules, so eval only surfaces
+    # because byor pins S307 in its always-on pass instead of an ast-grep rule.
+    workspace = _ruff_workspace(tmp_path, content='source = "1"\nresult = eval(source)\n')
+
+    completed = subprocess.run(
+        RUFF_SCRIPT_COMMAND,
+        cwd=workspace,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    assert "S307" in completed.stdout
+
+
+def test_ruff_script_flags_excess_nesting(tmp_path: Path) -> None:
+    # PLR1702 is preview-only, so its own pass proves the guard-clause depth
+    # limit fires even when the project selects no rules of its own.
+    content = (
+        "def deep(a, b, c, d):\n"
+        "    if a:\n"
+        "        for x in b:\n"
+        "            if c:\n"
+        "                while d:\n"
+        "                    return x\n"
+    )
+    workspace = _ruff_workspace(tmp_path, content=content)
+
+    completed = subprocess.run(
+        RUFF_SCRIPT_COMMAND,
+        cwd=workspace,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    assert "PLR1702" in completed.stdout
