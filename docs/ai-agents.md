@@ -471,18 +471,21 @@ work.
 ### codex
 
 Install writes a `PostToolUse` hook (matcher `apply_patch|Edit|Write`) and a
-`PreToolUse` gate (matcher `shell|local_shell|exec_command`) into
-`~/.codex/hooks.json`. Codex edits files through `apply_patch` (its real
-`tool_name`); `Edit`/`Write` remain in the matcher as Codex's documented
-aliases. Codex does not run new or changed hooks until you trust them: run
+`PreToolUse` gate (matcher `Bash`) into `~/.codex/hooks.json`. Codex edits
+files through `apply_patch` (its real `tool_name`); `Edit`/`Write` remain in
+the matcher as Codex's documented aliases. Codex reports shell commands under
+`tool_name: "Bash"` in the `PreToolUse` payload — the same name Claude Code
+uses — regardless of the underlying exec handler (`exec_command`,
+`unified_exec`), so the gate matches on `Bash` (verified live against codex
+0.144). Codex does not run new or changed hooks until you trust them: run
 `/hooks` in the Codex session and approve the byor entries — again after an
 upgrade adds a hook — which `byor hook install --agent codex` reminds you of.
 
 Codex must be recent enough that `apply_patch` edits fire `PostToolUse` hooks:
 older versions (through ~0.118) fired them only for the Bash tool, so byor saw
-no edits there. Codex's own docs also note `PreToolUse` does not yet intercept
-every shell execution path; a command byor never sees is simply allowed —
-consistent with the gate's fail-open design.
+no edits there. A newly-installed gate is silent until trusted; a command byor
+never sees (a shell handler that doesn't emit `PreToolUse`) is simply
+allowed — consistent with the gate's fail-open design.
 
 ### claude-code
 

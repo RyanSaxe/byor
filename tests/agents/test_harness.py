@@ -194,13 +194,16 @@ def test_claude_code_parses_a_pre_command_payload_with_cwd() -> None:
     )
 
 
-def test_codex_parses_the_exec_command_payload() -> None:
-    # The shape codex 0.139 actually sends (verified against a live session):
-    # exec_command with {cmd, workdir, shell, ...}.
+def test_codex_parses_the_pretooluse_payload() -> None:
+    # The shape codex 0.144 actually sends to a PreToolUse hook (verified live):
+    # tool_name "Bash", tool_input.command string, top-level cwd. Same as Claude
+    # Code — the session-rollout log's {cmd, workdir} is a different artifact.
     raw = json.dumps(
         {
-            "tool_name": "exec_command",
-            "tool_input": {"cmd": "pip install requests", "workdir": "/repo", "shell": "zsh"},
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": "pip install requests"},
+            "cwd": "/repo",
         }
     )
 

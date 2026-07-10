@@ -102,8 +102,11 @@ HOOK_SPECS: dict[tuple[Harness, HookEvent], HookSpec] = {
         event="pre-command",
         signature=BYOR_PRECOMMAND_SIGNATURE,
         global_relpath="hooks.json",
+        # Codex reports shell commands under the tool_name "Bash" in the
+        # PreToolUse event (verified live against codex 0.144), regardless of
+        # the underlying exec handler — the same name Claude Code uses.
         key_path=("hooks", "PreToolUse"),
-        matcher="shell|local_shell|exec_command",
+        matcher="Bash",
         nests_command=True,
     ),
     ("copilot", "post-edit"): HookSpec(
