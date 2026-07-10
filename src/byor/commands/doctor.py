@@ -362,9 +362,9 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path) -> list
     except (DuplicateRuleIdError, RuleValidationError, ConfigError) as error:
         checks.append(Check(id="package_rules", ok=False, message=str(error)))
         return checks
-    global_stale = mirror_contents(repo_root / paths.personal_global_rules) != plans.global_plan.desired
-    packages_stale = mirror_contents(plans.packages_dir) != plans.packages_plan.desired
-    if global_stale or packages_stale:
+    global_stale = mirror_contents(repo_root / paths.personal_global_rules) != plans.rules.global_plan.desired
+    packages_stale = mirror_contents(plans.rules.packages_dir) != plans.rules.packages_plan.desired
+    if global_stale or packages_stale or plans.commands.is_stale():
         message = "rule copies are stale; run `byor sync`"
         checks.append(Check(id="sync_fresh", ok=False, message=message))
     else:

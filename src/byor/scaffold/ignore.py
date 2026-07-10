@@ -39,6 +39,12 @@ IGNORED_PATTERNS = (
     ".byor/rules/personal/global/**/*.yaml",
     ".byor/rules/personal/packages/**/*.yml",
     ".byor/rules/personal/packages/**/*.yaml",
+    ".byor/commands/personal/local/**/*.yml",
+    ".byor/commands/personal/local/**/*.yaml",
+    ".byor/commands/personal/global/**/*.yml",
+    ".byor/commands/personal/global/**/*.yaml",
+    ".byor/commands/personal/packages/**/*.yml",
+    ".byor/commands/personal/packages/**/*.yaml",
 )
 
 # Private setup: hide byor's entire footprint via .git/info/exclude, so a repo

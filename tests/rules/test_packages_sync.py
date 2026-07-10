@@ -13,14 +13,31 @@ from support import (
     install_package,
     make_repo,
     mirror,
+    package_command_mirror,
     package_mirror,
     uninstall_package,
     write_global_rule,
+    write_package_command_rule,
     write_package_rule,
     write_rule,
 )
 
 from byor.cli import main
+
+
+def test_package_command_rules_mirror_into_the_commands_tree_only(home: Path) -> None:
+    write_package_rule(home, "style", relpath="no-cast.yml", rule_id="pkg-no-cast")
+    write_package_command_rule(home, "style", relpath="no-pip.yml", rule_id="pkg-no-pip")
+    repo = make_repo(home)
+    install_package(repo, "style")
+
+    assert main(["sync", "--repo", str(repo)]) == 0
+
+    assert (package_command_mirror(repo) / "style" / "no-pip.yml").is_file()
+    # The commands/ subtree is the package's command universe: it must not
+    # leak into the file-rule mirror that sgconfig points ast-grep at.
+    assert (package_mirror(repo) / "style" / "no-cast.yml").is_file()
+    assert not (package_mirror(repo) / "style" / "commands").exists()
 
 
 def test_installed_package_rule_is_mirrored_under_its_package_name(home: Path) -> None:

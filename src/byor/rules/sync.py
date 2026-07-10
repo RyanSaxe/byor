@@ -13,8 +13,11 @@ from typing import TYPE_CHECKING
 
 from byor.config import (
     PACKAGE_CHECKS_FILE,
+    PACKAGE_COMMANDS_DIR,
     LocalConfig,
+    command_rules_relpath,
     disabled_entry,
+    global_commands_dir,
     global_packages_dir,
     global_rules_dir,
     load_global_config,
@@ -48,11 +51,13 @@ __all__ = (
     "InstalledPackage",
     "MirrorResult",
     "RepoPlans",
+    "ScopePlans",
     "SkippedRule",
     "SyncPlan",
     "compute_packages_plan",
     "iter_registered_repos",
     "load_canonical_rules",
+    "load_installed_command_packages",
     "load_installed_packages",
     "mirror_contents",
     "mirror_global_rules",
@@ -97,6 +102,8 @@ class CanonicalRules:
     root: Path
     rules: list[Rule]
     packages_root: Path
+    commands_root: Path
+    command_rules: list[Rule]
 
 
 @dataclass
@@ -109,10 +116,13 @@ class InstalledPackage:
 def load_canonical_rules(config_dir: Path) -> CanonicalRules:
     config = load_global_config(config_dir)
     root = global_rules_dir(config_dir, config)
+    commands_root = global_commands_dir(config_dir, config)
     return CanonicalRules(
         root=root,
         rules=load_rules(root),
         packages_root=global_packages_dir(config_dir, config),
+        commands_root=commands_root,
+        command_rules=load_rules(commands_root),
     )
 
 
@@ -127,11 +137,32 @@ def load_installed_packages(canonical: CanonicalRules, names: Iterable[str]) -> 
     ]
 
 
+def load_installed_command_packages(canonical: CanonicalRules, names: Iterable[str]) -> list[InstalledPackage]:
+    """Load each package's `commands/` subtree as its own rule universe.
+
+    The returned package's root is the commands directory itself, so mirror
+    paths come out as `<package>/<rule>.yml` — the same shape as the file-rule
+    mirror — and `compute_packages_plan` works on either universe unchanged.
+    A package without a `commands/` directory contributes no command rules.
+    """
+    return [
+        InstalledPackage(
+            name=name,
+            root=canonical.packages_root / name / PACKAGE_COMMANDS_DIR,
+            rules=load_rules(canonical.packages_root / name / PACKAGE_COMMANDS_DIR),
+        )
+        for name in names
+    ]
+
+
 def _load_package_rules(root: Path) -> list[Rule]:
+    # The root checks.yml is the package manifest and commands/ is the
+    # command-rule universe; neither is a file rule.
     return [
         load_rule(path)
         for path in discover_rule_files(root)
         if not (path.parent == root and path.name == PACKAGE_CHECKS_FILE)
+        and not path.is_relative_to(root / PACKAGE_COMMANDS_DIR)
     ]
 
 
@@ -142,7 +173,7 @@ def _effective_canonical(
     package_ids: set[str],
     excluded_rule_ids: Iterable[str],
     excluded_tags: Iterable[str],
-    canonical: CanonicalRules,
+    canonical_rules: list[Rule],
 ) -> tuple[list[Rule], list[SkippedRule]]:
     """Return the canonical global rules a repo keeps and skip the rest.
 
@@ -152,14 +183,14 @@ def _effective_canonical(
     every kept global rule has an ID outside all three sets and unique among
     global rules.
     """
-    check_id_conflicts(project, local, canonical_global=canonical.rules)
+    check_id_conflicts(project, local, canonical_global=canonical_rules)
     project_ids = {rule.id for rule in project}
     local_ids = {rule.id for rule in local}
     excluded = set(excluded_rule_ids)
     excluded_tag_set = set(excluded_tags)
     kept: list[Rule] = []
     skipped: list[SkippedRule] = []
-    for rule in canonical.rules:
+    for rule in canonical_rules:
         reason = _skip_reason(
             rule,
             project_ids,
@@ -273,29 +304,84 @@ def mirror_global_rules(mirror_dir: Path, desired: dict[str, str]) -> MirrorResu
 
 
 @dataclass
-class RepoPlans:
+class ScopePlans:
     global_plan: SyncPlan
     global_dir: Path
     packages_plan: SyncPlan
     packages_dir: Path
 
+    def is_stale(self) -> bool:
+        return (
+            mirror_contents(self.global_dir) != self.global_plan.desired
+            or mirror_contents(self.packages_dir) != self.packages_plan.desired
+        )
+
+    def skipped(self) -> list[SkippedRule]:
+        return self.global_plan.skipped + self.packages_plan.skipped
+
+
+@dataclass
+class RepoPlans:
+    rules: ScopePlans
+    commands: ScopePlans
+
 
 def repo_plans(repo_root: Path, canonical: CanonicalRules) -> RepoPlans:
-    """Compute the global and packages mirror plans in one pass.
+    """Compute the file-rule and command-rule mirror plans in one pass.
 
-    Loads the repo config, local config, and both rule scopes once and reuses
-    the effective-canonical result for both plans, so a self-heal does not read
-    and parse every rule file twice.
+    Loads the repo config and local config once and runs the same pure plan
+    helpers over each universe, so a self-heal does not read and parse any
+    rule file twice. The two universes never mix: a command rule cannot
+    override a file rule or vice versa.
     """
     paths = load_repo_config(repo_root).paths
     local_config = load_local_config(repo_root)
-    project = load_rules(repo_root / paths.project_rules)
-    local = load_rules(repo_root / paths.personal_local_rules)
+    rules_global, rules_packages = _scope_plans(
+        load_rules(repo_root / paths.project_rules),
+        load_rules(repo_root / paths.personal_local_rules),
+        canonical_root=canonical.root,
+        canonical_rules=canonical.rules,
+        packages=load_installed_packages(canonical, local_config.packages),
+        local_config=local_config,
+    )
+    commands_global, commands_packages = _scope_plans(
+        load_rules(repo_root / command_rules_relpath(paths, "project")),
+        load_rules(repo_root / command_rules_relpath(paths, "local")),
+        canonical_root=canonical.commands_root,
+        canonical_rules=canonical.command_rules,
+        packages=load_installed_command_packages(canonical, local_config.packages),
+        local_config=local_config,
+    )
+    return RepoPlans(
+        rules=ScopePlans(
+            global_plan=rules_global,
+            global_dir=resolve_within(repo_root, repo_root / paths.personal_global_rules),
+            packages_plan=rules_packages,
+            packages_dir=resolve_within(repo_root, repo_root / paths.personal_packages_rules),
+        ),
+        commands=ScopePlans(
+            global_plan=commands_global,
+            global_dir=resolve_within(repo_root, repo_root / command_rules_relpath(paths, "global")),
+            packages_plan=commands_packages,
+            packages_dir=resolve_within(repo_root, repo_root / command_rules_relpath(paths, "packages")),
+        ),
+    )
+
+
+def _scope_plans(
+    project: list[Rule],
+    local: list[Rule],
+    *,
+    canonical_root: Path,
+    canonical_rules: list[Rule],
+    packages: list[InstalledPackage],
+    local_config: LocalConfig,
+) -> tuple[SyncPlan, SyncPlan]:
     packages_plan, package_ids = compute_packages_plan(
         project,
         local,
         local_config=local_config,
-        packages=load_installed_packages(canonical, local_config.packages),
+        packages=packages,
     )
     kept, skipped = _effective_canonical(
         project,
@@ -303,39 +389,35 @@ def repo_plans(repo_root: Path, canonical: CanonicalRules) -> RepoPlans:
         package_ids=package_ids,
         excluded_rule_ids=local_config.excluded_rule_ids,
         excluded_tags=local_config.excluded_rule_tags,
-        canonical=canonical,
+        canonical_rules=canonical_rules,
     )
-    return RepoPlans(
-        global_plan=_global_plan(kept, skipped, root=canonical.root),
-        global_dir=resolve_within(repo_root, repo_root / paths.personal_global_rules),
-        packages_plan=packages_plan,
-        packages_dir=resolve_within(repo_root, repo_root / paths.personal_packages_rules),
-    )
+    return _global_plan(kept, skipped, root=canonical_root), packages_plan
 
 
 def sync_repo(repo_root: Path, canonical: CanonicalRules) -> tuple[SyncPlan, MirrorResult]:
     plans = repo_plans(repo_root, canonical)
-    global_result = mirror_global_rules(plans.global_dir, plans.global_plan.desired)
-    packages_result = mirror_global_rules(plans.packages_dir, plans.packages_plan.desired)
-    # `desired` stays the global mirror alone: it feeds the "N global rules"
-    # sync count. Package changes still register through the mirror result.
+    results = [
+        mirror_global_rules(scope.global_dir, scope.global_plan.desired) for scope in (plans.rules, plans.commands)
+    ] + [
+        mirror_global_rules(scope.packages_dir, scope.packages_plan.desired) for scope in (plans.rules, plans.commands)
+    ]
+    # `desired` stays the file-rule global mirror alone: it feeds the "N global
+    # rules" sync count. Command and package changes still register through the
+    # mirror result.
     plan = SyncPlan(
-        desired=plans.global_plan.desired,
-        skipped=plans.global_plan.skipped + plans.packages_plan.skipped,
+        desired=plans.rules.global_plan.desired,
+        skipped=plans.rules.skipped() + plans.commands.skipped(),
     )
     result = MirrorResult(
-        written=global_result.written + packages_result.written,
-        removed=global_result.removed + packages_result.removed,
+        written=sum(mirrored.written for mirrored in results),
+        removed=sum(mirrored.removed for mirrored in results),
     )
     return plan, result
 
 
 def repo_is_stale(repo_root: Path, canonical: CanonicalRules) -> bool:
     plans = repo_plans(repo_root, canonical)
-    return (
-        mirror_contents(plans.global_dir) != plans.global_plan.desired
-        or mirror_contents(plans.packages_dir) != plans.packages_plan.desired
-    )
+    return plans.rules.is_stale() or plans.commands.is_stale()
 
 
 def summarize_changes(result: MirrorResult) -> str:

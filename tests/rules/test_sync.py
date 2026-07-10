@@ -12,10 +12,13 @@ from pathlib import Path
 
 import pytest
 from support import (
+    command_mirror,
     install_agents,
     install_package,
     make_repo,
     mirror,
+    write_command_rule,
+    write_global_command_rule,
     write_global_rule,
     write_package_rule,
     write_rule,
@@ -384,3 +387,55 @@ def test_sync_prune_requires_all_and_refuses_check(home: Path, capsys: pytest.Ca
 
     assert main(["sync", "--all", "--check", "--prune"]) == 1
     assert "--prune cannot be combined with --check" in capsys.readouterr().err
+
+
+def test_sync_mirrors_global_command_rules_outside_the_file_rule_tree(home: Path) -> None:
+    repo = make_repo(home)
+    canonical = write_global_command_rule(home, "deps/no-pip.yml", rule_id="no-pip")
+
+    assert main(sync_args(repo)) == 0
+
+    copy = command_mirror(repo) / "deps" / "no-pip.yml"
+    assert copy.read_text() == canonical.read_text()
+    # Command rules gate shell commands: they must stay out of the file-rule
+    # mirror and out of sgconfig ruleDirs, or file scans would pick them up.
+    assert not (mirror(repo) / "deps" / "no-pip.yml").exists()
+    assert ".byor/commands" not in (repo / "sgconfig.yml").read_text()
+
+
+def test_project_command_rule_overrides_the_global_command_copy(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = make_repo(home)
+    write_global_command_rule(home, "no-pip.yml", rule_id="no-pip")
+    # A second, unopposed rule makes the sync change something: skip narration
+    # only prints on a sync that wrote or removed a file.
+    write_global_command_rule(home, "no-curl.yml", rule_id="no-curl")
+    write_command_rule(repo / ".byor" / "commands" / "project" / "no-pip.yml", "no-pip")
+    capsys.readouterr()
+
+    assert main(sync_args(repo)) == 0
+
+    assert not (command_mirror(repo) / "no-pip.yml").exists()
+    assert (command_mirror(repo) / "no-curl.yml").is_file()
+    assert "no-pip: overridden by project rule" in capsys.readouterr().out
+
+
+def test_file_and_command_universes_share_an_id_without_conflict(home: Path) -> None:
+    repo = make_repo(home)
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
+    write_global_command_rule(home, "no-cast.yml", rule_id="no-cast")
+
+    assert main(sync_args(repo)) == 0
+
+    assert (mirror(repo) / "no-cast.yml").is_file()
+    assert (command_mirror(repo) / "no-cast.yml").is_file()
+
+
+def test_sync_check_reports_a_stale_command_mirror(home: Path) -> None:
+    repo = make_repo(home)
+    main(sync_args(repo))
+
+    write_global_command_rule(home, "no-pip.yml", rule_id="no-pip")
+
+    assert main(sync_args(repo, "--check")) == 3
+    assert main(sync_args(repo)) == 0
+    assert main(sync_args(repo, "--check")) == 0

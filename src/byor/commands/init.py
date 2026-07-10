@@ -20,7 +20,9 @@ from byor.config import (
     InitDefaults,
     LocalConfig,
     RepoConfig,
+    command_rule_dir_relpaths,
     disabled_entry,
+    global_commands_dir,
     global_config_path,
     global_rules_dir,
     load_global_config,
@@ -194,6 +196,7 @@ def _bootstrap_global_dir(config_dir: Path) -> GlobalConfig:
         config = GlobalConfig()
         save_global_config(config_dir, config)
     global_rules_dir(config_dir, config).mkdir(parents=True, exist_ok=True)
+    global_commands_dir(config_dir, config).mkdir(parents=True, exist_ok=True)
     registry_path = repo_registry_path(config_dir, config)
     if not registry_path.is_file():
         save_repo_registry(registry_path, [])
@@ -212,7 +215,9 @@ def _ensure_repo_layout(repo_root: Path, *, private: bool) -> RepoConfig:
         save_repo_config(repo_root, config)
     if not local_config_path(repo_root).is_file():
         save_local_config(repo_root, LocalConfig())
-    for rules_dir in rule_dir_relpaths(config.paths):
+    # Command rule dirs are created but never join sgconfig ruleDirs: they gate
+    # shell commands, and file scans must not pick them up.
+    for rules_dir in rule_dir_relpaths(config.paths) + command_rule_dir_relpaths(config.paths):
         gitkeep = repo_root / rules_dir / ".gitkeep"
         gitkeep.parent.mkdir(parents=True, exist_ok=True)
         gitkeep.touch(exist_ok=True)
