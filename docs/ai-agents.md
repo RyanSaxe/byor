@@ -1,7 +1,9 @@
 # AI Agents
 
-byor turns your ast-grep rules into directive feedback for AI coding
-agents. Every agent integration wraps the same command:
+byor turns your ast-grep rules into directive feedback for AI coding agents,
+delivered inside the agent's work loop: a post-edit hook checks each edit as
+it lands, rather than a cleanup pass after the work is done. Every agent
+integration wraps the same command:
 
 ```bash
 byor agent-check --scope diff --files <changed files>

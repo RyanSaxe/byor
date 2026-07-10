@@ -77,6 +77,13 @@ checks:
       - environment
 ```
 
+Some checks police the agent, not the code: an ask-first gate on dependency
+changes, a "use the CLI, not the file" guard on a lockfile. Add `gate: false`
+to such a check — the post-edit hook still runs it, but `byor init --gate`
+leaves it out of the generated pre-commit and CI files, where it would block a
+human doing the same thing deliberately. Ask yourself when authoring: would
+this check be wrong in CI? If yes, it needs `gate: false`.
+
 A check that outgrows one file shares code as a path-referenced subprocess,
 never a Python import — there is no package to import from, and `sys.path`
 tricks break when scripts move between the two homes. A repo script resolves
