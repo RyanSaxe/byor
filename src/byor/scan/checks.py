@@ -1,8 +1,9 @@
 """Run configured BYOR check commands.
 
-Checks extend ast-grep with linters, type checkers, and project scripts that accept file arguments.
-This module merges check definitions by precedence, applies exclusions, expands safe home paths, and
-records failures for agent feedback.
+Checks extend ast-grep with linters, type checkers, and project scripts that accept file arguments;
+command checks are their pre-command-gate siblings, receiving a candidate shell command on stdin
+instead of file paths. This module merges both kinds by precedence, applies exclusions, expands safe
+home paths, and records failures for agent feedback.
 
 Each command is `shlex.split` and run directly, never through a shell: that is what keeps a
 committed check string from being a shell-injection vector, so there is no `&&`, pipe, redirection,
@@ -16,16 +17,18 @@ import shlex
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 from byor.config import (
     CheckDef,
+    CommandCheckDef,
     GlobalConfig,
     LocalConfig,
     RepoConfig,
     load_global_config,
     load_local_config,
     load_package_checks,
+    load_package_command_checks,
     load_repo_config,
     repo_config_path,
 )
@@ -36,10 +39,20 @@ if TYPE_CHECKING:
 __all__ = (
     "CheckOutcome",
     "EffectiveCheck",
+    "EffectiveCommandCheck",
     "effective_checks",
+    "effective_command_checks",
     "load_effective_checks",
+    "load_effective_command_checks",
     "run_checks",
+    "run_command_checks",
 )
+
+# Command checks run on every shell command an agent issues; one that hangs
+# would freeze the whole agent loop, so it is cut off and skipped.
+COMMAND_CHECK_TIMEOUT_SECONDS = 10
+
+_CheckDefT = TypeVar("_CheckDefT", CheckDef, CommandCheckDef)
 
 
 @dataclass(frozen=True)
@@ -47,6 +60,17 @@ class EffectiveCheck:
     definition: CheckDef
     origin: str
     """"repo" or "global"."""
+
+    @property
+    def name(self) -> str:
+        return self.definition.name
+
+
+@dataclass(frozen=True)
+class EffectiveCommandCheck:
+    definition: CommandCheckDef
+    origin: str
+    """"repo", "global", or "package:<name>"."""
 
     @property
     def name(self) -> str:
@@ -74,22 +98,57 @@ def effective_checks(
     records where the surviving check came from ("repo", "global", or
     "package:<name>"). Excluded names or tags are removed from the result.
     """
-    excluded = set(local_config.excluded_checks)
-    excluded_tags = set(local_config.excluded_check_tags)
     tiers: list[tuple[str, CheckDef]] = [
         *(("repo", check) for check in repo_config.checks),
         *package_checks,
         *(("global", check) for check in global_config.checks),
     ]
+    return [
+        EffectiveCheck(definition=check, origin=origin)
+        for origin, check in _merge_tiers(tiers, local_config=local_config)
+    ]
+
+
+def effective_command_checks(
+    repo_config: RepoConfig,
+    global_config: GlobalConfig,
+    *,
+    local_config: LocalConfig,
+    package_checks: Sequence[tuple[str, CommandCheckDef]] = (),
+) -> list[EffectiveCommandCheck]:
+    """Merge command checks exactly like `effective_checks` merges file checks.
+
+    Command checks share the `checks.excluded`/`excluded_tags` namespace with
+    file checks — one exclusion vocabulary, documented — and the same
+    first-tier-wins precedence: repo > package > global.
+    """
+    tiers: list[tuple[str, CommandCheckDef]] = [
+        *(("repo", check) for check in repo_config.command_checks),
+        *package_checks,
+        *(("global", check) for check in global_config.command_checks),
+    ]
+    return [
+        EffectiveCommandCheck(definition=check, origin=origin)
+        for origin, check in _merge_tiers(tiers, local_config=local_config)
+    ]
+
+
+def _merge_tiers(
+    tiers: list[tuple[str, _CheckDefT]],
+    *,
+    local_config: LocalConfig,
+) -> list[tuple[str, _CheckDefT]]:
+    excluded = set(local_config.excluded_checks)
+    excluded_tags = set(local_config.excluded_check_tags)
     seen: set[str] = set()
-    result: list[EffectiveCheck] = []
+    result: list[tuple[str, _CheckDefT]] = []
     for origin, check in tiers:
         if check.name in seen:
             continue
         seen.add(check.name)
         if check.name in excluded or excluded_tags.intersection(check.tags):
             continue
-        result.append(EffectiveCheck(definition=check, origin=origin))
+        result.append((origin, check))
     return result
 
 
@@ -111,6 +170,64 @@ def load_effective_checks(repo_root: Path, config_dir: Path) -> list[EffectiveCh
         for check in load_package_checks(config_dir, global_config, name=name)
     ]
     return effective_checks(repo_config, global_config, local_config=local_config, package_checks=package_checks)
+
+
+def load_effective_command_checks(repo_root: Path, config_dir: Path) -> list[EffectiveCommandCheck]:
+    """Load the repo, global, and local configs and merge into command checks.
+
+    The command-gate sibling of `load_effective_checks`, with the same tier
+    sourcing: global command checks are personal standards that apply in every
+    repo, byor-initialized or not; repo command checks load only when
+    `.byor/config.yml` exists; opted-in packages contribute theirs from the
+    package `checks.yml`.
+    """
+    repo_config = load_repo_config(repo_root) if repo_config_path(repo_root).is_file() else RepoConfig()
+    global_config = load_global_config(config_dir)
+    local_config = load_local_config(repo_root)
+    package_checks = [
+        (f"package:{name}", check)
+        for name in local_config.packages
+        for check in load_package_command_checks(config_dir, global_config, name=name)
+    ]
+    return effective_command_checks(
+        repo_config, global_config, local_config=local_config, package_checks=package_checks
+    )
+
+
+def run_command_checks(checks: list[EffectiveCommandCheck], repo_root: Path, *, command: str) -> CheckOutcome:
+    """Run each command check with the candidate shell command on its stdin.
+
+    A nonzero exit denies the command and the check's output becomes the
+    corrective message. A check that cannot start or times out degrades to a
+    warning and is skipped: the gate steers, it must never wedge the agent
+    loop on a broken or hanging check.
+    """
+    outcome = CheckOutcome()
+    for check in checks:
+        argv = [_expand_home(token) for token in shlex.split(check.definition.run)]
+        try:
+            result = subprocess.run(
+                argv,
+                cwd=repo_root,
+                input=command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=COMMAND_CHECK_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except OSError as error:
+            outcome.warnings.append(f"byor: command check '{check.name}' could not run ({argv[0]}): {error}")
+            continue
+        except subprocess.TimeoutExpired:
+            outcome.warnings.append(
+                f"byor: command check '{check.name}' timed out after {COMMAND_CHECK_TIMEOUT_SECONDS}s"
+            )
+            continue
+        if result.returncode != 0:
+            outcome.failures.append(_section(check.name, result.stdout, stderr=result.stderr))
+    return outcome
 
 
 def run_checks(
