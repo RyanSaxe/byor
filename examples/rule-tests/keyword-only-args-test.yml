@@ -12,6 +12,15 @@ valid:
   - |
     def log(level, message, *args):
         return level
+  # ...including when the splat is typed: parameters after `*args: str` are
+  # keyword-only, not a third positional slot.
+  - |
+    def run_script(script, *args: str, cwd=None):
+        return script
+  # A typed **kwargs is not a positional parameter either.
+  - |
+    def send(host, port, **options: int):
+        return host
   # Positional-only parameters count, and two is still fine.
   - |
     def move(x, y, /):
@@ -61,3 +70,7 @@ invalid:
   - |
     async def fetch(client, url, retries):
         return url
+  # A typed splat exempts what follows it, not what precedes it.
+  - |
+    def deploy(service, region, replicas, *flags: str):
+        return service

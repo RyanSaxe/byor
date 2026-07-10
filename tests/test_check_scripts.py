@@ -297,7 +297,7 @@ def test_example_ruff_sh_reports_an_unused_import_without_deleting_it(tmp_path: 
 EXAMPLE_SCRIPTS = Path(__file__).resolve().parents[1] / "examples" / "config" / "scripts"
 
 
-def _run_example_script(script: str, args: tuple[str, ...] = (), *, cwd: Path) -> subprocess.CompletedProcess[str]:
+def _run_example_script(script: str, *args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     sh = shutil.which("sh")
     if sh is None:
         pytest.skip("running the example check script requires an `sh` on PATH")
@@ -326,7 +326,7 @@ def _committed_pyproject_repo(tmp_path: Path) -> Path:
 def test_dependency_gate_passes_when_dependencies_match_the_last_commit(tmp_path: Path) -> None:
     repo = _committed_pyproject_repo(tmp_path)
 
-    completed = _run_example_script("dependency-gate.sh", ("pyproject.toml",), cwd=repo)
+    completed = _run_example_script("dependency-gate.sh", "pyproject.toml", cwd=repo)
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert completed.stdout == ""
@@ -338,13 +338,13 @@ def test_dependency_gate_fails_when_a_dependency_is_added_or_removed(tmp_path: P
 
     added = pyproject.read_text().replace('"httpx>=0.27",', '"httpx>=0.27",\n    "requests>=2.31",')
     pyproject.write_text(added)
-    completed = _run_example_script("dependency-gate.sh", ("pyproject.toml",), cwd=repo)
+    completed = _run_example_script("dependency-gate.sh", "pyproject.toml", cwd=repo)
     assert completed.returncode == 1
     assert "ask the user first" in completed.stdout
 
     removed = pyproject.read_text().replace(DEPENDENCIES_BLOCK, "dependencies = []\n")
     pyproject.write_text(removed)
-    completed = _run_example_script("dependency-gate.sh", ("pyproject.toml",), cwd=repo)
+    completed = _run_example_script("dependency-gate.sh", "pyproject.toml", cwd=repo)
     assert completed.returncode == 1
 
 
@@ -353,7 +353,7 @@ def test_dependency_gate_ignores_changes_outside_the_dependency_list(tmp_path: P
     pyproject = repo / "pyproject.toml"
     pyproject.write_text(pyproject.read_text().replace('version = "0.1.0"', 'version = "0.2.0"'))
 
-    completed = _run_example_script("dependency-gate.sh", ("pyproject.toml",), cwd=repo)
+    completed = _run_example_script("dependency-gate.sh", "pyproject.toml", cwd=repo)
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
 
@@ -365,21 +365,21 @@ def test_dependency_gate_passes_quietly_without_history_to_compare(tmp_path: Pat
     fresh.mkdir()
     git(fresh, "init", "--quiet")
     (fresh / "pyproject.toml").write_text(f"[project]\n{DEPENDENCIES_BLOCK}")
-    assert _run_example_script("dependency-gate.sh", ("pyproject.toml",), cwd=fresh).returncode == 0
+    assert _run_example_script("dependency-gate.sh", "pyproject.toml", cwd=fresh).returncode == 0
 
     plain = tmp_path / "plain"
     plain.mkdir()
     (plain / "pyproject.toml").write_text(f"[project]\n{DEPENDENCIES_BLOCK}")
-    assert _run_example_script("dependency-gate.sh", ("pyproject.toml",), cwd=plain).returncode == 0
+    assert _run_example_script("dependency-gate.sh", "pyproject.toml", cwd=plain).returncode == 0
 
 
 def test_uv_lock_guard_fails_only_on_a_hand_edited_lockfile(tmp_path: Path) -> None:
-    assert _run_example_script("uv-lock-guard.sh", ("uv.lock",), cwd=tmp_path).returncode == 1
-    completed = _run_example_script("uv-lock-guard.sh", ("sub/uv.lock",), cwd=tmp_path)
+    assert _run_example_script("uv-lock-guard.sh", "uv.lock", cwd=tmp_path).returncode == 1
+    completed = _run_example_script("uv-lock-guard.sh", "sub/uv.lock", cwd=tmp_path)
     assert completed.returncode == 1
     assert "uv add" in completed.stdout
 
-    assert _run_example_script("uv-lock-guard.sh", ("poetry.lock",), cwd=tmp_path).returncode == 0
+    assert _run_example_script("uv-lock-guard.sh", "poetry.lock", cwd=tmp_path).returncode == 0
     assert _run_example_script("uv-lock-guard.sh", cwd=tmp_path).returncode == 0
 
 
