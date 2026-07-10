@@ -1,0 +1,14 @@
+id: no-requests
+valid:
+  - import httpx
+  - from httpx import AsyncClient
+  - import requests_util
+  - from mypkg.requests_util import helper
+  - response = httpx.get(url)
+invalid:
+  - import requests
+  - import requests as r
+  - import requests.sessions
+  - from requests import get
+  - from requests import Session as HTTPSession
+  - from requests.adapters import HTTPAdapter

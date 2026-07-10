@@ -1,0 +1,30 @@
+# Demonstrates: banning a library. This is the kind of rule a general linter
+# will never ship, because it names a choice that is yours: this codebase uses
+# httpx, so importing requests is flagged in its usual forms — plain, aliased,
+# submodule, and from-imports. (A combined `import os, requests` is not
+# matched; linters flag that style itself as E401.)
+id: no-requests
+language: Python
+severity: error
+message: This codebase uses httpx, not requests.
+rule:
+  any:
+    - pattern: import requests
+    - pattern: import requests as $ALIAS
+    - pattern: import requests.$SUB
+    - pattern: from requests import $$$NAMES
+    - pattern: from requests.$SUB import $$$NAMES
+metadata:
+  byor:
+    rationale: >
+      We standardized on httpx for its async support and strict timeouts.
+      A second HTTP client means two connection-pool configurations, two
+      timeout behaviors, and two sets of quirks to debug.
+    agent_prompt: >
+      Use httpx instead. For simple calls the API is the same
+      (httpx.get, httpx.post); for anything repeated, use an httpx.Client
+      or httpx.AsyncClient with an explicit timeout. Do not add requests
+      to the dependencies.
+    tags:
+      - python
+      - dependencies
