@@ -4,11 +4,16 @@ valid:
   - from httpx import AsyncClient
   - import requests_util
   - from mypkg.requests_util import helper
+  # Importing a name that happens to be called requests from another module
+  # is not an import of the requests library.
+  - from mylib import requests
   - response = httpx.get(url)
 invalid:
   - import requests
   - import requests as r
   - import requests.sessions
+  - import requests.sessions as rs
+  - import os, requests
   - from requests import get
   - from requests import Session as HTTPSession
   - from requests.adapters import HTTPAdapter

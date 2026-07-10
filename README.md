@@ -58,8 +58,10 @@ rules worth writing yourself are the ones that name your choices, and `byor`
 gives them the same enforcement a linter has. They come in three sizes.
 
 **A pattern.** Suppose this codebase uses httpx. No general linter can know
-that. A short [ast-grep](https://ast-grep.github.io) rule enforces it, and its
-`agent_prompt` tells the agent what to do instead of leaving it to guess:
+that. A short [ast-grep](https://ast-grep.github.io) rule enforces it with no
+holes, because import statements are a choke point: every use of a library
+starts with one. Its `agent_prompt` tells the agent what to do instead of
+leaving it to guess:
 
 ```yaml
 # .byor/rules/project/no-requests.yml
@@ -69,9 +71,9 @@ severity: error
 message: This codebase uses httpx, not requests.
 rule:
   any:
-    - pattern: import requests
-    - pattern: import requests as $ALIAS
-    - pattern: import requests.$SUB
+    - kind: dotted_name
+      regex: ^requests(\.|$)
+      inside: { stopBy: end, kind: import_statement }
     - pattern: from requests import $$$NAMES
     - pattern: from requests.$SUB import $$$NAMES
 metadata:
@@ -82,6 +84,10 @@ metadata:
       or httpx.AsyncClient with an explicit timeout. Do not add requests
       to the dependencies.
 ```
+
+The first clause matches the module name node inside any plain `import`, so
+the aliased, submodule, and even comma-combined (`import os, requests`) forms
+are all covered; the two patterns handle from-imports.
 
 **A shape.** There is no string to grep for in the wrapper at the top of this
 page. What makes it a violation is structure: a function whose body is a single

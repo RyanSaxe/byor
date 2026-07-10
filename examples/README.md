@@ -15,7 +15,7 @@ These are ordered from the simplest mechanism to the most expressive:
 | Rule | Demonstrates |
 | --- | --- |
 | [`no-print`](rules/no-print.yml) | A bare `pattern` with a variadic metavariable (`$$$ARGS`). |
-| [`no-requests`](rules/no-requests.yml) | Banning a library with a short list of import patterns — a rule that names your choice (httpx over requests), which no general linter ships. |
+| [`no-requests`](rules/no-requests.yml) | Banning a library at its import choke point — a `dotted_name` clause covers every plain-import form (aliased, submodule, comma-combined) and two patterns cover from-imports. A rule that names your choice (httpx over requests), which no general linter ships. |
 | [`python.no-typing-cast`](rules/python.no-typing-cast.yml) | A small `any` rule combining import patterns and call patterns with named metavariables (`$TYPE`, `$VALUE`). |
 | [`no-routing-functions`](rules/no-routing-functions.yml) | Relational rules — `any`/`all`, `inside`, `follows`, and `nthChild` with `reverse`, to match pass-through calls or `yield from` as a function's only statement. |
 | [`keyword-only-args`](rules/keyword-only-args.yml) | `utils` rules composed with nested `follows` to count sibling nodes — flagging a third positional parameter while exempting `self`/`cls` and anything after a bare `*` or `*args`. |
