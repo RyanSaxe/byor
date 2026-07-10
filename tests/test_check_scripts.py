@@ -297,17 +297,36 @@ def test_example_ruff_sh_reports_an_unused_import_without_deleting_it(tmp_path: 
 EXAMPLE_SCRIPTS = Path(__file__).resolve().parents[1] / "examples" / "config" / "scripts"
 
 
-def _run_example_script(script: str, *args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+def _run_example_script(
+    script: str, *args: str, cwd: Path, input_text: str | None = None
+) -> subprocess.CompletedProcess[str]:
     sh = shutil.which("sh")
     if sh is None:
         pytest.skip("running the example check script requires an `sh` on PATH")
     return subprocess.run(
         (sh, str(EXAMPLE_SCRIPTS / script), *args),
         cwd=cwd,
+        input=input_text,
         check=False,
         capture_output=True,
         text=True,
     )
+
+
+# protect-ssh.sh is a `command_check`: byor pipes the pending shell command to
+# its stdin and a nonzero exit denies the command.
+def test_protect_ssh_denies_commands_touching_ssh(tmp_path: Path) -> None:
+    completed = _run_example_script("protect-ssh.sh", cwd=tmp_path, input_text="cat ~/.ssh/id_rsa")
+
+    assert completed.returncode == 1
+    assert "ask the user" in completed.stdout
+
+
+def test_protect_ssh_allows_ordinary_commands(tmp_path: Path) -> None:
+    completed = _run_example_script("protect-ssh.sh", cwd=tmp_path, input_text="ls -la ~/.config")
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert completed.stdout == ""
 
 
 DEPENDENCIES_BLOCK = 'dependencies = [\n    "httpx>=0.27",\n]\n'

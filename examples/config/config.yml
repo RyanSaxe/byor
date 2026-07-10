@@ -47,6 +47,19 @@ checks:
     run: ~/.config/byor/scripts/uv-lock-guard.sh
     gate: false
 
+# `command_checks` are the pre-command gate's script escape hatch: byor pipes
+# the shell command an agent is about to run to the script's stdin, and a
+# nonzero exit denies it — the output becomes the agent's correction. They run
+# on every command an agent issues, so keep them fast (well under ~100ms): no
+# network, no heavy interpreter startup. Prefer a `language: Bash` command
+# *rule* when a pattern can express the policy; reach for a script only when
+# the decision needs runtime state (see scripts/protect-ssh.sh).
+command_checks:
+  - name: protect-ssh
+    run: ~/.config/byor/scripts/protect-ssh.sh
+    tags:
+      - commands
+
 # Profiles are named templates for repo-local exclusions. Tag names are yours;
 # these are only examples.
 profiles:

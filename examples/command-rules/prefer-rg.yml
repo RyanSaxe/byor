@@ -1,0 +1,22 @@
+# The one-line command rule: a bare pattern matches a `grep` command anywhere
+# in a pipeline or compound command. Any match denies — the pre-command gate
+# has no severity threshold — so write command rules only for commands you
+# always want rewritten, and make the agent_prompt name the replacement.
+id: prefer-rg
+language: Bash
+severity: warning
+message: Use ripgrep (rg) instead of grep.
+rule:
+  pattern: grep $$$ARGS
+metadata:
+  byor:
+    rationale: >
+      rg is faster, respects .gitignore by default, and its defaults
+      (recursive, line numbers) match how agents actually search code.
+    agent_prompt: >
+      Rerun the search with rg. `rg PATTERN [PATH]` replaces
+      `grep -rn PATTERN [PATH]`; add `--no-ignore` only when you truly
+      need ignored files.
+    tags:
+      - commands
+      - search

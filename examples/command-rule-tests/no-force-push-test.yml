@@ -1,0 +1,9 @@
+id: no-force-push
+valid:
+  - git push origin main
+  - git push --force-with-lease origin main
+  - echo "git push --force"
+invalid:
+  - git push --force origin main
+  - git push origin main --force
+  - cd repo && git push -f

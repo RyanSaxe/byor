@@ -1,7 +1,11 @@
 # Scopes the example rules to this directory so they validate in isolation and
 # never fire on byor's own source. `ast-grep test -c examples/sgconfig.yml`
-# checks each rule against the samples in rule-tests/.
+# checks each rule against the samples in rule-tests/. This sgconfig exists
+# only for that test run: in a live repo, command rules never join sgconfig
+# ruleDirs (byor keeps them in a separate tree the pre-command gate reads).
 ruleDirs:
   - rules
+  - command-rules
 testConfigs:
   - testDir: rule-tests
+  - testDir: command-rule-tests

@@ -1,0 +1,9 @@
+id: no-pip-install
+valid:
+  - uv add requests
+  - uv pip install requests
+  - echo "pip install requests is banned here"
+invalid:
+  - pip install requests
+  - cd docs && pip3 install mkdocs | tee log
+  - python -m pip install -e .

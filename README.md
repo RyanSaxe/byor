@@ -35,8 +35,10 @@ Working with a coding agent is a loop: you set a goal and the agent runs until
 it gets there. Almost everything that keeps code quality honest sits outside
 that loop. You review the diff at the end, CI complains after the push, or you
 run a cleanup prompt once the feature works. `byor` moves enforcement inside
-the loop: a post-edit hook checks each edit as the agent makes it, and the
-agent fixes the violation while it still has the context.
+the loop, in both directions: a post-edit hook checks each edit as the agent
+makes it, and a pre-command gate checks each shell command *before* it runs.
+The agent fixes the violation while it still has the context, or gets told
+what to run instead before the wrong command ever executes.
 
 Where the feedback lands changes what happens to it:
 
@@ -51,11 +53,11 @@ Where the feedback lands changes what happens to it:
   line. The same correction at review time, with a day of work built on top
   of that library, is a rewrite.
 
-## Three examples
+## Four examples
 
 Linters keep absorbing the rules general enough for everyone to agree on. The
 rules worth writing yourself are the ones that name your choices, and `byor`
-gives them the same enforcement a linter has. They come in three sizes.
+gives them the same enforcement a linter has. They come in four sizes.
 
 **A pattern.** Suppose this codebase uses httpx. No general linter can know
 that. A short [ast-grep](https://ast-grep.github.io) rule enforces it with no
@@ -184,9 +186,40 @@ one, five lines of shell that reject hand-edits to `uv.lock`; it never fires on
 `uv add` run in a terminal, because the hook only sees the agent's own file
 edits.
 
+**A command.** Some rules are about what the agent *runs*, not what it writes,
+and those can only be enforced before the command executes. Your harness's
+permission system can deny a command, but a denial teaches nothing. A command
+rule denies it with the correction attached:
+
+```yaml
+# .byor/commands/project/no-pip-install.yml
+id: no-pip-install
+language: Bash
+severity: error
+message: This machine manages Python dependencies with uv, not pip.
+rule:
+  any:
+    - pattern: pip install $$$ARGS
+    - pattern: pip3 install $$$ARGS
+    - pattern: python -m pip install $$$ARGS
+metadata:
+  byor:
+    agent_prompt: >
+      Use uv instead: `uv add <package>` to add a dependency, `uv sync`
+      to install what the lockfile already says. Never invoke pip directly.
+```
+
+The command line is parsed as Bash, so the pattern matches `pip install`
+buried in `cd docs && pip install x | tee log` but not quoted prose like
+`echo "pip install x"` — the false positives regex-based permission rules are
+made of. The agent sees the `agent_prompt`, runs `uv add`, and moves on. This
+is steering, not a sandbox: it corrects an agent typing a command plainly and
+makes no claim to stop a determined evasion.
+
 Everything above is real and exercised in CI: the rules against valid and
-invalid samples, the scripts in both directions. See [examples/](examples/) for
-the annotated versions.
+invalid samples, the scripts in both directions, the command rules against
+commands that must match and commands that must not. See
+[examples/](examples/) for the annotated versions.
 
 The first two are ordinary [ast-grep](https://ast-grep.github.io) rules, and
 they follow you everywhere you read code:
@@ -288,10 +321,16 @@ Agents can both obey your rules and write new ones:
 - **Feedback.** A post-edit hook runs `byor agent-check` after the agent edits a
   file and feeds the diagnostics back into its context, scoped to the lines it
   changed, so it fixes violations before moving on.
+- **Command gating.** A pre-command hook runs `byor command-check` before the
+  agent executes a shell command. On a match the command is denied with your
+  correction: where a permission system says "no", byor says "no, run this
+  instead". `command_checks` in config add a script escape hatch (the pending
+  command arrives on stdin; nonzero exit denies). Everything fails open — a
+  byor bug can never block your agent, only a matching rule can.
 - **Capture.** A bundled skill turns durable feedback ("never do this", "always
-  do that") into an ast-grep rule: the agent drafts it, confirms once, and runs
-  `byor add`. When a linter or type checker fits better, the skill offers that
-  instead.
+  do that", "use uv, not pip") into an ast-grep rule or a command rule: the
+  agent drafts it, confirms once, and runs `byor add`. When a linter or type
+  checker fits better, the skill offers that instead.
 - **Setup.** The same skill onboards you: say "set up byor" and it checks the
   install, optionally inits the repo, and imports the mechanically checkable
   preferences from your existing CLAUDE.md / AGENTS.md as rules — and can clean up
@@ -308,13 +347,13 @@ byor hook uninstall --agent copilot     # or remove one (--agent skill removes t
 
 byor supports five harnesses:
 
-| Harness | Skill | Real hook | Diagnostic precision |
-| --- | --- | --- | --- |
-| Claude Code | yes | `PostToolUse` | the edited lines |
-| Codex | yes | `PostToolUse` | the edited lines |
-| Copilot CLI | yes | `postToolUse` | the edited lines |
-| OpenCode | yes | `tool.execute.after` plugin | the changed file |
-| Pi | yes | `tool_result` extension | the changed file |
+| Harness | Skill | Post-edit hook | Pre-command gate | Diagnostic precision |
+| --- | --- | --- | --- | --- |
+| Claude Code | yes | `PostToolUse` | `PreToolUse` | the edited lines |
+| Codex | yes | `PostToolUse` | `PreToolUse` | the edited lines |
+| Copilot CLI | yes | `postToolUse` | `preToolUse` | the edited lines |
+| OpenCode | yes | `tool.execute.after` plugin | not yet | the changed file |
+| Pi | yes | `tool_result` extension | not yet | the changed file |
 
 Cursor and Antigravity are not supported: neither exposes a post-edit hook that
 byor can reliably integrate with, so byor omits them until that changes.
@@ -368,26 +407,31 @@ byor exclude        Disable a global rule in this repository
 byor include        Re-enable an excluded global rule
 ```
 
-**Automatic.** byor runs these itself: the post-edit hook and self-heal.
+**Automatic.** byor runs these itself: the hooks and self-heal.
 
 ```text
-byor agent-check    Render diagnostics for your agent
+byor agent-check    Render diagnostics for your agent (post-edit hook)
+byor command-check  Gate a shell command before it runs (pre-command hook)
 byor sync           Mirror global rules into the repo
 ```
+
+`byor command-check --command 'pip install x'` is also the way to test a
+command rule by hand.
 
 Every command takes `--help`, and repo-operating commands take `--repo PATH`
 (default: search upward from the current directory).
 
 ## What's next
 
-Today byor's inner loop has one mechanism: a deterministic post-edit hook.
-That already covers anything a rule, a linter, a type checker, or a script can
-express.
+byor's inner loop now has two deterministic mechanisms: the post-edit hook for
+what agents write, and the pre-command gate for what they run. Together they
+cover anything a rule, a linter, a type checker, a script, or a command
+pattern can express.
 
-The harder strays are behavioral, not textual: an agent drifting off the plan you
-agreed on, stopping a loop early, editing files outside the scope you set.
-Teaching the sheepdog to herd those too is where byor is headed. If there is a
-rule you wish it could enforce, [open an issue](https://github.com/RyanSaxe/byor/issues).
+The remaining strays are behavioral: an agent drifting off the plan you agreed
+on, stopping a loop early, editing files outside the scope you set. Teaching
+the sheepdog to herd those too is where byor is headed. If there is a rule you
+wish it could enforce, [open an issue](https://github.com/RyanSaxe/byor/issues).
 
 ## Documentation
 
