@@ -303,11 +303,11 @@ def _command_rules_check(repo_root: Path, paths: RepoPaths, *, global_config: Gl
                 ok=False,
                 message=f"command rules fail to load, disabling the pre-command gate: {first_line}",
             )
-    noun = "rule" if len(rules) == 1 else "rules"
+    subject = "1 command rule gates" if len(rules) == 1 else f"{len(rules)} command rules gate"
     return Check(
         id="command_rules",
         ok=True,
-        message=f"{len(rules)} command {noun} gate shell commands",
+        message=f"{subject} shell commands",
     )
 
 
