@@ -18,6 +18,7 @@ from support import (
     make_repo,
     mirror,
     substituting_editor,
+    write_command_rule,
     write_global_rule,
     write_rule,
 )
@@ -354,6 +355,54 @@ def test_add_warns_on_nonconforming_rule_id(home: Path, capsys: pytest.CaptureFi
 
     assert "does not match the recommended" in capsys.readouterr().err
     assert (repo / ".byor" / "rules" / "project" / "Bad_ID.yml").is_file()
+
+
+def test_add_command_rule_routes_to_the_commands_tree(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = make_repo(home)
+    source = write_command_rule(home / "source.yml", "no-pip")
+    capsys.readouterr()
+
+    assert main(add_args(repo, "--scope", "project", "--command", "--from", str(source))) == 0
+
+    destination = repo / ".byor" / "commands" / "project" / "no-pip.yml"
+    assert destination.read_text() == source.read_text()
+    # Never the file-rule tree: sgconfig points ast-grep there.
+    assert not (repo / ".byor" / "rules" / "project" / "no-pip.yml").exists()
+    assert "Added project command rule 'no-pip'" in capsys.readouterr().out
+
+
+def test_add_command_template_defaults_to_bash(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = make_repo(home)
+    capsys.readouterr()
+
+    assert main(add_args(repo, "--scope", "project", "--command")) == 0
+
+    assert "language: Bash" in capsys.readouterr().out
+
+
+def test_add_command_rule_warns_when_the_language_is_not_bash(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = make_repo(home)
+    source = write_rule(home / "source.yml", "no-pip")  # a Python rule
+    capsys.readouterr()
+
+    assert main(add_args(repo, "--scope", "project", "--command", "--from", str(source))) == 0
+
+    assert "parses commands as Bash" in capsys.readouterr().err
+
+
+def test_command_rule_ids_conflict_within_their_universe_only(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = make_repo(home)
+    write_rule(repo / ".byor" / "rules" / "project" / "shared.yml", "shared")
+    source = write_command_rule(home / "source.yml", "shared")
+    capsys.readouterr()
+
+    # The same ID as a file rule is legal: separate universes.
+    assert main(add_args(repo, "--scope", "project", "--command", "--from", str(source))) == 0
+
+    # A second command rule with that ID in another repo scope collides.
+    duplicate = write_command_rule(home / "duplicate.yml", "shared")
+    assert main(add_args(repo, "--scope", "local", "--command", "--from", str(duplicate))) == 1
+    assert "shared" in capsys.readouterr().err
 
 
 def test_add_rejects_a_path_traversal_rule_id(home: Path, capsys: pytest.CaptureFixture[str]) -> None:

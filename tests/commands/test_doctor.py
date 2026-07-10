@@ -19,7 +19,9 @@ from support import (
     install_package,
     make_repo,
     repo_with_agents,
+    write_command_rule,
     write_global_check,
+    write_global_command_rule,
     write_package_check,
     write_package_rule,
     write_rule,
@@ -68,6 +70,7 @@ def test_doctor_json_matches_the_spec_shape(home: Path, capsys: pytest.CaptureFi
         "agent_files",
         "registered_repos",
         "global_rules",
+        "global_command_rules",
         "repo_config",
         "sgconfig",
         "rule_dirs",
@@ -75,6 +78,7 @@ def test_doctor_json_matches_the_spec_shape(home: Path, capsys: pytest.CaptureFi
         "ignore_block",
         "rules_valid",
         "rule_ids_unique",
+        "command_rules",
         "sync_fresh",
     }
 
@@ -772,3 +776,46 @@ def test_doctor_flags_a_stale_packages_mirror(home: Path) -> None:
 
     failed = {check.id for check in checks if not check.ok}
     assert "sync_fresh" in failed
+
+
+def test_doctor_reports_healthy_command_rules(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = make_repo(home)
+    write_global_command_rule(home, "no-pip.yml", rule_id="no-pip")
+    assert main(["sync", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 0
+
+    out = capsys.readouterr().out
+    assert "ok    global_command_rules" in out
+    assert "ok    command_rules" in out
+
+
+def test_doctor_flags_a_non_bash_command_rule(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = make_repo(home)
+    # write_rule fabricates a Python rule; in the commands tree the gate,
+    # which parses commands as Bash, would silently skip it.
+    write_rule(repo / ".byor" / "commands" / "project" / "sneaky.yml", "sneaky")
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  command_rules" in out
+    assert "language: Bash" in out
+
+
+def test_doctor_flags_command_rules_ast_grep_cannot_load(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    # The hook fails open, so a broken command rule silently disables the whole
+    # gate; doctor is where that becomes visible.
+    repo = make_repo(home)
+    write_command_rule(repo / ".byor" / "commands" / "project" / "ok.yml", "ok-rule")
+    broken = repo / ".byor" / "commands" / "project" / "broken.yml"
+    broken.write_text("id: broken\nlanguage: Bash\nmessage: x\nrule:\n  kind: not_a_real_kind\n")
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  command_rules" in out
+    assert "disabling the pre-command gate" in out

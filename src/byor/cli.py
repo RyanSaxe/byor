@@ -212,6 +212,14 @@ def _add_add_arguments(command: argparse.ArgumentParser) -> None:
     command.add_argument("--language", help="Language for the generated template (default: Python)")
     command.add_argument("--id", help="Rule ID for the generated template")
     command.add_argument(
+        "--command",
+        # The subparser name already lives at args.command; a colliding dest
+        # would overwrite it before dispatch.
+        dest="command_rule",
+        action="store_true",
+        help="Create a command rule that gates shell commands instead of scanning files",
+    )
+    command.add_argument(
         "--allow-exceptions",
         action="store_true",
         help="End the rule's agent_prompt with the standard suppression sentence",

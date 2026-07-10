@@ -27,6 +27,8 @@ from byor.config import (
     GlobalConfig,
     RepoConfig,
     RepoPaths,
+    command_rule_dir_relpaths,
+    global_commands_dir,
     global_rules_dir,
     load_global_config,
     load_local_config,
@@ -39,6 +41,7 @@ from byor.config import (
 )
 from byor.errors import (
     AstGrepNotFoundError,
+    ByorError,
     ConfigError,
     DuplicateRuleIdError,
     RepoNotInitializedError,
@@ -56,7 +59,7 @@ from byor.rules.sync import (
 from byor.scaffold.githooks import shim_findings
 from byor.scaffold.ignore import ignore_block_current, rule_visibility_ok
 from byor.scaffold.precommit import CONFIG_RELPATH
-from byor.scan.astgrep import ast_grep_version, resolve_ast_grep
+from byor.scan.astgrep import ast_grep_version, resolve_ast_grep, scan_command
 from byor.scan.checks import effective_checks
 
 if TYPE_CHECKING:
@@ -123,6 +126,7 @@ def _global_checks(config_dir: Path, global_config: GlobalConfig, *, quick: bool
         checks.append(disabled)
     if not quick:
         checks.append(_global_rules_check(config_dir, global_config))
+        checks.append(_global_command_rules_check(config_dir, global_config))
     return checks
 
 
@@ -151,6 +155,7 @@ def _repo_checks(
     ]
     if not quick and repo_check.ok:
         checks.extend(_rule_checks(repo_root, repo_config.paths, config_dir=config_dir))
+        checks.append(_command_rules_check(repo_root, repo_config.paths, global_config=global_config))
         gate_check = _gate_check(repo_root, repo_config)
         if gate_check is not None:
             checks.append(gate_check)
@@ -244,6 +249,65 @@ def _global_rules_check(config_dir: Path, global_config: GlobalConfig) -> Check:
         id="global_rules",
         ok=True,
         message=f"{len(rules)} global {noun} parse",
+    )
+
+
+def _global_command_rules_check(config_dir: Path, global_config: GlobalConfig) -> Check:
+    commands_dir = global_commands_dir(config_dir, global_config)
+    try:
+        rules = load_rules(commands_dir)
+    except (RuleValidationError, ConfigError) as error:
+        return Check(id="global_command_rules", ok=False, message=str(error))
+    duplicates = sorted(rule_id for rule_id, count in Counter(rule.id for rule in rules).items() if count > 1)
+    if duplicates:
+        return Check(
+            id="global_command_rules",
+            ok=False,
+            message=f"duplicate global command rule IDs: {', '.join(duplicates)}",
+        )
+    noun = "rule" if len(rules) == 1 else "rules"
+    return Check(
+        id="global_command_rules",
+        ok=True,
+        message=f"{len(rules)} global command {noun} parse",
+    )
+
+
+def _command_rules_check(repo_root: Path, paths: RepoPaths, *, global_config: GlobalConfig) -> Check:
+    """Report whether the repo's command rules can actually gate commands.
+
+    The hook path fails open, so a broken command rule silently disables the
+    whole pre-command gate; this is the check that makes that visible. A
+    non-Bash rule is a FAIL too — the gate parses commands as Bash and skips
+    other languages, so such a rule can never fire.
+    """
+    try:
+        rules = [rule for relpath in command_rule_dir_relpaths(paths) for rule in load_rules(repo_root / relpath)]
+    except (RuleValidationError, ConfigError) as error:
+        return Check(id="command_rules", ok=False, message=str(error))
+    foreign = sorted(rule.id for rule in rules if rule.language.lower() != "bash")
+    if foreign:
+        return Check(
+            id="command_rules",
+            ok=False,
+            message=f"command rules must use `language: Bash` to gate commands: {', '.join(foreign)}",
+        )
+    if rules:
+        try:
+            executable = resolve_ast_grep(global_config.ast_grep_command)
+            scan_command(executable, "true", rules=[rule.content for rule in rules])
+        except ByorError as error:
+            first_line = str(error).splitlines()[0]
+            return Check(
+                id="command_rules",
+                ok=False,
+                message=f"command rules fail to load, disabling the pre-command gate: {first_line}",
+            )
+    noun = "rule" if len(rules) == 1 else "rules"
+    return Check(
+        id="command_rules",
+        ok=True,
+        message=f"{len(rules)} command {noun} gate shell commands",
     )
 
 
