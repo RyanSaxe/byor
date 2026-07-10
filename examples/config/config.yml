@@ -33,6 +33,19 @@ checks:
     run: uvx ty check --output-format concise
     tags:
       - strict
+  # These two police the agent, not the code, so they carry `gate: false`:
+  # the post-edit hook runs them, but generated pre-commit/CI gates leave
+  # them out, where they would block a person doing the same thing on purpose.
+  - name: dependency-gate
+    extensions:
+      - toml
+    run: ~/.config/byor/scripts/dependency-gate.sh
+    gate: false
+  - name: uv-lock-guard
+    extensions:
+      - lock
+    run: ~/.config/byor/scripts/uv-lock-guard.sh
+    gate: false
 
 # Profiles are named templates for repo-local exclusions. Tag names are yours;
 # these are only examples.

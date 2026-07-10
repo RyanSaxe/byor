@@ -2,10 +2,13 @@
 # instead of enumerating signature patterns. Pattern branches cannot see a
 # positional-only `/`, so this rule matches the `parameters` node directly:
 #
-#   1. `positional-param` — the four node kinds a positional parameter can be.
+#   1. `positional-param` — the node kinds a positional parameter can be. A
+#                           typed splat (`*args: str`) parses as a
+#                           typed_parameter wrapping the splat, so it is
+#                           excluded explicitly.
 #   2. `counted-param`    — a positional parameter that is not `self`/`cls` and
-#                           does not follow a bare `*` or `*args` (those are
-#                           already keyword-only).
+#                           does not follow a bare `*` or `*args`, typed or not
+#                           (those are already keyword-only).
 #   3. nested `follows`   — a counted parameter preceded by two more counted
 #                           parameters marks a third positional slot, so the
 #                           surrounding `parameters` node is flagged once.
@@ -19,6 +22,11 @@ utils:
     any:
       - kind: identifier
       - kind: typed_parameter
+        not:
+          has:
+            any:
+              - kind: list_splat_pattern
+              - kind: dictionary_splat_pattern
       - kind: default_parameter
       - kind: typed_default_parameter
   counted-param:
@@ -32,6 +40,9 @@ utils:
             any:
               - kind: keyword_separator
               - kind: list_splat_pattern
+              - kind: typed_parameter
+                has:
+                  kind: list_splat_pattern
 rule:
   kind: parameters
   has:

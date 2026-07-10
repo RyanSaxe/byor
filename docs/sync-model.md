@@ -1,5 +1,9 @@
 # The Sync Model
 
+Everything in this document exists so the inner loop is dependable: rules
+resolve the same way on every machine, and a fresh clone can lint with no byor
+installed.
+
 ## Why copies, not symlinks
 
 Your global rules are canonical in `~/.config/byor/rules/` and copied into

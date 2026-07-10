@@ -1,0 +1,31 @@
+# Demonstrates: banning a library. This is the kind of rule a general linter
+# will never ship, because it names a choice that is yours: this codebase uses
+# httpx. Import statements are the choke point — every use of a library starts
+# with one — so the rule matches the module name node (`dotted_name`) inside
+# any plain import, which covers the aliased, submodule, and comma-combined
+# forms in one clause, plus the two from-import patterns.
+id: no-requests
+language: Python
+severity: error
+message: This codebase uses httpx, not requests.
+rule:
+  any:
+    - kind: dotted_name
+      regex: ^requests(\.|$)
+      inside: { stopBy: end, kind: import_statement }
+    - pattern: from requests import $$$NAMES
+    - pattern: from requests.$SUB import $$$NAMES
+metadata:
+  byor:
+    rationale: >
+      We standardized on httpx for its async support and strict timeouts.
+      A second HTTP client means two connection-pool configurations, two
+      timeout behaviors, and two sets of quirks to debug.
+    agent_prompt: >
+      Use httpx instead. For simple calls the API is the same
+      (httpx.get, httpx.post); for anything repeated, use an httpx.Client
+      or httpx.AsyncClient with an explicit timeout. Do not add requests
+      to the dependencies.
+    tags:
+      - python
+      - dependencies

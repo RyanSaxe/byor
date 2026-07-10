@@ -9,10 +9,16 @@
   <a href="LICENSE"><img src="https://img.shields.io/pypi/l/byor" alt="License"></a>
 </p>
 
-Your AI agent keeps breaking rules you have already given it. You say arguments
-past the first couple should be keyword-only; it agrees and listens, but then
-later in the session it writes `create_user(name, email, True, False, None)`. So
-you add a line to your ever-growing `AGENTS.md` in the hope it fixes it. **It doesn't.**
+Your AI agent keeps breaking rules you have already given it. You tell it to
+stop writing wrapper functions that do nothing but forward to another call; it
+agrees, and twenty minutes later it writes:
+
+```python
+def get_user(user_id: int) -> User:
+    return fetch_user(user_id)
+```
+
+So you add a line to your ever-growing `AGENTS.md` in the hope it fixes it. **It doesn't.**
 
 > `byor` is the sheepdog for your flock of coding agents: you set the rules and it
 > reins in any agent that attempts to stray in real time. 
@@ -21,54 +27,169 @@ you add a line to your ever-growing `AGENTS.md` in the hope it fixes it. **It do
 not markdown prompts. You rarely write one of these rules by hand. If you tell your 
 agent to create a rule, or even give it critical feedback about code it has written,
 it will use `byor`'s skill to create the best automated system to keep your agent in
-check. Here is an example:
+check.
+
+## The inner loop
+
+Working with a coding agent is a loop: you set a goal and the agent runs until
+it gets there. Almost everything that keeps code quality honest sits outside
+that loop. You review the diff at the end, CI complains after the push, or you
+run a cleanup prompt once the feature works. `byor` moves enforcement inside
+the loop: a post-edit hook checks each edit as the agent makes it, and the
+agent fixes the violation while it still has the context.
+
+Where the feedback lands changes what happens to it:
+
+- **You review the change, not a cleanup.** The code already follows your
+  rules when you first read it, so review time goes to what the change does.
+- **One violation now gets fixed; a thousand at the end get triaged.** An
+  outer pass that hands the agent a long report invites it to fix the easy
+  half and stop. The same feedback delivered one edit at a time just gets
+  applied.
+- **Bad decisions get caught before they are load-bearing.** When the agent
+  reaches for a library you banned, the correction at the first import is one
+  line. The same correction at review time, with a day of work built on top
+  of that library, is a rewrite.
+
+## Three examples
+
+Linters keep absorbing the rules general enough for everyone to agree on. The
+rules worth writing yourself are the ones that name your choices, and `byor`
+gives them the same enforcement a linter has. They come in three sizes.
+
+**A pattern.** Suppose this codebase uses httpx. No general linter can know
+that. A short [ast-grep](https://ast-grep.github.io) rule enforces it with no
+holes, because import statements are a choke point: every use of a library
+starts with one. Its `agent_prompt` tells the agent what to do instead of
+leaving it to guess:
 
 ```yaml
-# .byor/rules/project/keyword-only-args.yml
-id: keyword-only-args
+# .byor/rules/project/no-requests.yml
+id: no-requests
 language: Python
-severity: warning
-message: Parameters after the first two must be keyword-only. Two positional
-  parameters is a maximum, not a target; one or zero can be clearer.
-utils:
-  positional-param:
-    any:
-      - kind: identifier
-      - kind: typed_parameter
-      - kind: default_parameter
-      - kind: typed_default_parameter
-  counted-param:
-    all:
-      - matches: positional-param
-      - not: { regex: ^(self|cls)$ }
-      - not:
-          follows:
-            stopBy: end
-            any: [{ kind: keyword_separator }, { kind: list_splat_pattern }]
+severity: error
+message: This codebase uses httpx, not requests.
 rule:
-  kind: parameters
-  has:
-    all:
-      - matches: counted-param
-      - follows:
-          stopBy: end
-          all:
-            - matches: counted-param
-            - follows: { stopBy: end, matches: counted-param }
+  any:
+    - kind: dotted_name
+      regex: ^requests(\.|$)
+      inside: { stopBy: end, kind: import_statement }
+    - pattern: from requests import $$$NAMES
+    - pattern: from requests.$SUB import $$$NAMES
 metadata:
   byor:
     agent_prompt: >
-      Insert a bare `*` after the last positional parameter so every later
-      argument is keyword-only, for example def f(a, b, *, c, d). self and cls
-      do not count; parameters before a `/` do. Do not pick a signature
-      mechanically: choose zero, one, or two positional parameters by how call
-      sites read. A natural order like add(2, 3) or a single obvious subject
-      like save_user(user) reads well positionally; booleans, config values,
-      and parameters of the same type belong after the `*`.
+      Use httpx instead. For simple calls the API is the same
+      (httpx.get, httpx.post); for anything repeated, use an httpx.Client
+      or httpx.AsyncClient with an explicit timeout. Do not add requests
+      to the dependencies.
 ```
 
-A rule like this is a structural [ast-grep](https://ast-grep.github.io) check,
-and `byor` is set up so this naturally just works wherever you do:
+The first clause matches the module name node inside any plain `import`, so
+the aliased, submodule, and even comma-combined (`import os, requests`) forms
+are all covered; the two patterns handle from-imports.
+
+**A shape.** There is no string to grep for in the wrapper at the top of this
+page. What makes it a violation is structure: a function whose body is a single
+call to something else, in any form (`return`, `await`, a bare call,
+`yield from`, with or without a docstring). ast-grep matches structure, so a
+rule can say exactly that:
+
+```yaml
+# .byor/rules/project/no-routing-functions.yml
+id: no-routing-functions
+language: Python
+severity: warning
+message: Do not create functions whose only behavior is routing to another call.
+rule:
+  all:
+    - any:
+        - pattern: return $CALLEE($$$ARGS)
+        - pattern: return await $CALLEE($$$ARGS)
+        - pattern:
+            context: $CALLEE($$$ARGS)
+            selector: expression_statement
+        - pattern:
+            context: await $CALLEE($$$ARGS)
+            selector: expression_statement
+        - pattern:
+            context: yield from $CALLEE($$$ARGS)
+            selector: expression_statement
+    - any:
+        - all:
+            - nthChild: 1
+            - nthChild:
+                position: 1
+                reverse: true
+        - all:
+            - nthChild: 2
+            - nthChild:
+                position: 1
+                reverse: true
+            - follows:
+                kind: expression_statement
+                has:
+                  kind: string
+    - inside:
+        kind: block
+        inside:
+          kind: function_definition
+          field: body
+metadata:
+  byor:
+    agent_prompt: >
+      Remove this routing function and call the underlying implementation
+      directly. If the function must exist as a public API or integration
+      boundary, add real boundary behavior such as validation, translation,
+      authorization, retry policy, error handling, or instrumentation. Do not
+      preserve a wrapper whose only effect is changing argument order, defaults,
+      or names.
+```
+
+**A script.** Some rules are not about the text of the code at all. This check
+fails whenever the dependency list differs from the last commit, so an agent
+must stop and ask before adding a package:
+
+```yaml
+# .byor/config.yml
+checks:
+  - name: dependency-gate
+    extensions: [toml]
+    run: .byor/scripts/dependency-gate.sh
+    gate: false
+```
+
+```sh
+#!/bin/sh
+# The `dependencies = [...]` block, from its opening line to the first `]`.
+deps() { awk '/^dependencies = \[/ { open = 1 } open { print } open && /\]/ { exit }'; }
+
+[ -f pyproject.toml ] || exit 0
+git rev-parse --verify --quiet HEAD >/dev/null 2>&1 || exit 0 # no commits yet: nothing to compare
+
+committed=$(git show HEAD:pyproject.toml 2>/dev/null | deps)
+current=$(deps <pyproject.toml)
+[ "$committed" = "$current" ] && exit 0
+
+echo "The dependency list in pyproject.toml differs from the last commit."
+echo "If you added or removed a package without being asked to, revert it and ask the user first."
+exit 1
+```
+
+`gate: false` marks a check that polices the agent rather than the code: the
+post-edit hook runs it, but the pre-commit and CI gates `byor` generates leave
+it out, where it would block a person adding a dependency on purpose. A rule
+like this only makes sense inside the loop. [examples/](examples/) has a second
+one, five lines of shell that reject hand-edits to `uv.lock`; it never fires on
+`uv add` run in a terminal, because the hook only sees the agent's own file
+edits.
+
+Everything above is real and exercised in CI: the rules against valid and
+invalid samples, the scripts in both directions. See [examples/](examples/) for
+the annotated versions.
+
+The first two are ordinary [ast-grep](https://ast-grep.github.io) rules, and
+they follow you everywhere you read code:
 
 - **IDE** — set up your IDE with `ast-grep lsp` to see `message` as a diagnostic.
 - **AI agent** — a post-edit hook hands over the `agent_prompt`, scoped to
@@ -76,8 +197,7 @@ and `byor` is set up so this naturally just works wherever you do:
 - **Terminal** — `ast-grep scan` shows the `message`.
 
 ast-grep rules are `byor`'s built-in kind; it also runs any linter, type checker, or
-script you already use and folds their output into the same agent feedback. This
-rule and others live in [examples/](examples/), exercised in CI.
+script you already use and folds their output into the same agent feedback.
 
 ## Install
 
@@ -217,8 +337,9 @@ Project rules are committed files that work with `ast-grep`, so CI doesn't need
 
 `byor init --gate` generates this workflow and a matching `.pre-commit-config.yaml`
 for you — promoting your effective rules and checks into committed config first,
-so the gate stays byor-free but also covers your checks. See
-[docs/sync-model.md](docs/sync-model.md).
+so the gate stays byor-free but also covers your checks. Checks marked
+`gate: false` stay out of both files: they police the agent inside the loop,
+not the humans at the gate. See [docs/sync-model.md](docs/sync-model.md).
 
 ## Commands
 
@@ -259,8 +380,9 @@ Every command takes `--help`, and repo-operating commands take `--repo PATH`
 
 ## What's next
 
-Today byor catches strays with one mechanism: a deterministic post-edit hook.
-That already covers anything a rule, a linter, or a type checker can express.
+Today byor's inner loop has one mechanism: a deterministic post-edit hook.
+That already covers anything a rule, a linter, a type checker, or a script can
+express.
 
 The harder strays are behavioral, not textual: an agent drifting off the plan you
 agreed on, stopping a loop early, editing files outside the scope you set.

@@ -7,7 +7,14 @@ utils:
   positional-param:
     any:
     - kind: identifier
+    # A typed splat (`*args: str`, `**kw: int`) parses as a typed_parameter
+    # wrapping the splat pattern; it is not a positional slot.
     - kind: typed_parameter
+      not:
+        has:
+          any:
+          - kind: list_splat_pattern
+          - kind: dictionary_splat_pattern
     - kind: default_parameter
     - kind: typed_default_parameter
   counted-param:
@@ -21,6 +28,9 @@ utils:
           any:
           - kind: keyword_separator
           - kind: list_splat_pattern
+          - kind: typed_parameter
+            has:
+              kind: list_splat_pattern
 rule:
   kind: parameters
   has:

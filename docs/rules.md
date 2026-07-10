@@ -1,7 +1,9 @@
 # Rules
 
 byor rules are ordinary ast-grep YAML files. Anything ast-grep accepts works,
-plus optional metadata that the AI hooks read.
+plus optional metadata that the AI hooks read. A rule turns a preference of
+yours, the kind a general linter will not ship, into an executable check that
+byor's post-edit hook enforces in real time.
 
 ## Rule file format
 

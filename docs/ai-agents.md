@@ -1,7 +1,9 @@
 # AI Agents
 
-byor turns your ast-grep rules into directive feedback for AI coding
-agents. Every agent integration wraps the same command:
+byor turns your ast-grep rules into directive feedback for AI coding agents,
+delivered inside the agent's work loop: a post-edit hook checks each edit as
+it lands, rather than a cleanup pass after the work is done. Every agent
+integration wraps the same command:
 
 ```bash
 byor agent-check --scope diff --files <changed files>
@@ -175,6 +177,26 @@ Scope: project checks live in committed `.byor/config.yml`, so they are shared
 with anyone who works in the repo — like a committed pre-commit config — and
 apply only to that repo. Global checks are your own and run in every repo you
 work in. Only commit (or add) checks whose commands you trust.
+
+### Agent-only checks
+
+Some checks police agents, not code. A check that fails when the dependency
+list changed exists so an agent asks before adding a package; a human adding
+one on purpose should not be blocked by it in pre-commit or CI. Mark such a
+check `gate: false`:
+
+```yaml
+checks:
+  - name: dependency-gate
+    extensions: [toml]
+    run: ~/.config/byor/scripts/dependency-gate.sh
+    gate: false
+```
+
+The post-edit hook runs it like any other check, and `byor init --gate` still
+promotes it into tracked config so every contributor's agent is held to it —
+but the generated `.pre-commit-config.yaml` and CI workflow leave it out. The
+default is `gate: true`; existing configs are unaffected.
 
 ### Check scripts
 

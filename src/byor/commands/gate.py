@@ -109,11 +109,19 @@ def regenerate_gate(repo_root: Path) -> list[str]:
     checks = repo_config.checks
     messages = _revendor_scripts(repo_root, checks)
     branch = _gate_branch(repo_root, repo_config)
+    gated = _gated_checks(checks)
     return (
         messages
-        + write_ci_workflow(repo_root, checks, default_branch=branch, fail_on=repo_config.fail_on)
-        + write_precommit_config(repo_root, checks, fail_on=repo_config.fail_on)
+        + write_ci_workflow(repo_root, gated, default_branch=branch, fail_on=repo_config.fail_on)
+        + write_precommit_config(repo_root, gated, fail_on=repo_config.fail_on)
     )
+
+
+# An agent-only check (gate: false) stays in repo config so every teammate's
+# hook runs it, but the committed pre-commit and CI files must not: it polices
+# agents, and in a gate it would block humans doing the same thing on purpose.
+def _gated_checks(checks: list[CheckDef]) -> list[CheckDef]:
+    return [check for check in checks if check.gate]
 
 
 # Relpaths under .byor/scripts that the checks' run commands reference, deduplicated.
@@ -222,7 +230,7 @@ def stale_gate_files(repo_root: Path, repo_config: RepoConfig) -> list[str]:
     against disk. A gate file the user rewrote without the BYOR marker is
     user-owned — regeneration leaves it alone, so it is not stale either.
     """
-    checks = repo_config.checks
+    checks = _gated_checks(repo_config.checks)
     desired = {
         WORKFLOW_RELPATH: workflow_text(
             checks, default_branch=_gate_branch(repo_root, repo_config), fail_on=repo_config.fail_on

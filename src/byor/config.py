@@ -70,13 +70,16 @@ class CheckDef:
     `run` is shlex-split into argv and run without a shell; the in-scope files
     are appended as trailing arguments, so the command must accept a list of
     file paths. A leading `~`/`~/` in the command expands to the user's home.
-    `extensions` (no dots) filters which files trigger the check.
+    `extensions` (no dots) filters which files trigger the check. `gate: false`
+    keeps a check out of the generated pre-commit and CI gate while the agent
+    hook still runs it — for checks that police agents, not humans.
     """
 
     name: str
     extensions: list[str]
     run: str
     tags: list[str] = field(default_factory=list)
+    gate: bool = True
 
 
 @dataclass
@@ -487,19 +490,22 @@ def _check_def(entry: object, path: Path) -> CheckDef:
         extensions=_string_list(entry, "extensions", path=path),
         run=run,
         tags=_string_list(entry, "tags", path=path),
+        gate=_bool(entry, "gate", path=path, default=True),
     )
 
 
 def _write_checks(data: CommentedMap, checks: list[CheckDef]) -> None:
     rendered = []
     for check in checks:
-        entry: dict[str, str | list[str]] = {
+        entry: dict[str, str | list[str] | bool] = {
             "name": check.name,
             "extensions": list(check.extensions),
             "run": check.run,
         }
         if check.tags:
             entry["tags"] = list(check.tags)
+        if not check.gate:
+            entry["gate"] = False
         rendered.append(entry)
     data["checks"] = rendered
 

@@ -54,6 +54,27 @@ def test_gate_promotes_rules_and_checks_and_writes_portable_artifacts(
     assert "ruff-check" in workflow
 
 
+def test_gate_leaves_agent_only_checks_out_of_the_committed_files(home: Path) -> None:
+    write_global_check("ruff", "ruff-check")
+    repo = gate_repo(home)
+    config = load_repo_config(repo)
+    config.checks.append(CheckDef("deps", ["toml"], "deps-check", gate=False))
+    save_repo_config(repo, config)
+
+    # Any subsequent repo command regenerates the byor-owned artifacts.
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    precommit = (repo / ".pre-commit-config.yaml").read_text()
+    workflow = (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
+    assert "ruff-check" in precommit
+    assert "deps-check" not in precommit
+    assert "deps-check" not in workflow
+    # The check itself survives in tracked config: the agent hook still runs it,
+    # and doctor's staleness view must agree with what regeneration writes.
+    assert any(check.name == "deps" for check in load_repo_config(repo).checks)
+    assert main(["doctor", "--repo", str(repo)]) == 0
+
+
 def test_gate_prints_the_pre_commit_install_hint_until_a_hook_exists(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
