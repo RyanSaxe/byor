@@ -203,7 +203,11 @@ def _parse_codex_command(payload: dict[str, JsonValue]) -> CommandPayload:
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict):
         return CommandPayload()
-    return CommandPayload(command=_command_text(tool_input.get("command")), cwd=_directory(payload.get("cwd")))
+    # Codex's exec_command tool passes {cmd, workdir, shell, ...} (verified
+    # against a live 0.139 session); older shell tools used {command}.
+    command = _command_text(tool_input.get("cmd")) or _command_text(tool_input.get("command"))
+    cwd = _directory(tool_input.get("workdir")) or _directory(payload.get("cwd"))
+    return CommandPayload(command=command, cwd=cwd)
 
 
 def _command_text(value: JsonValue) -> str | None:

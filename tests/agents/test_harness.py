@@ -194,6 +194,19 @@ def test_claude_code_parses_a_pre_command_payload_with_cwd() -> None:
     )
 
 
+def test_codex_parses_the_exec_command_payload() -> None:
+    # The shape codex 0.139 actually sends (verified against a live session):
+    # exec_command with {cmd, workdir, shell, ...}.
+    raw = json.dumps(
+        {
+            "tool_name": "exec_command",
+            "tool_input": {"cmd": "pip install requests", "workdir": "/repo", "shell": "zsh"},
+        }
+    )
+
+    assert parse_command_payload("codex", raw) == CommandPayload(command="pip install requests", cwd=Path("/repo"))
+
+
 def test_codex_parses_a_string_or_shell_argv_command() -> None:
     as_string = json.dumps({"tool_input": {"command": "pip install requests"}})
     as_shell_argv = json.dumps({"tool_input": {"command": ["bash", "-lc", "pip install requests"]}})
