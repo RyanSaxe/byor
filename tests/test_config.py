@@ -68,6 +68,15 @@ def test_repo_config_round_trips_checks(tmp_path: Path) -> None:
     assert load_repo_config(tmp_path).checks == config.checks
 
 
+def test_repo_config_round_trips_an_agent_only_check_and_omits_the_default(tmp_path: Path) -> None:
+    save_repo_config(tmp_path, RepoConfig(checks=[CheckDef("deps", ["toml"], "scripts/deps.sh", gate=False)]))
+    assert load_repo_config(tmp_path).checks[0].gate is False
+
+    save_repo_config(tmp_path, RepoConfig(checks=[CheckDef("ruff", ["py"], "uv run ruff check")]))
+    assert load_repo_config(tmp_path).checks[0].gate is True
+    assert "gate" not in (tmp_path / ".byor" / "config.yml").read_text()
+
+
 def test_repo_config_rejects_a_check_missing_name_or_run(tmp_path: Path) -> None:
     (tmp_path / ".byor").mkdir()
     (tmp_path / ".byor" / "config.yml").write_text("version: 1\nchecks:\n  - extensions: [py]\n")
