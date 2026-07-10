@@ -12,14 +12,20 @@ import pytest
 
 from byor.config import (
     CheckDef,
+    CommandCheckDef,
     GlobalConfig,
     InitDefaults,
     LocalConfig,
     ProfileConfig,
     RepoConfig,
+    RepoPaths,
+    command_rule_dir_relpaths,
+    command_rules_relpath,
+    global_commands_dir,
     global_rules_dir,
     load_global_config,
     load_local_config,
+    load_package_command_checks,
     load_repo_config,
     load_repo_registry,
     register_repo,
@@ -92,6 +98,52 @@ def test_repo_config_rejects_a_check_with_an_unparseable_run(tmp_path: Path) -> 
 
     with pytest.raises(ConfigError, match="invalid 'run'"):
         load_repo_config(tmp_path)
+
+
+def test_repo_config_round_trips_command_checks_and_omits_the_empty_list(tmp_path: Path) -> None:
+    config = RepoConfig(command_checks=[CommandCheckDef("no-net", ".byor/scripts/no-net.py", tags=["deps"])])
+    save_repo_config(tmp_path, config)
+    assert load_repo_config(tmp_path).command_checks == config.command_checks
+
+    save_repo_config(tmp_path, RepoConfig())
+    assert "command_checks" not in (tmp_path / ".byor" / "config.yml").read_text()
+
+
+def test_repo_config_rejects_a_command_check_missing_name_or_run(tmp_path: Path) -> None:
+    (tmp_path / ".byor").mkdir()
+    (tmp_path / ".byor" / "config.yml").write_text("version: 1\ncommand_checks:\n  - name: no-net\n")
+
+    with pytest.raises(ConfigError, match="name"):
+        load_repo_config(tmp_path)
+
+
+def test_repo_config_rejects_a_command_check_with_an_unparseable_run(tmp_path: Path) -> None:
+    (tmp_path / ".byor").mkdir()
+    # run value is the single token `cmd "` — an unterminated shell quote.
+    (tmp_path / ".byor" / "config.yml").write_text("version: 1\ncommand_checks:\n  - name: bad\n    run: 'cmd \"'\n")
+
+    with pytest.raises(ConfigError, match="invalid 'run'"):
+        load_repo_config(tmp_path)
+
+
+def test_command_rule_dirs_derive_from_the_commands_root() -> None:
+    paths = RepoPaths()
+    assert command_rules_relpath(paths, "project") == ".byor/commands/project"
+    assert command_rule_dir_relpaths(paths) == [
+        ".byor/commands/project",
+        ".byor/commands/personal/local",
+        ".byor/commands/personal/global",
+        ".byor/commands/personal/packages",
+    ]
+
+    moved = RepoPaths(command_rules="tools/commands")
+    assert command_rules_relpath(moved, "local") == "tools/commands/personal/local"
+
+
+def test_repo_config_round_trips_a_custom_command_rules_root(tmp_path: Path) -> None:
+    config = RepoConfig(paths=RepoPaths(command_rules="tools/commands"))
+    save_repo_config(tmp_path, config)
+    assert load_repo_config(tmp_path).paths.command_rules == "tools/commands"
 
 
 def test_repo_config_round_trips_fail_on_and_omits_the_default(tmp_path: Path) -> None:
@@ -298,8 +350,29 @@ def test_global_paths_resolve_relative_to_config_dir_unless_absolute(
     absolute = GlobalConfig(rules_path=str(elsewhere))
 
     assert global_rules_dir(tmp_path, relative) == tmp_path / "rules"
+    assert global_commands_dir(tmp_path, relative) == tmp_path / "commands"
     assert repo_registry_path(tmp_path, relative) == tmp_path / "repos.yml"
     assert global_rules_dir(tmp_path, absolute) == elsewhere
+
+
+def test_package_command_checks_load_from_the_package_manifest(tmp_path: Path) -> None:
+    package = tmp_path / "packages" / "style"
+    package.mkdir(parents=True)
+    (package / "checks.yml").write_text(
+        "checks:\n"
+        "  - name: ruff\n"
+        "    extensions: [py]\n"
+        "    run: uv run ruff check\n"
+        "command_checks:\n"
+        "  - name: no-net\n"
+        "    run: scripts/no-net.py\n"
+    )
+
+    config = GlobalConfig()
+    checks = load_package_command_checks(tmp_path, config, name="style")
+
+    assert checks == [CommandCheckDef("no-net", "scripts/no-net.py")]
+    assert load_package_command_checks(tmp_path, config, name="missing") == []
 
 
 def test_register_repo_creates_registry_and_is_idempotent(tmp_path: Path) -> None:
