@@ -38,6 +38,7 @@ from byor.errors import ByorError
 from byor.io.paths import global_config_dir, resolve_repo_root
 from byor.rules.sync import run_sync
 from byor.scan.agent_check import run_agent_check
+from byor.scan.command_check import run_command_check
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -65,6 +66,7 @@ COMMANDS = {
     "package": "List and install opt-in rule/check packages",
     "list": "Show rules and where they come from",
     "agent-check": "Run ast-grep on changed files and render agent feedback",
+    "command-check": "Gate a shell command against command rules before it runs",
     "hook": "Install or uninstall AI agent integrations",
 }
 
@@ -210,6 +212,14 @@ def _add_add_arguments(command: argparse.ArgumentParser) -> None:
     command.add_argument("--language", help="Language for the generated template (default: Python)")
     command.add_argument("--id", help="Rule ID for the generated template")
     command.add_argument(
+        "--command",
+        # The subparser name already lives at args.command; a colliding dest
+        # would overwrite it before dispatch.
+        dest="command_rule",
+        action="store_true",
+        help="Create a command rule that gates shell commands instead of scanning files",
+    )
+    command.add_argument(
         "--allow-exceptions",
         action="store_true",
         help="End the rule's agent_prompt with the standard suppression sentence",
@@ -347,6 +357,28 @@ def _add_agent_check_arguments(command: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_command_check_arguments(command: argparse.ArgumentParser) -> None:
+    source = command.add_mutually_exclusive_group(required=True)
+    source.add_argument(
+        "--command",
+        # The subparser name already lives at args.command; a colliding dest
+        # would overwrite it before dispatch.
+        dest="command_text",
+        metavar="STRING",
+        help="Gate this shell command and print the deny text (exit 2 on findings)",
+    )
+    source.add_argument(
+        "--stdin-hook",
+        choices=HARNESS_CHOICES,
+        metavar="HARNESS",
+        help=(
+            "Read the pending command from a harness pre-command hook JSON"
+            f" payload on stdin ({'|'.join(HARNESS_CHOICES)}) and reply with"
+            " its permission decision"
+        ),
+    )
+
+
 def _add_doctor_arguments(command: argparse.ArgumentParser) -> None:
     command.add_argument(
         "--quick",
@@ -388,6 +420,7 @@ _COMMAND_ARGUMENTS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
     "package": _add_package_arguments,
     "list": _add_list_arguments,
     "agent-check": _add_agent_check_arguments,
+    "command-check": _add_command_check_arguments,
     "hook": _add_hook_arguments,
 }
 
@@ -406,7 +439,7 @@ DISABLED_NOTICE = "byor: this repository is disabled for byor; run `byor enable`
 
 
 def _is_hook_invocation(args: argparse.Namespace) -> bool:
-    return args.command == "agent-check" and getattr(args, "stdin_hook", None) is not None
+    return args.command in ("agent-check", "command-check") and getattr(args, "stdin_hook", None) is not None
 
 
 _HANDLERS = {
@@ -426,6 +459,7 @@ _HANDLERS = {
     "disable": run_disable,
     "enable": run_enable,
     "agent-check": run_agent_check,
+    "command-check": run_command_check,
     "hook": run_hook,
 }
 

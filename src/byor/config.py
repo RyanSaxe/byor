@@ -19,19 +19,25 @@ from byor.io.yamlio import load_yaml_mapping, write_yaml_atomic
 
 __all__ = (
     "CheckDef",
+    "CommandCheckDef",
+    "CommandRuleScope",
     "GlobalConfig",
     "InitDefaults",
     "LocalConfig",
     "ProfileConfig",
     "RepoConfig",
     "RepoPaths",
+    "command_rule_dir_relpaths",
+    "command_rules_relpath",
     "disabled_entry",
+    "global_commands_dir",
     "global_config_path",
     "global_packages_dir",
     "global_rules_dir",
     "load_global_config",
     "load_local_config",
     "load_package_checks",
+    "load_package_command_checks",
     "load_repo_config",
     "load_repo_registry",
     "local_config_path",
@@ -50,6 +56,9 @@ CONFIG_VERSION = 1
 # A package's checks manifest; reserved at the package root, never a rule file.
 PACKAGE_CHECKS_FILE = "checks.yml"
 
+# A package's command rules; reserved at the package root, never file rules.
+PACKAGE_COMMANDS_DIR = "commands"
+
 # The value types a managed config section may hold, written back in place.
 SectionValue = str | None | bool | int | list[str]
 
@@ -61,6 +70,12 @@ class RepoPaths:
     personal_local_rules: str = ".byor/rules/personal/local"
     personal_global_rules: str = ".byor/rules/personal/global"
     personal_packages_rules: str = ".byor/rules/personal/packages"
+    command_rules: str = ".byor/commands"
+    """Root of the command-rule tree; scope subdirs mirror the rules tree by convention.
+
+    Command rules gate shell commands before agents run them, so this tree must
+    never appear in sgconfig `ruleDirs` — file scans must not pick them up.
+    """
 
 
 @dataclass(frozen=True)
@@ -82,11 +97,28 @@ class CheckDef:
     gate: bool = True
 
 
+@dataclass(frozen=True)
+class CommandCheckDef:
+    """A script veto for the pre-command gate.
+
+    `run` is shlex-split into argv and run without a shell; the candidate shell
+    command is written to the process's stdin. A nonzero exit denies the
+    command and the check's output becomes the corrective message. These run
+    on every shell command an agent issues, so they must be fast, and they
+    never appear in the generated pre-commit or CI gate.
+    """
+
+    name: str
+    run: str
+    tags: list[str] = field(default_factory=list)
+
+
 @dataclass
 class RepoConfig:
     project_name: str | None = None
     paths: RepoPaths = field(default_factory=RepoPaths)
     checks: list[CheckDef] = field(default_factory=list)
+    command_checks: list[CommandCheckDef] = field(default_factory=list)
     gate: bool = False
     """Whether byor keeps a byor-free pre-commit + CI gate regenerated for this repo."""
     gate_branch: str | None = None
@@ -130,6 +162,9 @@ class ProfileConfig:
 class GlobalConfig:
     rules_path: str = "rules"
     packages_path: str = "packages"
+    commands_path: str = "commands"
+    """Canonical global command rules; deliberately outside `rules_path`, which
+    lands in the home sgconfig's `ruleDirs` and would leak these into file scans."""
     repos_path: str = "repos.yml"
     ast_grep_command: str = "auto"
     output_concise: bool = False
@@ -139,6 +174,7 @@ class GlobalConfig:
     agents: list[str] = field(default_factory=list)
     """The AI agents registered globally by `byor install` / `byor hook install`."""
     checks: list[CheckDef] = field(default_factory=list)
+    command_checks: list[CommandCheckDef] = field(default_factory=list)
     init: InitDefaults = field(default_factory=InitDefaults)
     profiles: dict[str, ProfileConfig] = field(default_factory=dict)
     disabled_repos: list[Path] = field(default_factory=list)
@@ -168,6 +204,24 @@ def rule_dir_relpaths(paths: RepoPaths) -> list[str]:
     ]
 
 
+CommandRuleScope = Literal["project", "local", "global", "packages"]
+
+_COMMAND_SCOPE_SUBDIRS: dict[CommandRuleScope, str] = {
+    "project": "project",
+    "local": "personal/local",
+    "global": "personal/global",
+    "packages": "personal/packages",
+}
+
+
+def command_rules_relpath(paths: RepoPaths, scope: CommandRuleScope) -> str:
+    return f"{paths.command_rules}/{_COMMAND_SCOPE_SUBDIRS[scope]}"
+
+
+def command_rule_dir_relpaths(paths: RepoPaths) -> list[str]:
+    return [command_rules_relpath(paths, scope) for scope in _COMMAND_SCOPE_SUBDIRS]
+
+
 def repo_config_path(repo_root: Path) -> Path:
     return repo_root / ".byor" / "config.yml"
 
@@ -188,11 +242,22 @@ def global_packages_dir(config_dir: Path, config: GlobalConfig) -> Path:
     return config_dir / config.packages_path
 
 
+def global_commands_dir(config_dir: Path, config: GlobalConfig) -> Path:
+    return config_dir / config.commands_path
+
+
 def load_package_checks(config_dir: Path, config: GlobalConfig, *, name: str) -> list[CheckDef]:
     path = global_packages_dir(config_dir, config) / name / PACKAGE_CHECKS_FILE
     if not path.is_file():
         return []
     return _check_defs(load_yaml_mapping(path), path)
+
+
+def load_package_command_checks(config_dir: Path, config: GlobalConfig, *, name: str) -> list[CommandCheckDef]:
+    path = global_packages_dir(config_dir, config) / name / PACKAGE_CHECKS_FILE
+    if not path.is_file():
+        return []
+    return _command_check_defs(load_yaml_mapping(path), path)
 
 
 def repo_registry_path(config_dir: Path, config: GlobalConfig) -> Path:
@@ -223,8 +288,10 @@ def load_repo_config(repo_root: Path) -> RepoConfig:
             personal_packages_rules=_string(
                 paths, "personal_packages_rules", default=defaults.personal_packages_rules, path=path
             ),
+            command_rules=_string(paths, "command_rules", default=defaults.command_rules, path=path),
         ),
         checks=_check_defs(data, path),
+        command_checks=_command_check_defs(data, path),
         gate=_bool(data, "gate", path=path, default=False),
         gate_branch=_optional_string(data, "gate_branch", path=path),
         fail_on=_fail_on(data, path),
@@ -245,9 +312,11 @@ def save_repo_config(repo_root: Path, config: RepoConfig) -> None:
             "personal_local_rules": config.paths.personal_local_rules,
             "personal_global_rules": config.paths.personal_global_rules,
             "personal_packages_rules": config.paths.personal_packages_rules,
+            "command_rules": config.paths.command_rules,
         },
     )
     _write_checks(data, config.checks)
+    _write_command_checks(data, config.command_checks)
     if config.gate:
         data["gate"] = True
     if config.gate_branch is not None:
@@ -317,12 +386,14 @@ def load_global_config(config_dir: Path) -> GlobalConfig:
     return GlobalConfig(
         rules_path=_string(paths, "rules", default=defaults.rules_path, path=path),
         packages_path=_string(paths, "packages", default=defaults.packages_path, path=path),
+        commands_path=_string(paths, "commands", default=defaults.commands_path, path=path),
         repos_path=_string(paths, "repos", default=defaults.repos_path, path=path),
         ast_grep_command=_string(ast_grep, "command", default=defaults.ast_grep_command, path=path),
         output_concise=_bool(output, "concise", path=path, default=defaults.output_concise),
         output_max_diagnostics=_optional_positive_int(output, "max_diagnostics", path=path),
         agents=_string_list(ai, "agents", path=path),
         checks=_check_defs(data, path),
+        command_checks=_command_check_defs(data, path),
         init=InitDefaults(
             private=_optional_bool(init, "private", path=path),
             git_hooks=_optional_bool(init, "git_hooks", path=path),
@@ -347,6 +418,7 @@ def save_global_config(config_dir: Path, config: GlobalConfig) -> None:
         values={
             "rules": config.rules_path,
             "packages": config.packages_path,
+            "commands": config.commands_path,
             "repos": config.repos_path,
         },
     )
@@ -357,6 +429,7 @@ def save_global_config(config_dir: Path, config: GlobalConfig) -> None:
     _update_section(data, "output", values=output_values)
     _update_section(data, "ai", values={"agents": list(config.agents)})
     _write_checks(data, config.checks)
+    _write_command_checks(data, config.command_checks)
     _write_init_defaults(data, config.init)
     _write_profiles(data, config.profiles)
     # `byor enable` empties the list, so the key is dropped rather than left
@@ -477,6 +550,17 @@ def _check_def(entry: object, path: Path) -> CheckDef:
     if not name or not run:
         msg = f"{path}: each check needs a non-empty 'name' and 'run'"
         raise ConfigError(msg)
+    _require_splittable_run(name, run, path=path)
+    return CheckDef(
+        name=name,
+        extensions=_string_list(entry, "extensions", path=path),
+        run=run,
+        tags=_string_list(entry, "tags", path=path),
+        gate=_bool(entry, "gate", path=path, default=True),
+    )
+
+
+def _require_splittable_run(name: str, run: str, *, path: Path) -> None:
     try:
         argv = shlex.split(run)
     except ValueError as error:
@@ -485,13 +569,44 @@ def _check_def(entry: object, path: Path) -> CheckDef:
     if not argv:
         msg = f"{path}: check '{name}' has an empty 'run' command"
         raise ConfigError(msg)
-    return CheckDef(
-        name=name,
-        extensions=_string_list(entry, "extensions", path=path),
-        run=run,
-        tags=_string_list(entry, "tags", path=path),
-        gate=_bool(entry, "gate", path=path, default=True),
-    )
+
+
+def _command_check_defs(data: CommentedMap, path: Path) -> list[CommandCheckDef]:
+    value = data.get("command_checks")
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        msg = f"{path}: expected 'command_checks' to be a list of mappings"
+        raise ConfigError(msg)
+    return [_command_check_def(entry, path) for entry in value]
+
+
+def _command_check_def(entry: object, path: Path) -> CommandCheckDef:
+    if not isinstance(entry, CommentedMap):
+        msg = f"{path}: expected each command check to be a mapping"
+        raise ConfigError(msg)
+    name = _string(entry, "name", default="", path=path)
+    run = _string(entry, "run", default="", path=path)
+    if not name or not run:
+        msg = f"{path}: each command check needs a non-empty 'name' and 'run'"
+        raise ConfigError(msg)
+    _require_splittable_run(name, run, path=path)
+    return CommandCheckDef(name=name, run=run, tags=_string_list(entry, "tags", path=path))
+
+
+def _write_command_checks(data: CommentedMap, checks: list[CommandCheckDef]) -> None:
+    # Unlike `checks`, this key is omitted when empty: most configs will never
+    # gate commands with scripts, so they should not grow a `command_checks: []`.
+    if not checks:
+        data.pop("command_checks", None)
+        return
+    rendered = []
+    for check in checks:
+        entry: dict[str, str | list[str]] = {"name": check.name, "run": check.run}
+        if check.tags:
+            entry["tags"] = list(check.tags)
+        rendered.append(entry)
+    data["command_checks"] = rendered
 
 
 def _write_checks(data: CommentedMap, checks: list[CheckDef]) -> None:

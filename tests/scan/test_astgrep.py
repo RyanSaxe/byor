@@ -14,10 +14,12 @@ import pytest
 
 from byor.errors import AstGrepNotFoundError, ByorError
 from byor.scan.astgrep import (
+    INLINE_RULES_BATCH_LIMIT,
     NOT_FOUND_MESSAGE,
     VERSION_PATTERN,
     ast_grep_version,
     resolve_ast_grep,
+    scan_command,
     scan_files,
 )
 
@@ -247,3 +249,74 @@ def test_scan_with_error_severity_matches_drops_the_exit_summary(tmp_path: Path)
 
     assert result.warnings == ""
     assert result.matches[0].severity == "error"
+
+
+PIP_RULE = """\
+id: no-pip-install
+language: Bash
+severity: error
+message: This project manages dependencies with uv, not pip.
+rule:
+  pattern: pip install $$$ARGS
+metadata:
+  byor:
+    agent_prompt: Run `uv add <package>` instead of `pip install`.
+"""
+
+FORCE_PUSH_RULE = """\
+id: no-force-push
+language: Bash
+severity: error
+message: Never force-push; it rewrites shared history.
+rule:
+  pattern: git push --force $$$ARGS
+"""
+
+
+def test_scan_command_matches_inside_a_compound_command() -> None:
+    result = scan_command(
+        resolve_ast_grep(),
+        "cd docs && pip install requests | tee log",
+        rules=[PIP_RULE, FORCE_PUSH_RULE],
+    )
+
+    (match,) = result.matches
+    assert match.rule_id == "no-pip-install"
+    assert match.severity == "error"
+    assert match.lines == "cd docs && pip install requests | tee log"
+    assert match.agent_prompt == "Run `uv add <package>` instead of `pip install`."
+
+
+def test_scan_command_ignores_the_pattern_inside_a_quoted_string() -> None:
+    result = scan_command(
+        resolve_ast_grep(),
+        'echo "pip install requests is banned here"',
+        rules=[PIP_RULE],
+    )
+
+    assert result.matches == []
+
+
+def test_scan_command_without_rules_is_a_no_subprocess_no_match(tmp_path: Path) -> None:
+    result = scan_command(Path(tmp_path / "missing-ast-grep"), "pip install requests", rules=[])
+
+    assert result.matches == []
+    assert result.warnings == ""
+
+
+def test_scan_command_batches_oversized_rule_sets_and_merges_matches() -> None:
+    # Pad both rules past the batch limit so they run in separate ast-grep
+    # invocations; both must still report their match.
+    padding = "# " + "x" * INLINE_RULES_BATCH_LIMIT + "\n"
+    result = scan_command(
+        resolve_ast_grep(),
+        "pip install requests && git push --force origin main",
+        rules=[PIP_RULE + padding, FORCE_PUSH_RULE + padding],
+    )
+
+    assert sorted(match.rule_id for match in result.matches) == ["no-force-push", "no-pip-install"]
+
+
+def test_scan_command_with_a_broken_rule_raises_with_ast_greps_message() -> None:
+    with pytest.raises(ByorError, match="scan --stdin` failed"):
+        scan_command(resolve_ast_grep(), "ls", rules=["id: broken\nrule: 5\n"])

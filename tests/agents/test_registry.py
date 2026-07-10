@@ -14,11 +14,14 @@ def test_agent_choices_are_skill_plus_plugins_plus_harnesses() -> None:
     assert set(AGENT_CHOICES) == {"skill"} | set(PLUGIN_AGENTS) | set(HARNESS_CHOICES)
 
 
-def test_every_harness_has_hook_config() -> None:
-    assert set(HOOK_SPECS) == set(HARNESS_CHOICES)
+def test_every_harness_has_hook_config_for_both_events() -> None:
+    assert {harness for harness, _ in HOOK_SPECS} == set(HARNESS_CHOICES)
+    assert {(harness, "post-edit") for harness in HARNESS_CHOICES} <= set(HOOK_SPECS)
+    assert {(harness, "pre-command") for harness in HARNESS_CHOICES} <= set(HOOK_SPECS)
     assert set(_GLOBAL_DIRS) == set(HARNESS_CHOICES)
-    for name, spec in HOOK_SPECS.items():
+    for (name, event), spec in HOOK_SPECS.items():
         assert spec.harness == name
+        assert spec.event == event
 
 
 def test_every_harness_has_payload_parser_and_emitter() -> None:

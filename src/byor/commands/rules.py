@@ -20,8 +20,10 @@ from ruamel.yaml.comments import CommentedMap
 
 from byor.commands.doctor import quick_doctor_problems
 from byor.config import (
+    CommandRuleScope,
     LocalConfig,
     RepoPaths,
+    command_rules_relpath,
     load_global_config,
     load_local_config,
     load_repo_config,
@@ -138,9 +140,8 @@ def _rule_context(args: argparse.Namespace, *, scope: str) -> RepoContext:
 
 
 def run_add(args: argparse.Namespace) -> int:
-    template = RULE_TEMPLATE.format(rule_id=args.id or "REPLACE_ME", language=args.language or "Python")
-    if args.allow_exceptions:
-        template = _append_exception_sentence(template)
+    command: bool = args.command_rule
+    template = _add_template(args)
     if args.from_file is None and not args.edit:
         write_line(template.rstrip())
         write_line("Rerun with --from FILE or --edit to create the rule.")
@@ -160,10 +161,7 @@ def run_add(args: argparse.Namespace) -> int:
             rule = _load_source_rule(args.from_file)
             if args.allow_exceptions:
                 rule = replace(rule, content=_append_exception_sentence(rule.content))
-        destination = (
-            scope_rules_dir(scope, context.repo_root, paths=context.paths, global_rules_root=context.canonical.root)
-            / f"{rule.id}.yml"
-        )
+        destination = _scope_dir(context, scope, command=command) / f"{rule.id}.yml"
         if destination.exists():
             msg = (
                 f"{display_path(destination, context.repo_root)} already exists; "
@@ -171,17 +169,33 @@ def run_add(args: argparse.Namespace) -> int:
             )
             raise UnsafeOverwriteError(msg)
         rule = replace(rule, path=destination)
-        _check_conflicts(context, scope, rule=rule, removed=set())
+        _check_conflicts(context, scope, rule=rule, removed=set(), command=command)
         _require_loadable_by_ast_grep(context, rule)
     except ByorError as error:
         raise _with_draft_hint(error, draft) from error
     if draft is not None:
         draft.unlink()
     _warn_on_id_pattern(rule)
+    _warn_on_command_language(rule, command=command)
     write_text_atomic(destination, rule.content)
-    write_line(f"Added {scope} rule '{rule.id}' at {display_path(destination, context.repo_root)}")
+    kind = "command rule" if command else "rule"
+    write_line(f"Added {scope} {kind} '{rule.id}' at {display_path(destination, context.repo_root)}")
     _finish(context, fan_out=scope == "global")
     return 0
+
+
+def _add_template(args: argparse.Namespace) -> str:
+    default_language = "Bash" if args.command_rule else "Python"
+    template = RULE_TEMPLATE.format(rule_id=args.id or "REPLACE_ME", language=args.language or default_language)
+    return _append_exception_sentence(template) if args.allow_exceptions else template
+
+
+def _warn_on_command_language(rule: Rule, *, command: bool) -> None:
+    if command and rule.language.lower() != "bash":
+        sys.stderr.write(
+            f"byor: warning: the pre-command gate parses commands as Bash and will skip"
+            f" this {rule.language} rule; use `language: Bash`\n"
+        )
 
 
 def run_edit(args: argparse.Namespace) -> int:
@@ -468,20 +482,31 @@ def _check_conflicts(
     *,
     rule: Rule,
     removed: set[Path],
+    command: bool = False,
 ) -> None:
+    # Command rules are their own ID universe: they conflict with each other,
+    # never with file rules (and vice versa).
     scoped = {
-        name: [existing for existing in _scope_rules(context, name) if existing.path not in removed]
+        name: [existing for existing in _scope_rules(context, name, command=command) if existing.path not in removed]
         for name in ("project", "local", "global")
     }
     scoped[scope].append(rule)
     check_id_conflicts(scoped["project"], scoped["local"], canonical_global=scoped["global"])
 
 
-def _scope_rules(context: RepoContext, scope: RuleScope) -> list[Rule]:
+def _scope_rules(context: RepoContext, scope: RuleScope, *, command: bool = False) -> list[Rule]:
     if scope == "global":
-        return context.canonical.rules
-    directory = scope_rules_dir(scope, context.repo_root, paths=context.paths, global_rules_root=context.canonical.root)
-    return load_rules(directory)
+        return context.canonical.command_rules if command else context.canonical.rules
+    return load_rules(_scope_dir(context, scope, command=command))
+
+
+def _scope_dir(context: RepoContext, scope: RuleScope, *, command: bool) -> Path:
+    if not command:
+        return scope_rules_dir(scope, context.repo_root, paths=context.paths, global_rules_root=context.canonical.root)
+    if scope == "global":
+        return context.canonical.commands_root
+    command_scope: CommandRuleScope = "project" if scope == "project" else "local"
+    return context.repo_root / command_rules_relpath(context.paths, command_scope)
 
 
 def _warn_on_id_pattern(rule: Rule) -> None:

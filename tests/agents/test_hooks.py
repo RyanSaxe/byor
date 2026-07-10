@@ -52,8 +52,9 @@ def test_install_merges_into_existing_global_settings(home: Path) -> None:
 
     data = json.loads(settings.read_text())
     assert data["model"] == "opus"
-    assert data["hooks"]["PreToolUse"] == []
     assert BYOR_COMMAND_SIGNATURE in json.dumps(data["hooks"]["PostToolUse"])
+    # The pre-command gate joins the user's (empty) PreToolUse list.
+    assert "byor command-check --stdin-hook claude-code" in json.dumps(data["hooks"]["PreToolUse"])
 
     snapshot = settings.read_text()
     install_agents("claude-code")
@@ -111,7 +112,7 @@ def test_doctor_flags_a_recorded_harness_whose_hook_was_removed(home: Path, caps
 
     out = capsys.readouterr().out
     assert "FAIL  agent_files" in out
-    assert "the codex hook is not installed" in out
+    assert "the codex post-edit hook is not installed" in out
     assert "run `byor install`" in out
     # Doctor is read-only: reporting the problem must not reinstall the hook.
     assert not hook.exists()
@@ -131,7 +132,7 @@ def test_doctor_flags_a_recorded_harness_with_a_stale_matcher(home: Path, capsys
 
     out = capsys.readouterr().out
     assert "FAIL  agent_files" in out
-    assert "the codex hook is out of date" in out
+    assert "the codex post-edit hook is out of date" in out
     assert "run `byor install`" in out
     # Doctor is read-only: the stale hook stays exactly as it was.
     assert hook.read_text() == stale

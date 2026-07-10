@@ -12,9 +12,12 @@ from pathlib import Path
 
 from byor.agents.harness import (
     COPILOT_CONTEXT_CAP,
+    CommandPayload,
     EditPayload,
     emit,
+    emit_deny,
     parse_apply_patch,
+    parse_command_payload,
     parse_payload,
 )
 
@@ -181,3 +184,85 @@ def test_copilot_emitter_keeps_multibyte_diagnostics_near_the_cap() -> None:
 def test_empty_diagnostics_emit_plain_exit_zero_everywhere() -> None:
     for harness in ("claude-code", "codex", "copilot"):
         assert emit(harness, "") == ("", 0)
+
+
+def test_claude_code_parses_a_pre_command_payload_with_cwd() -> None:
+    raw = json.dumps({"tool_input": {"command": "pip install requests"}, "cwd": "/repo"})
+
+    assert parse_command_payload("claude-code", raw) == CommandPayload(
+        command="pip install requests", cwd=Path("/repo")
+    )
+
+
+def test_codex_parses_the_pretooluse_payload() -> None:
+    # The shape codex 0.144 actually sends to a PreToolUse hook (verified live):
+    # tool_name "Bash", tool_input.command string, top-level cwd. Same as Claude
+    # Code — the session-rollout log's {cmd, workdir} is a different artifact.
+    raw = json.dumps(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": "pip install requests"},
+            "cwd": "/repo",
+        }
+    )
+
+    assert parse_command_payload("codex", raw) == CommandPayload(command="pip install requests", cwd=Path("/repo"))
+
+
+def test_codex_parses_a_string_or_shell_argv_command() -> None:
+    as_string = json.dumps({"tool_input": {"command": "pip install requests"}})
+    as_shell_argv = json.dumps({"tool_input": {"command": ["bash", "-lc", "pip install requests"]}})
+    as_plain_argv = json.dumps({"tool_input": {"command": ["pip", "install", "requests"]}})
+
+    assert parse_command_payload("codex", as_string).command == "pip install requests"
+    assert parse_command_payload("codex", as_shell_argv).command == "pip install requests"
+    assert parse_command_payload("codex", as_plain_argv).command == "pip install requests"
+
+
+def test_copilot_parses_the_command_from_stringified_tool_args() -> None:
+    raw = json.dumps({"toolArgs": json.dumps({"command": "pip install requests"}), "cwd": "/repo"})
+
+    assert parse_command_payload("copilot", raw) == CommandPayload(command="pip install requests", cwd=Path("/repo"))
+
+
+def test_malformed_command_payloads_fail_open_to_no_command() -> None:
+    for harness in ("claude-code", "codex", "copilot"):
+        assert parse_command_payload(harness, "{not json") == CommandPayload()
+        assert parse_command_payload(harness, "{}") == CommandPayload()
+    # A different tool's hook firing (no command in tool_input) also approves.
+    assert parse_command_payload("claude-code", json.dumps({"tool_input": {"file_path": "x"}})) == CommandPayload()
+    assert parse_command_payload("codex", json.dumps({"tool_input": {"command": ["ls", 5]}})) == CommandPayload()
+
+
+def test_deny_emitters_wrap_the_reason_in_each_harness_envelope() -> None:
+    claude_stdout, claude_code = emit_deny("claude-code", "use uv add")
+    codex_stdout, codex_code = emit_deny("codex", "use uv add")
+    copilot_stdout, copilot_code = emit_deny("copilot", "use uv add")
+
+    assert claude_code == codex_code == copilot_code == 0
+    assert json.loads(claude_stdout) == {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": "use uv add",
+        }
+    }
+    assert json.loads(codex_stdout) == json.loads(claude_stdout)
+    assert json.loads(copilot_stdout) == {
+        "permissionDecision": "deny",
+        "permissionDecisionReason": "use uv add",
+    }
+
+
+def test_copilot_deny_reason_respects_the_ten_kb_cap() -> None:
+    stdout, code = emit_deny("copilot", "reason\n" * (COPILOT_CONTEXT_CAP // 2))
+
+    assert code == 0
+    assert len(stdout) <= COPILOT_CONTEXT_CAP
+    assert json.loads(stdout)["permissionDecision"] == "deny"
+
+
+def test_an_empty_decision_approves_with_no_output_everywhere() -> None:
+    for harness in ("claude-code", "codex", "copilot"):
+        assert emit_deny(harness, "") == ("", 0)

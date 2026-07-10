@@ -1,0 +1,27 @@
+# The choke-point command rule. tree-sitter parses the pending command as
+# Bash, so these patterns match a pip invocation anywhere it appears — after
+# `cd docs &&`, inside a pipeline — but never inside a quoted string like
+# `echo "pip install x"`, where regex over the raw command line would
+# false-positive. `uv pip install` stays legal: its command name is `uv`.
+id: no-pip-install
+language: Bash
+severity: error
+message: This machine manages Python dependencies with uv, not pip.
+rule:
+  any:
+    - pattern: pip install $$$ARGS
+    - pattern: pip3 install $$$ARGS
+    - pattern: python -m pip install $$$ARGS
+    - pattern: python3 -m pip install $$$ARGS
+metadata:
+  byor:
+    rationale: >
+      Direct pip installs bypass uv's lockfile, so the environment drifts
+      from uv.lock and the next `uv sync` silently reverts the change.
+    agent_prompt: >
+      Use uv instead: `uv add <package>` to add a dependency,
+      `uv sync` to install what the lockfile already says. Never invoke
+      pip directly.
+    tags:
+      - commands
+      - deps

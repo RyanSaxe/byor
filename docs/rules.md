@@ -133,6 +133,41 @@ copy, no error. Conflicts that ast-grep would see are errors:
 | Project ID matches local ID | Error — a local variation of a project rule requires a different ID |
 | Two installed packages share an ID | Error — exclude one with `byor exclude` |
 
+## Command rules
+
+A command rule is the same YAML file with `language: Bash`, but it gates the
+shell commands an agent runs instead of scanning files (see
+[ai-agents.md](ai-agents.md) for the gate itself). Command rules live in a
+parallel tree with the same scopes, precedence, and sync behavior:
+
+| Scope | Directory |
+| --- | --- |
+| `project` | `.byor/commands/project/` |
+| `local` | `.byor/commands/personal/local/` |
+| `global` | `~/.config/byor/commands/` (canonical) |
+
+Packages contribute command rules from a reserved `commands/` directory at
+the package root, mirrored into `.byor/commands/personal/packages/<name>/`.
+
+The command tree deliberately never appears in sgconfig `ruleDirs`: a command
+rule must not fire when ast-grep scans a shell-script *file*, and a
+`.sh`-file rule must not block interactive commands. The two universes keep
+separate IDs — a command rule may share an ID with a file rule without
+conflict — but `byor exclude RULE_ID` and tag exclusions apply to both.
+
+Create one with the `--command` flag and verify it in both directions:
+
+```bash
+byor add --scope project --command --from FILE
+byor command-check --command 'pip install requests'   # denied, exit 2
+byor command-check --command 'uv add requests'        # clean, exit 0
+```
+
+`byor list`, `byor edit`, `byor remove`, and `byor promote` do not manage
+command rules yet; edit or move the files directly and run `byor sync`.
+[examples/command-rules/](../examples/command-rules/) has annotated,
+CI-tested examples of the pattern styles.
+
 ## Adding rules
 
 ```bash

@@ -1,0 +1,7 @@
+id: prefer-rg
+valid:
+  - rg TODO src/
+  - echo "grep is fine in prose"
+invalid:
+  - grep -rn TODO src/
+  - cat log.txt | grep ERROR

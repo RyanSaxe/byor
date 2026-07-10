@@ -1,0 +1,27 @@
+# A relational command rule. `pattern` anchors the `git push` command and
+# `has` searches its arguments, so the flag matches at any position
+# (`git push --force origin`, `git push origin main --force`, bare
+# `git push -f`). The anchored regex keeps `--force-with-lease` legal — the
+# safer flag is exactly what the agent_prompt steers to.
+id: no-force-push
+language: Bash
+severity: error
+message: Never force-push; it rewrites history others may have pulled.
+rule:
+  pattern: git push $$$ARGS
+  has:
+    kind: word
+    regex: ^(--force|-f)$
+    stopBy: end
+metadata:
+  byor:
+    rationale: >
+      A bare --force overwrites remote commits unconditionally, while
+      --force-with-lease fails when the remote moved under you.
+    agent_prompt: >
+      If the user asked for a history rewrite, use
+      `git push --force-with-lease`. Otherwise stop and ask before
+      rewriting remote history at all.
+    tags:
+      - commands
+      - git

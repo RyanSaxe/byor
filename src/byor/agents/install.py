@@ -69,7 +69,7 @@ AGENT_CHOICES = (
 # Harnesses that need a one-time manual step before their hook will fire; printed
 # after install so the user is not left wondering why nothing happens.
 HARNESS_MANUAL_STEPS: dict[Harness, str] = {
-    "codex": "Codex only runs trusted hooks: run `/hooks` in Codex to trust it.",
+    "codex": "Codex only runs trusted hooks: run `/hooks` in Codex to trust them (again after byor adds a new hook).",
 }
 
 

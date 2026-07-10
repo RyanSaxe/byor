@@ -2,7 +2,8 @@
 
 byor turns your ast-grep rules into directive feedback for AI coding agents,
 delivered inside the agent's work loop: a post-edit hook checks each edit as
-it lands, rather than a cleanup pass after the work is done. Every agent
+it lands, and a pre-command gate checks each shell command before it runs —
+rather than a cleanup pass after the work is done. Every post-edit
 integration wraps the same command:
 
 ```bash
@@ -267,6 +268,52 @@ scripts by following exactly those literal references — copying the helper to
 `__file__`-relative reference is invisible to that scan. byor's own Python
 checks share their file discovery this way (`.byor/scripts/lib/pyfiles.py`).
 
+## The pre-command gate
+
+The post-edit hook covers what agents write; the pre-command gate covers what
+they run. Claude Code, Codex, and Copilot expose a pre-execution hook
+(`PreToolUse` / `preToolUse`) that byor installs alongside the post-edit hook:
+
+```bash
+byor command-check --stdin-hook HARNESS     # what the hook runs
+byor command-check --command 'pip install x' [--repo PATH]   # test a rule by hand
+```
+
+Hook mode reads the harness's JSON payload on stdin, matches the pending
+command against your `language: Bash` command rules (see
+[docs/rules.md](rules.md)) and `command_checks`, and replies with the
+harness's permission decision. On a match the decision is `deny` and the
+reason is the rule's `agent_prompt` — the correction lands in the agent's
+context, it rewrites the command, and reruns. This is what a permission
+system cannot do: an allowlist says "no"; byor says "no, run this instead".
+
+Contract details:
+
+- **Always exit 0.** A deny is a deliberate JSON decision on stdout, never an
+  exit code, so a crashed hook fails open to *allow* — a byor bug can never
+  block your agent. The flip side: a broken command rule on disk silently
+  disables the whole gate; `byor doctor` reports exactly that.
+- **The fast path costs nothing extra.** With no command rules and no command
+  checks in scope, the hook exits before spawning any subprocess. With rules,
+  one `ast-grep --stdin` scan (~milliseconds) decides; total latency is
+  dominated by byor's own startup, the same cost profile as the post-edit
+  hook.
+- **Any match denies.** There is no severity threshold: command rules are
+  opt-in and exist to steer, so author them only for commands you always want
+  rewritten.
+- **`command_checks` are the script escape hatch.** byor pipes the pending
+  command to the script's stdin; nonzero exit denies with the script's output
+  as the correction. They run on every command, so keep them fast; a hanging
+  check is cut off and skipped.
+- **Steering, not a sandbox.** The gate corrects an agent typing a command
+  plainly. `sh -c "pip install x"` embeds the command in a string the Bash
+  parser correctly reads as a string, so it passes — by design. Do not present
+  command rules as a security boundary; that is the harness permission
+  system's job.
+
+OpenCode and Pi do not get the gate yet: their byor integrations are post-edit
+plugins, and pre-execution support there is planned separately.
+
 ## Installing and removing integrations
 
 `byor install` sets up the agents you choose (plus the harness-neutral `skill`)
@@ -307,9 +354,9 @@ Each integration lands in its agent's own configuration under your home director
 
 | Agent | Integration |
 | --- | --- |
-| `claude-code` | Real `PostToolUse` hook (`~/.claude/settings.json`) |
-| `codex` | Real `PostToolUse` hook (`~/.codex/hooks.json`, matcher `apply_patch\|Edit\|Write`); trust the hook via `/hooks` |
-| `copilot` | Real `postToolUse` hook (`~/.copilot/hooks/byor.json`) |
+| `claude-code` | Real `PostToolUse` + `PreToolUse` hooks (`~/.claude/settings.json`) |
+| `codex` | Real `PostToolUse` + `PreToolUse` hooks (`~/.codex/hooks.json`); trust them via `/hooks` |
+| `copilot` | Real `postToolUse` + `preToolUse` hooks (`~/.copilot/hooks/byor.json`) |
 | `opencode` | Real `tool.execute.after` plugin (`~/.config/opencode/plugin/byor.ts`) |
 | `pi` | Real `tool_result` extension (`~/.pi/agent/extensions/byor.ts`) |
 | `skill` | The `byor` skill (hub `SKILL.md` + `references/`) rendered into `~/.agents/skills/byor/` and `~/.claude/skills/byor/`; installed by `byor install` by default |
@@ -423,16 +470,22 @@ work.
 
 ### codex
 
-Install writes a `PostToolUse` hook (matcher `apply_patch|Edit|Write`) into
-`~/.codex/hooks.json`. Codex edits files through `apply_patch` (its real
-`tool_name`); `Edit`/`Write` remain in the matcher as Codex's documented
-aliases. Codex does not run a new hook until you trust it: run `/hooks` in the
-Codex session and approve the byor entry once — `byor hook install --agent
-codex` prints this reminder.
+Install writes a `PostToolUse` hook (matcher `apply_patch|Edit|Write`) and a
+`PreToolUse` gate (matcher `Bash`) into `~/.codex/hooks.json`. Codex edits
+files through `apply_patch` (its real `tool_name`); `Edit`/`Write` remain in
+the matcher as Codex's documented aliases. Codex reports shell commands under
+`tool_name: "Bash"` in the `PreToolUse` payload — the same name Claude Code
+uses — regardless of the underlying exec handler (`exec_command`,
+`unified_exec`), so the gate matches on `Bash` (verified live against codex
+0.144). Codex does not run new or changed hooks until you trust them: run
+`/hooks` in the Codex session and approve the byor entries — again after an
+upgrade adds a hook — which `byor hook install --agent codex` reminds you of.
 
 Codex must be recent enough that `apply_patch` edits fire `PostToolUse` hooks:
 older versions (through ~0.118) fired them only for the Bash tool, so byor saw
-no edits there.
+no edits there. A newly-installed gate is silent until trusted; a command byor
+never sees (a shell handler that doesn't emit `PreToolUse`) is simply
+allowed — consistent with the gate's fail-open design.
 
 ### claude-code
 
@@ -463,6 +516,33 @@ to the model — hence `>&2`. `agent-check` exits 2 exactly when there are
 diagnostics, so the instructions reach the model only when something needs
 fixing.
 
-Install is idempotent. `uninstall` removes only hook groups whose every
-command is byor's; a group you mixed your own hooks into counts as
-user-edited and stays.
+The pre-command gate lands next to it as a `PreToolUse` group (matcher
+`Bash`, command `byor command-check --stdin-hook claude-code` — no `>&2`,
+because the gate replies with a JSON permission decision on stdout):
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "byor command-check --stdin-hook claude-code"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+A deny replies with `hookSpecificOutput.permissionDecision: "deny"` and the
+correction in `permissionDecisionReason`, which Claude Code feeds back to the
+model; an allow prints nothing. Either way the hook exits 0.
+
+Install is idempotent, and upgrading from a post-edit-only install adds the
+`PreToolUse` group without touching the existing one. `uninstall` removes only
+hook groups whose every command is byor's; a group you mixed your own hooks
+into counts as user-edited and stays.

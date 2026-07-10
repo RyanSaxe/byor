@@ -29,6 +29,7 @@ __all__ = (
     "ast_grep_version",
     "resolve_ast_grep",
     "rule_load_error",
+    "scan_command",
     "scan_files",
 )
 
@@ -181,6 +182,80 @@ def scan_files(
 def _without_exit_summary(stderr: str) -> str:
     lines = stderr.strip().splitlines()
     return "\n".join(line for line in lines if not EXIT_SUMMARY_PATTERN.fullmatch(line.strip())).strip()
+
+
+# Windows CreateProcess caps a command line at 32,767 chars; batching inline
+# rules well below that leaves headroom for the executable and flags.
+INLINE_RULES_BATCH_LIMIT = 20_000
+
+
+def scan_command(executable: Path, command_text: str, *, rules: Sequence[str]) -> ScanResult:
+    """Scan one shell command string against inline Bash rule texts.
+
+    This is the pre-command gate's engine: `--inline-rules` joined with YAML
+    document separators, applied to `command_text` on stdin (`--config` cannot
+    scan stdin with more than one rule). Runs from an empty scratch directory
+    so no repository or home sgconfig interferes. `rules` must be Bash-language
+    rule texts — stdin is parsed as one language, so the caller filters.
+    Oversized rule sets are batched under the Windows argv limit and their
+    matches merged. Unparseable output raises ByorError, as in `scan_files`.
+    """
+    if not rules:
+        return ScanResult(matches=[], warnings="")
+    matches: list[ScanMatch] = []
+    warnings: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="byor-command-scan-") as scratch:
+        for blob in _rule_batches(rules):
+            result = _scan_stdin(executable, command_text, inline_rules=blob, cwd=scratch)
+            matches.extend(result.matches)
+            if result.warnings:
+                warnings.append(result.warnings)
+    return ScanResult(matches=matches, warnings="\n".join(warnings))
+
+
+def _scan_stdin(executable: Path, command_text: str, *, inline_rules: str, cwd: str) -> ScanResult:
+    argv = [
+        str(executable),
+        "scan",
+        "--stdin",
+        "--inline-rules",
+        inline_rules,
+        "--json=compact",
+        "--include-metadata",
+        "--color",
+        "never",
+    ]
+    result = subprocess.run(
+        argv,
+        input=command_text,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=cwd,
+        check=False,
+    )
+    matches = _parse_scan_output(result.stdout)
+    if matches is None:
+        detail = result.stderr.strip() or result.stdout.strip()
+        message = f"`{executable.name} scan --stdin` failed (exit {result.returncode})"
+        raise ByorError(f"{message}:\n{detail}" if detail else message)
+    return ScanResult(matches=matches, warnings=_without_exit_summary(result.stderr))
+
+
+def _rule_batches(rules: Sequence[str]) -> list[str]:
+    batches: list[str] = []
+    current: list[str] = []
+    size = 0
+    for rule in rules:
+        if current and size + len(rule) > INLINE_RULES_BATCH_LIMIT:
+            batches.append("\n---\n".join(current))
+            current, size = [], 0
+        current.append(rule)
+        size += len(rule)
+    if current:
+        batches.append("\n---\n".join(current))
+    return batches
 
 
 def rule_load_error(executable: Path, rule_text: str) -> str | None:

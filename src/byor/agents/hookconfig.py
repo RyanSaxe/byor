@@ -2,7 +2,9 @@
 
 BYOR installs exact hook entries into each harness configuration and later verifies that those
 entries still match the current package. This module owns that file shape so install, doctor, and
-self-heal agree on one contract.
+self-heal agree on one contract. Each harness carries one spec per hook event — the post-edit
+feedback hook and the pre-command gate — and the per-harness API (install, uninstall, problem)
+iterates both, so callers stay event-agnostic.
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from byor.errors import ConfigError
 from byor.io.fsio import write_text_atomic
@@ -21,6 +23,7 @@ if TYPE_CHECKING:
     from byor.agents.harness import Harness, JsonValue
 
 __all__ = (
+    "HookEvent",
     "HookSpec",
     "global_hook_dir",
     "hook_command",
@@ -30,14 +33,22 @@ __all__ = (
     "uninstall_hook",
 )
 
-# agent-check fails open and exits 0 for every harness except claude-code (which
-# reads exit 2 + stderr), so no shell `|| true` guard is needed on the command.
+# agent-check and command-check fail open and exit 0 for every harness except
+# claude-code's post-edit hook (which reads exit 2 + stderr), so no shell
+# `|| true` guard is needed on the commands. Neither signature is a substring
+# of the other, so per-event detection cannot cross-match.
 BYOR_COMMAND_SIGNATURE = "byor agent-check --stdin-hook"
+BYOR_PRECOMMAND_SIGNATURE = "byor command-check --stdin-hook"
+
+HookEvent = Literal["post-edit", "pre-command"]
 
 
 @dataclass(frozen=True)
 class HookSpec:
     harness: Harness
+    event: HookEvent
+    signature: str
+    """The byor command this spec installs and detects, without the harness arg."""
     global_relpath: str
     """Path relative to the harness's global config dir."""
     key_path: tuple[str, ...]
@@ -57,26 +68,65 @@ class HookSpec:
     writes it wholesale and uninstall deletes it — no user entries to preserve."""
 
 
-HOOK_SPECS: dict[Harness, HookSpec] = {
-    "claude-code": HookSpec(
+HOOK_SPECS: dict[tuple[Harness, HookEvent], HookSpec] = {
+    ("claude-code", "post-edit"): HookSpec(
         harness="claude-code",
+        event="post-edit",
+        signature=BYOR_COMMAND_SIGNATURE,
         global_relpath="settings.json",
         key_path=("hooks", "PostToolUse"),
         matcher="Write|Edit|MultiEdit",
         nests_command=True,
         stderr_feedback=True,
     ),
-    "codex": HookSpec(
+    ("claude-code", "pre-command"): HookSpec(
+        harness="claude-code",
+        event="pre-command",
+        signature=BYOR_PRECOMMAND_SIGNATURE,
+        global_relpath="settings.json",
+        key_path=("hooks", "PreToolUse"),
+        matcher="Bash",
+        nests_command=True,
+    ),
+    ("codex", "post-edit"): HookSpec(
         harness="codex",
+        event="post-edit",
+        signature=BYOR_COMMAND_SIGNATURE,
         global_relpath="hooks.json",
         key_path=("hooks", "PostToolUse"),
         matcher="apply_patch|Edit|Write",
         nests_command=True,
     ),
-    "copilot": HookSpec(
+    ("codex", "pre-command"): HookSpec(
+        harness="codex",
+        event="pre-command",
+        signature=BYOR_PRECOMMAND_SIGNATURE,
+        global_relpath="hooks.json",
+        # Codex reports shell commands under the tool_name "Bash" in the
+        # PreToolUse event (verified live against codex 0.144), regardless of
+        # the underlying exec handler — the same name Claude Code uses.
+        key_path=("hooks", "PreToolUse"),
+        matcher="Bash",
+        nests_command=True,
+    ),
+    ("copilot", "post-edit"): HookSpec(
         harness="copilot",
+        event="post-edit",
+        signature=BYOR_COMMAND_SIGNATURE,
         global_relpath="hooks/byor.json",
         key_path=("hooks", "postToolUse"),
+        matcher=None,
+        nests_command=False,
+        typed_entry=True,
+        root_fields={"version": 1},
+        owns_file=True,
+    ),
+    ("copilot", "pre-command"): HookSpec(
+        harness="copilot",
+        event="pre-command",
+        signature=BYOR_PRECOMMAND_SIGNATURE,
+        global_relpath="hooks/byor.json",
+        key_path=("hooks", "preToolUse"),
         matcher=None,
         nests_command=False,
         typed_entry=True,
@@ -87,52 +137,71 @@ HOOK_SPECS: dict[Harness, HookSpec] = {
 
 
 def install_hook(harness: Harness) -> list[str]:
-    spec = HOOK_SPECS[harness]
+    specs = _harness_specs(harness)
+    if specs[0].owns_file:
+        return _install_owned_hooks(harness, specs)
+    messages: list[str] = []
+    for spec in specs:
+        messages.extend(_install_spec(spec))
+    return messages
+
+
+def _install_spec(spec: HookSpec) -> list[str]:
     path = _config_path(spec)
     relpath = _display_relpath(spec)
-    if spec.owns_file:
-        return _install_owned_hook(spec, path, relpath=relpath)
     config = _load_config(path, relpath)
     entries = _entries(config, spec, relpath=relpath)
     current = _byor_entry(spec)
     if current in entries:
         return []
-    kept = [entry for entry in entries if not _is_byor_entry(entry)]
-    if any(_contains_byor_command(entry) for entry in kept):
+    kept = [entry for entry in entries if not _is_byor_entry(entry, signature=spec.signature)]
+    if any(_contains_byor_command(entry, signature=spec.signature) for entry in kept):
         return []
     _set_entries(config, spec, entries=[*kept, current])
     _save_config(path, config)
-    return [f"Installed a {harness} post-edit hook in {relpath}"]
+    return [f"Installed a {spec.harness} {spec.event} hook in {relpath}"]
 
 
-def _install_owned_hook(spec: HookSpec, path: Path, *, relpath: str) -> list[str]:
-    desired = _owned_config(spec)
+def _install_owned_hooks(harness: Harness, specs: list[HookSpec]) -> list[str]:
+    # All owned specs for a harness share one byor-owned file; install compares
+    # the whole file to the union of their entries, so an old single-event file
+    # is upgraded wholesale on the next install or self-heal.
+    spec = specs[0]
+    path = _config_path(spec)
+    relpath = _display_relpath(spec)
+    desired = _owned_config(specs)
     if path.is_file() and _load_config(path, relpath) == desired:
         return []
     _save_config(path, desired)
-    return [f"Installed a {spec.harness} post-edit hook in {relpath}"]
+    events = " and ".join(owned.event for owned in specs)
+    return [f"Installed the {harness} {events} hooks in {relpath}"]
 
 
-def _owned_config(spec: HookSpec) -> dict[str, JsonValue]:
-    config: dict[str, JsonValue] = dict(spec.root_fields)
-    _set_entries(config, spec, entries=[_byor_entry(spec)])
+def _owned_config(specs: list[HookSpec]) -> dict[str, JsonValue]:
+    config: dict[str, JsonValue] = dict(specs[0].root_fields)
+    for spec in specs:
+        _set_entries(config, spec, entries=[_byor_entry(spec)])
     return config
 
 
 def uninstall_hook(harness: Harness) -> list[str]:
-    spec = HOOK_SPECS[harness]
+    specs = _harness_specs(harness)
+    if specs[0].owns_file:
+        return _uninstall_owned_hooks(harness, specs)
+    messages: list[str] = []
+    for spec in specs:
+        messages.extend(_uninstall_spec(spec))
+    return messages
+
+
+def _uninstall_spec(spec: HookSpec) -> list[str]:
     path = _config_path(spec)
-    relpath = _display_relpath(spec)
     if not path.is_file():
         return []
-    if spec.owns_file:
-        if not hook_installed(harness):
-            return []
-        path.unlink()
-        return [f"Removed the {harness} post-edit hook from {relpath}"]
+    relpath = _display_relpath(spec)
     config = _load_config(path, relpath)
     entries = _entries(config, spec, relpath=relpath)
-    kept = [entry for entry in entries if not _is_byor_entry(entry)]
+    kept = [entry for entry in entries if not _is_byor_entry(entry, signature=spec.signature)]
     if len(kept) == len(entries):
         return []
     _set_entries(config, spec, entries=kept)
@@ -140,7 +209,28 @@ def uninstall_hook(harness: Harness) -> list[str]:
         _save_config(path, config)
     else:
         path.unlink()
-    return [f"Removed the {harness} post-edit hook from {relpath}"]
+    return [f"Removed the {spec.harness} {spec.event} hook from {relpath}"]
+
+
+def _uninstall_owned_hooks(harness: Harness, specs: list[HookSpec]) -> list[str]:
+    spec = specs[0]
+    path = _config_path(spec)
+    if not path.is_file():
+        return []
+    relpath = _display_relpath(spec)
+    config = _load_config(path, relpath)
+    # Hooks are managed per-agent, not per-event: any byor entry in the owned
+    # file (a legacy single-event one included) means the whole file goes.
+    if not any(_spec_has_byor_entry(config, owned, relpath=relpath) for owned in specs):
+        return []
+    path.unlink()
+    return [f"Removed the {harness} hooks from {relpath}"]
+
+
+def _spec_has_byor_entry(config: dict[str, JsonValue], spec: HookSpec, *, relpath: str) -> bool:
+    return any(
+        _contains_byor_command(entry, signature=spec.signature) for entry in _entries(config, spec, relpath=relpath)
+    )
 
 
 def hook_installed(harness: Harness) -> bool:
@@ -148,10 +238,17 @@ def hook_installed(harness: Harness) -> bool:
 
 
 def hook_problem(harness: Harness) -> str | None:
-    spec = HOOK_SPECS[harness]
+    for spec in _harness_specs(harness):
+        problem = _spec_problem(spec)
+        if problem is not None:
+            return problem
+    return None
+
+
+def _spec_problem(spec: HookSpec) -> str | None:
     path = _config_path(spec)
     if not path.is_file():
-        return f"the {harness} hook is not installed"
+        return f"the {spec.harness} {spec.event} hook is not installed"
     relpath = _display_relpath(spec)
     entries = _entries(_load_config(path, relpath), spec, relpath=relpath)
     if _byor_entry(spec) in entries:
@@ -159,21 +256,27 @@ def hook_problem(harness: Harness) -> str | None:
     # An entry the user mixed their own commands into is user-owned: install_hook
     # leaves it alone, so doctor must treat it as healthy rather than demand a
     # reinstall that would never change anything.
-    if any(_contains_byor_command(entry) and not _is_byor_entry(entry) for entry in entries):
+    if any(
+        _contains_byor_command(entry, signature=spec.signature) and not _is_byor_entry(entry, signature=spec.signature)
+        for entry in entries
+    ):
         return None
-    if any(_is_byor_entry(entry) for entry in entries):
-        return f"the {harness} hook is out of date"
-    return f"the {harness} hook is not installed"
+    if any(_is_byor_entry(entry, signature=spec.signature) for entry in entries):
+        return f"the {spec.harness} {spec.event} hook is out of date"
+    return f"the {spec.harness} {spec.event} hook is not installed"
 
 
-def hook_command(harness: Harness) -> str:
-    spec = HOOK_SPECS[harness]
-    base = f"{BYOR_COMMAND_SIGNATURE} {harness}"
+def hook_command(spec: HookSpec) -> str:
+    base = f"{spec.signature} {spec.harness}"
     return f"{base} >&2" if spec.stderr_feedback else base
 
 
 def global_hook_dir(harness: Harness, home: Path) -> Path:
     return home / _GLOBAL_DIRS[harness]
+
+
+def _harness_specs(harness: Harness) -> list[HookSpec]:
+    return [spec for (name, _event), spec in HOOK_SPECS.items() if name == harness]
 
 
 _GLOBAL_DIRS: dict[Harness, str] = {
@@ -192,7 +295,7 @@ def _display_relpath(spec: HookSpec) -> str:
 
 
 def _byor_entry(spec: HookSpec) -> dict[str, JsonValue]:
-    command = hook_command(spec.harness)
+    command = hook_command(spec)
     if spec.nests_command:
         entry: dict[str, JsonValue] = {"hooks": [{"type": "command", "command": command}]}
     elif spec.typed_entry:
@@ -273,13 +376,13 @@ def _descend(config: dict[str, JsonValue], keys: tuple[str, ...]) -> JsonValue:
     return node
 
 
-def _is_byor_entry(entry: JsonValue) -> bool:
+def _is_byor_entry(entry: JsonValue, *, signature: str) -> bool:
     commands = _entry_commands(entry)
-    return bool(commands) and all(_is_byor_command(command) for command in commands)
+    return bool(commands) and all(_is_byor_command(command, signature=signature) for command in commands)
 
 
-def _contains_byor_command(entry: JsonValue) -> bool:
-    return any(_is_byor_command(command) for command in _entry_commands(entry))
+def _contains_byor_command(entry: JsonValue, *, signature: str) -> bool:
+    return any(_is_byor_command(command, signature=signature) for command in _entry_commands(entry))
 
 
 def _entry_commands(entry: JsonValue) -> Sequence[JsonValue]:
@@ -291,5 +394,5 @@ def _entry_commands(entry: JsonValue) -> Sequence[JsonValue]:
     return [entry.get("command")]
 
 
-def _is_byor_command(command: JsonValue) -> bool:
-    return isinstance(command, str) and BYOR_COMMAND_SIGNATURE in command
+def _is_byor_command(command: JsonValue, *, signature: str) -> bool:
+    return isinstance(command, str) and signature in command

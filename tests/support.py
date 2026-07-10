@@ -120,6 +120,35 @@ def write_package_rule(
     return write_rule(path, rule_id, tags=tags)
 
 
+COMMAND_RULE_TEMPLATE = "id: {rule_id}\nlanguage: Bash\nmessage: {message}\nrule:\n  pattern: pip install $$$ARGS\n"
+
+
+def write_command_rule(path: Path, rule_id: str, *, message: str = "Use uv instead.") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(COMMAND_RULE_TEMPLATE.format(rule_id=rule_id, message=message))
+    return path
+
+
+def write_global_command_rule(home: Path, relpath: str, *, rule_id: str) -> Path:
+    path = home / "xdg" / "byor" / "commands" / relpath
+    return write_command_rule(path, rule_id)
+
+
+def write_package_command_rule(home: Path, package: str, *, relpath: str, rule_id: str) -> Path:
+    path = home / "xdg" / "byor" / "packages" / package / "commands" / relpath
+    return write_command_rule(path, rule_id)
+
+
+# The generated copy of global command rules the pre-command gate reads.
+def command_mirror(repo: Path) -> Path:
+    return repo / ".byor" / "commands" / "personal" / "global"
+
+
+# The generated copy of installed-package command rules the gate reads.
+def package_command_mirror(repo: Path) -> Path:
+    return repo / ".byor" / "commands" / "personal" / "packages"
+
+
 def install_package(repo: Path, name: str) -> None:
     local = load_local_config(repo)
     local.packages.append(name)

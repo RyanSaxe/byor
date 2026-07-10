@@ -32,6 +32,22 @@ them:
 ast-grep test -c examples/sgconfig.yml --skip-snapshot-tests
 ```
 
+## Command rules library
+
+Command rules are the same YAML with `language: Bash`; byor's pre-command gate
+denies a matching shell command before an agent runs it and hands back the
+`agent_prompt` as the correction. In a repo they live under `.byor/commands/`
+(never in sgconfig `ruleDirs`); here they sit in
+[`command-rules/`](command-rules) with `valid:`/`invalid:` command lines in
+[`command-rule-tests/`](command-rule-tests), run by the same `ast-grep test`
+invocation above.
+
+| Rule | Demonstrates |
+| --- | --- |
+| [`prefer-rg`](command-rules/prefer-rg.yml) | The one-line command rule: a bare pattern matches `grep` anywhere in a pipeline or compound command, never inside a quoted string. |
+| [`no-pip-install`](command-rules/no-pip-install.yml) | Covering a command's spellings with `any:` (`pip`, `pip3`, `python -m pip`) while `uv pip install` stays legal — the command name is the choke point. |
+| [`no-force-push`](command-rules/no-force-push.yml) | A relational rule: `has:` with an anchored `regex` matches `--force`/`-f` at any argument position while keeping `--force-with-lease` legal. |
+
 ## Config setup
 
 byor goes beyond plain ast-grep by wiring external linters and type checkers
@@ -52,6 +68,11 @@ into the same loop and feeding their output to AI agents.
   agent-only check that rejects hand-edits to `uv.lock`. The post-edit hook
   fires only on the agent's own file edits, so `uv add` run in a terminal
   never trips it.
+- [`config/scripts/protect-ssh.sh`](config/scripts/protect-ssh.sh) — a
+  `command_check`, the pre-command gate's script escape hatch: byor pipes the
+  pending shell command to stdin and a nonzero exit denies it. A script fits
+  here because the match depends on `$HOME` expansion, which a static pattern
+  cannot see.
 
 The scripts are exercised by the test suite (`tests/test_check_scripts.py`) in
 both directions: the failure they exist to catch, and the ordinary changes
