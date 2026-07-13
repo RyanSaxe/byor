@@ -29,7 +29,7 @@ matches structure, not a string, and carries the instruction your agent gets
 when it trips:
 
 ```yaml
-# .byor/rules/project/no-routing-functions.yml  (core case; examples/ also covers await/yield)
+# .byor/rules/project/no-routing-functions.yml
 id: no-routing-functions
 language: Python
 severity: warning
@@ -50,6 +50,9 @@ metadata:
       Call the implementation directly, or give the function real behavior
       (validation, auth, retries). Don't keep a pure pass-through.
 ```
+
+That is the core shape. The [full rule](examples/rules/no-routing-functions.yml)
+also matches `await`, `yield from`, and docstringed bodies.
 
 byor exists because agents don't follow prose. Every harness asks you to put
 your standards in an `AGENTS.md`, a skill, a Markdown style guide. The agent
