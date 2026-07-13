@@ -101,22 +101,26 @@ lines a hook payload's edit touched, so it requires `--stdin-hook`, and falls
 back to `diff` then `file` when the edit contents cannot be located. Under
 `edit`/`diff` scope, files missing on disk are skipped silently.
 
-`--stdin-hook HARNESS` (claude-code|codex|copilot, instead of `--files`)
-reads that harness's post-edit JSON payload on stdin, normalizes it to the
-edited file(s) and edit text, and replies in the harness's own feedback format
-(claude-code via stderr + exit 2; codex/copilot via a JSON envelope on
-stdout). A codex payload carries the patch text in `tool_input.command` as an
-`apply_patch` envelope; byor reads the changed files and their added lines
-from its `*** Add File:` / `*** Update File:` sections, following `*** Move
-to:` renames to the destination path. Payloads without a recognizable file, including malformed
-ones, exit 0 without scanning. Hook mode resolves the repository from the
-edited file, not the session's working directory: an agent editing a file in
-another repo gets that repo's rules (`--repo` still overrides). In a repo with no `.byor/config.yml`, hook mode
-scans the edit against your synced global rules and global checks instead;
-it stays silent only when you have neither (no `~/sgconfig.yml` from
-`byor install` and no global `checks:`). Hook feedback uses the same
-rendering, but its summary line reads `BYOR found N issues in AI-written
-code.` There the diagnostics describe the agent's own edit.
+`--stdin-hook HARNESS` (claude-code|codex|copilot, instead of `--files`) reads
+that harness's post-edit JSON payload on stdin, normalizes it to the edited
+files and edit text, and replies in the harness's own feedback format:
+claude-code via stderr + exit 2, codex/copilot via a JSON envelope on stdout. A
+codex payload carries the patch text in `tool_input.command` as an
+`apply_patch` envelope, so byor reads the changed files and their added lines
+from its `*** Add File:` / `*** Update File:` sections, following `*** Move to:`
+renames to the destination path. A payload with no recognizable file, malformed
+ones included, exits 0 without scanning.
+
+Hook mode resolves the repository from the edited file, not the session's
+working directory, so an agent editing a file in another repo gets that repo's
+rules (`--repo` still overrides). In a repo with no `.byor/config.yml`, it scans
+the edit against your synced global rules and global checks instead, and stays
+silent only when you have neither: no `~/sgconfig.yml` from `byor install` and
+no global `checks:`.
+
+Hook feedback uses the same rendering, but the summary line reads `BYOR found N
+issues in AI-written code.`, since the diagnostics describe the agent's own
+edit.
 
 ## Extra checks
 
@@ -132,22 +136,24 @@ checks:
     tags: [format]
 ```
 
-`run` is shlex-split into argv and invoked directly (never through a shell);
-the in-scope files whose extension is listed in `extensions` are appended as
+`run` is shlex-split into argv and invoked directly, never through a shell. The
+in-scope files whose extension is listed in `extensions` are appended as
 trailing arguments (an empty `extensions` matches every in-scope file), so **a
-check command must accept a list of file paths**. When no file paths are
-provided, the command must treat that as a whole-repo scan while respecting
-normal ignored-file rules; generated CI gates intentionally run checks that way,
-so a check that quietly no-ops without arguments passes every CI run while
-enforcing nothing.
-The command runs without a shell, which keeps a committed check string from being a
-shell-injection vector, so there is no `&&`, pipe, redirection, or alias.
-Anything multi-step (autofix, then format, then report the rest) belongs in a
-script the check points at; byor expands a leading `~`/`~/` in the command so
-that script can live under `~/.config/byor` and resolve in every repo (see
-[Check scripts](#check-scripts)). Checks merge by `name`: a repo check wins
-over a same-named package check, which wins over a global one.
-`.byor/local.yml` disables them per repo by name or by tag:
+check command must accept a list of file paths**. With no file paths, the
+command must scan the whole repo while respecting ignored-file rules. Generated
+CI gates run checks that way, so a check that quietly no-ops without arguments
+passes every CI run while enforcing nothing.
+
+Running without a shell keeps a committed check string from being a
+shell-injection vector: no `&&`, pipe, redirection, or alias. Anything
+multi-step (autofix, then format, then report the rest) belongs in a script the
+check points at, and byor expands a leading `~`/`~/` in the command so that
+script can live under `~/.config/byor` and resolve in every repo (see
+[Check scripts](#check-scripts)).
+
+Checks merge by `name`: a repo check wins over a same-named package check, which
+wins over a global one. `.byor/local.yml` disables them per repo by name or by
+tag:
 
 ```yaml
 checks:

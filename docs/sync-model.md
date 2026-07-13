@@ -161,20 +161,25 @@ jobs:
 
 `byor init --gate` automates that CI file and a matching
 `.pre-commit-config.yaml`, and first makes them self-contained. It **promotes
-everything** — every effective global and package rule into `.byor/rules/project/`,
-every global and package check into `.byor/config.yml`, and any check that runs
-a `~/` script into a committed copy under `.byor/scripts/` with the command
-repointed. Each vendored copy carries a provenance marker recording its source:
-self-heal re-vendors the copy when that source changes on your machine, and
-removing the marker makes the copy user-owned, never rewritten. The emitted
-artifacts then run `ast-grep scan` through uvx with a pinned `ast-grep-cli`
-version, so the gate never drifts with upstream releases, and run each check
-directly. The whole gate enforces with **no byor and no `~/.config/byor`**:
-only uv, ast-grep, and the check commands. pre-commit passes each check its staged matching files
-(via a `files:` filter from `extensions`); CI runs each check whole-repo,
-mirroring byor's two scan modes. The workflow gates pushes to the branch
-recorded as `gate_branch` in `.byor/config.yml` at install time, so
-regenerating from a feature-branch checkout never rewrites it.
+everything**: every effective global and package rule into
+`.byor/rules/project/`, every global and package check into `.byor/config.yml`,
+and any check that runs a `~/` script into a committed copy under
+`.byor/scripts/` with the command repointed.
+
+Each vendored copy carries a provenance marker recording its source. Self-heal
+re-vendors the copy when that source changes on your machine; removing the
+marker makes the copy user-owned, never rewritten.
+
+The emitted artifacts run `ast-grep scan` through uvx with a pinned
+`ast-grep-cli` version, so the gate never drifts with upstream releases, and run
+each check directly. The whole gate enforces with **no byor and no
+`~/.config/byor`**: only uv, ast-grep, and the check commands. pre-commit passes
+each check its staged matching files (via a `files:` filter from `extensions`);
+CI runs each check whole-repo, mirroring byor's two scan modes.
+
+The workflow gates pushes to the branch recorded as `gate_branch` in
+`.byor/config.yml` at install time, so regenerating from a feature-branch
+checkout never rewrites it.
 
 `fail_on` in `.byor/config.yml` sets how strict the gate is. The default,
 `fail_on: all`, appends `--error` so every rule blocks regardless of severity.
@@ -275,10 +280,12 @@ already committed (the team uses ast-grep independently), byor's edits to it
 still show in `git status`; init warns when it detects this.
 
 There is no deinit command yet, so offboarding a private setup is manual:
-delete `.byor/` and the repo-root `sgconfig.yml` (unless the team owns it),
-remove the `Managed by BYOR` block from `.git/info/exclude`, delete any
-`Managed by BYOR` hooks from `.git/hooks/` — including a `pre-commit.legacy`
-left by `pre-commit install`, which carries the marker and must be deleted
-too — and drop the repo's line from `~/.config/byor/repos.yml` (under
-`$XDG_CONFIG_HOME/byor` when that is set) so `sync --all` and `doctor` stop
-looking for it.
+
+- Delete `.byor/` and the repo-root `sgconfig.yml` (unless the team owns it).
+- Remove the `Managed by BYOR` block from `.git/info/exclude`.
+- Delete any `Managed by BYOR` hooks from `.git/hooks/`, including a
+  `pre-commit.legacy` left by `pre-commit install`: it carries the marker and
+  must be deleted too.
+- Drop the repo's line from `~/.config/byor/repos.yml` (under
+  `$XDG_CONFIG_HOME/byor` when that is set), so `sync --all` and `doctor` stop
+  looking for it.
