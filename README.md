@@ -56,12 +56,14 @@ it writes the check.
 ## Install
 
 ```bash
-uv tool install byor && byor install   # CLI + skill + agent hooks (once)
-byor init                              # optional: repo-scoped or team rules
+uv tool install byor    # the CLI (bundles ast-grep)
+byor install            # editor + agent integrations, once per machine
 ```
 
-byor bundles ast-grep and needs Python 3.11+. Rules work in any language
-ast-grep supports. Then open your agent in the repo and say **"set up byor"**.
+byor needs Python 3.11+; rules work in any language ast-grep supports. That is
+the whole machine setup, and your global rules already apply in every repo. To
+scope rules to one repository or share them with a team, run `byor init` there,
+or open your agent in the repo and say **"set up byor"**, which does it for you.
 
 ## Where rules run
 
@@ -118,13 +120,32 @@ Details in [docs/ai-agents.md](docs/ai-agents.md).
 
 ## Commands
 
+Setup, run once per machine or per repo:
+
 ```text
-Setup      install · init · hook · doctor · profile · package
-Rules      add · list · edit · remove · promote · exclude · include
-Automatic  agent-check · command-check · sync
+byor install   register byor's editor + agent integrations (machine-wide)
+byor init      set up byor in a repository (docs/sync-model.md)
+byor hook      add or remove one agent integration
+byor doctor    check that everything is wired up
+byor profile   list or apply exclusion profiles
+byor package   list or install opt-in rule bundles
 ```
 
-Every command takes `--help`; repo commands take `--repo PATH`.
+Rules, mostly run by your agent as it captures feedback ([docs/rules.md](docs/rules.md)):
+
+```text
+byor add       create a rule (--command for a command rule)
+byor list      show rules and where they resolve from
+byor edit      open a rule in $EDITOR
+byor remove    delete a rule
+byor promote   move a personal or package rule into shared config
+byor exclude   turn off a global rule in this repo
+byor include   turn a previously excluded rule back on
+```
+
+byor runs the rest itself: `byor agent-check` (the post-edit hook), `byor
+command-check` (the pre-command gate), and `byor sync` (mirror global rules into
+a repo). Every command takes `--help`; repo commands take `--repo PATH`.
 
 ## Documentation
 
