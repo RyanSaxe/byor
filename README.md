@@ -24,22 +24,31 @@ def get_user(user_id: int) -> User:
 
 No linter flags it. Whether a pass-through wrapper is worth banning is a matter
 of taste, and a linter ships only the rules everyone already agrees on. byor
-flags it, because you decided your codebase shouldn't have them. A rule is an
-ast-grep pattern plus an instruction for your agent:
+flags it, because you decided your codebase shouldn't have them. The rule
+matches structure, not a string, and carries the instruction your agent gets
+when it trips:
 
 ```yaml
-# .byor/rules/project/no-requests.yml
-id: no-requests
+# .byor/rules/project/no-routing-functions.yml  (core case; examples/ also covers await/yield)
+id: no-routing-functions
 language: Python
-severity: error
-message: This codebase uses httpx, not requests.
+severity: warning
+message: A function whose only job is forwarding a call.
 rule:
-  any:
-    - pattern: import requests
-    - pattern: from requests import $$$NAMES
+  kind: function_definition
+  has:
+    field: body
+    has:
+      kind: return_statement
+      pattern: return $CALLEE($$$ARGS)
+      all:
+        - nthChild: 1                          # the only statement
+        - nthChild: { position: 1, reverse: true }
 metadata:
   byor:
-    agent_prompt: Use httpx instead. Do not add requests to the dependencies.
+    agent_prompt: >
+      Call the implementation directly, or give the function real behavior
+      (validation, auth, retries). Don't keep a pure pass-through.
 ```
 
 byor exists because agents don't follow prose. Every harness asks you to put
@@ -101,6 +110,32 @@ follow the same scopes under `.byor/commands/`. Packages and profiles tune which
 rules apply where; see [docs/rules.md](docs/rules.md).
 
 ## AI agents
+
+Agents are good at making an error disappear instead of fixing it. Hit a type
+error and one will reach for `cast()` or a `# type: ignore` rather than correct
+the signature. A rule catches the dodge:
+
+```yaml
+# .byor/rules/project/no-type-suppression.yml
+id: no-type-suppression
+language: Python
+severity: error
+message: Don't silence the type checker. Fix the type.
+rule:
+  any:
+    - pattern: cast($TYPE, $VALUE)
+    - kind: comment
+      regex: '#\s*type:\s*ignore'
+metadata:
+  byor:
+    agent_prompt: >
+      Fix the type at its source: narrow with a guard, add an @overload,
+      correct the annotation, or use a Protocol. Use cast or `# type: ignore`
+      only when the type system genuinely cannot express the shape.
+```
+
+The post-edit hook feeds that back the moment the agent writes the suppression,
+so it fixes the type instead of hiding it. Install the agents you use:
 
 ```bash
 byor install --agents claude-code,codex
