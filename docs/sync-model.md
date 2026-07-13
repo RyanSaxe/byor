@@ -1,8 +1,7 @@
 # The Sync Model
 
-Everything in this document exists so the inner loop is dependable: rules
-resolve the same way on every machine, and a fresh clone can lint with no byor
-installed.
+This document exists so the inner loop is dependable: rules resolve the same
+way on every machine, and a fresh clone can lint with no byor installed.
 
 ## Why copies, not symlinks
 
@@ -11,11 +10,11 @@ each repo's `.byor/rules/personal/global/`. The primary reason is the override
 model: because each repo holds its own copy of a global rule, a project or
 local rule can shadow it by ID, a rule can be promoted from global into the
 project, and a teammate's committed rule can win on the next sync. A single
-shared symlink target could not express those behaviors. Copies are also what
-let a fresh clone lint with zero byor installed.
+shared symlink target could not express those behaviors. Copies also let a
+fresh clone lint with zero byor installed.
 
-A symlinked *directory* in `ruleDirs` would in fact load, so symlinking is not
-strictly impossible. But ast-grep does not follow symlinked rule *files* or
+A symlinked *directory* in `ruleDirs` does load, so symlinking is not strictly
+impossible. But ast-grep does not follow symlinked rule *files* or
 symlinked child directories inside a rule directory, and `ruleDirs` does not
 accept globs, so copies are also the only approach that works reliably with
 plain `ast-grep scan` and `ast-grep lsp`. The cost is duplication; the benefits
@@ -64,7 +63,7 @@ The exceptions: `byor sync` itself (its body is the sync),
 `byor sync --check`, which reports without writing and exits 3 when stale,
 `byor init`, `byor profile add`, and `byor package add`, which sync as one of
 their own steps, and `byor doctor`, which is read-only — it reports staleness
-and the command that fixes it instead of repairing anything itself.
+and the command that fixes it instead of repairing anything.
 
 ```bash
 byor sync           # mirror this repo
@@ -143,7 +142,7 @@ packages claiming one ID is a hard error.
 `ast-grep scan` works with project rules immediately. Personal rules appear
 after `byor init` (or any byor command) runs.
 
-That property is what makes CI cheap: a fresh clone can gate on the committed
+That property makes CI cheap: a fresh clone can gate on the committed
 project rules with zero byor installed. Use `--error` so warning severities
 fail the build (a plain `ast-grep scan` exits 0 on warnings):
 
@@ -171,7 +170,7 @@ removing the marker makes the copy user-owned, never rewritten. The emitted
 artifacts then run `ast-grep scan` through uvx with a pinned `ast-grep-cli`
 version, so the gate never drifts with upstream releases, and run each check
 directly. The whole gate enforces with **no byor and no `~/.config/byor`**:
-just uv, ast-grep, and the check commands. pre-commit passes each check its staged matching files
+only uv, ast-grep, and the check commands. pre-commit passes each check its staged matching files
 (via a `files:` filter from `extensions`); CI runs each check whole-repo,
 mirroring byor's two scan modes. The workflow gates pushes to the branch
 recorded as `gate_branch` in `.byor/config.yml` at install time, so

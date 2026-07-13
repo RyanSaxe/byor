@@ -112,7 +112,7 @@ error).
 | `global` | `~/.config/byor/rules/` (canonical) | Your personal rules across every repo |
 
 Global rules are copied into `.byor/rules/personal/global/` by sync so
-ast-grep can read them. That directory is a generated build artifact — never
+ast-grep can read them. That directory is a generated build artifact. Never
 edit it by hand; sync mirrors it wholesale (see
 [sync-model.md](sync-model.md)). Organize rules in subdirectories by language
 or topic (e.g. `rules/python/no-typing-cast.yml`); sync preserves the relative
@@ -130,8 +130,8 @@ copy, no error. Conflicts that ast-grep would see are errors:
 | Project ID matches global ID | Project wins; sync skips the copy |
 | Local ID matches global ID | Local wins; sync skips the copy |
 | Package ID matches global ID | Package wins; sync skips the global copy |
-| Project ID matches local ID | Error — a local variation of a project rule requires a different ID |
-| Two installed packages share an ID | Error — exclude one with `byor exclude` |
+| Project ID matches local ID | Error: a local variation of a project rule requires a different ID |
+| Two installed packages share an ID | Error: exclude one with `byor exclude` |
 
 ## Command rules
 
@@ -183,13 +183,13 @@ byor add --scope project|local|global [--id RULE_ID] [--language LANGUAGE]
 - `--allow-exceptions` ends the rule's `agent_prompt` with the standard
   suppression sentence (see [Exceptions](#exceptions)): pre-filled in the
   `--edit` template, appended to the copied rule with `--from`. When the rule
-  has no `metadata.byor.agent_prompt`, it is created seeded from `message`
+  has no `metadata.byor.agent_prompt`, it is seeded from `message`
   so the prompt still carries the fix instruction.
 
 The new rule is written as `<rule-id>.yml` at the scope's rule root, then
 validated: YAML parses, required fields present, no illegal ID conflict. With
-`--edit`, validation runs on a draft before anything is written to the scope —
-if it fails, the error ends with `Your draft is saved at <path>.` and you can
+`--edit`, validation runs on a draft before anything is written to the scope.
+If it fails, the error ends with `Your draft is saved at <path>.` and you can
 rerun with `add --from <draft>`.
 
 After writing, `add` syncs the current repo (global scope also syncs every
@@ -214,10 +214,9 @@ validate, sync (fan out for global scope), report doctor problems.
 byor remove RULE_ID [--scope project|local|global|auto]
 ```
 
-Deletes the rule file. Scope resolution is identical to `edit`: `auto` (the
-default) resolves project, then local, then canonical global, and the global
-scope always deletes the canonical file under `~/.config/byor/rules/` —
-never just a generated copy. The post-action is the same as `add` and `edit`:
+Deletes the rule file. Scope resolution is identical to `edit`, and the global
+scope always deletes the canonical file under `~/.config/byor/rules/`, never
+just a generated copy. The post-action is the same as `add` and `edit`:
 sync (global scope fans out to every registered repo, removing the generated
 copies) and `doctor --quick`.
 
@@ -387,7 +386,7 @@ installed package's rules, just as editing a global rule does.
 
 ## Another worked example
 
-A starting point for taste-level rules — again, not an enabled default:
+A starting point for taste-level rules, again not an enabled default:
 
 ```yaml
 id: no-trivial-delegating-function

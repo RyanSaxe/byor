@@ -64,9 +64,8 @@ diagnostics as `{"issues": [{"file", "line", "column", "rule_id", "severity",
 repo-relative paths.
 
 `--concise` trims each diagnostic to its location and fix instruction, dropping
-the code block and the redundant `Message` line. That injects fewer tokens back into
-the agent on every matching edit, while keeping the guidance it needs to
-self-correct:
+the code block and the redundant `Message` line. It injects fewer tokens per
+matching edit while keeping the guidance the agent needs to self-correct:
 
 ```text
 BYOR found 1 issue.
@@ -158,8 +157,8 @@ checks:
     - strict
 ```
 
-Check tags are arbitrary user-defined labels, just like rule tags. They are
-useful for profile templates and for disabling a group of checks in one repo:
+Check tags are arbitrary user-defined labels, like rule tags. They are useful
+for profile templates and for disabling a group of checks in one repo:
 
 ```bash
 byor exclude --check-tag strict
@@ -174,10 +173,10 @@ warning line to stderr and is skipped. It never crashes the hook. `byor
 list` and `byor doctor` show the effective checks with their origin and any
 exclusions.
 
-Scope: project checks live in committed `.byor/config.yml`, so they are shared
-with anyone who works in the repo, like a committed pre-commit config, and
-apply only to that repo. Global checks are your own and run in every repo you
-work in. Only commit (or add) checks whose commands you trust.
+Scope: project checks in committed `.byor/config.yml` apply only to that repo
+and are shared with everyone who works in it, like a committed pre-commit config.
+Global checks are your own and run in every repo. Only commit (or add) checks
+whose commands you trust.
 
 ### Agent-only checks
 
@@ -350,8 +349,6 @@ init:
 
 ## Per-agent status
 
-Each integration lands in its agent's own configuration under your home directory.
-
 | Agent | Integration |
 | --- | --- |
 | `claude-code` | Real `PostToolUse` + `PreToolUse` hooks (`~/.claude/settings.json`) |
@@ -397,7 +394,7 @@ structure ("never use X", "always do Y"), the agent:
    `ast-grep scan` against an in-repo example of the violation.
 
 The skill tree that drives this ships with byor as Markdown (`byor/data/skill/`);
-when a feedback policy is really better solved by a linter, type checker, or
+when a feedback policy is better solved by a linter, type checker, or
 formatter (line length, import order, a wrong type), `references/checks.md` has
 the agent say so and offer to configure that tool and wire it in: as a byor
 `check`, in CI, or as a pre-commit hook. A preference no tool can express (naming
@@ -484,8 +481,8 @@ upgrade adds a hook, which `byor hook install --agent codex` reminds you of.
 Codex must be recent enough that `apply_patch` edits fire `PostToolUse` hooks:
 older versions (through ~0.118) fired them only for the Bash tool, so byor saw
 no edits there. A newly-installed gate is silent until trusted; a command byor
-never sees (a shell handler that doesn't emit `PreToolUse`) is simply
-allowed, consistent with the gate's fail-open design.
+never sees (a shell handler that doesn't emit `PreToolUse`) is allowed,
+consistent with the gate's fail-open design.
 
 ### claude-code
 
