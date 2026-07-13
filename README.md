@@ -42,6 +42,14 @@ metadata:
     agent_prompt: Use httpx instead. Do not add requests to the dependencies.
 ```
 
+byor exists because agents don't follow prose. Every harness asks you to put
+your standards in an `AGENTS.md`, a skill, a Markdown style guide. The agent
+reads it, agrees, and drifts anyway. A byor rule is not a suggestion: the agent
+has to satisfy it before it moves on, in the loop where it wrote the code.
+
+> byor is the sheepdog for your flock of coding agents: you set the rules, and
+> it reins in any that stray, while the work is still happening.
+
 You rarely write these by hand. Tell your agent the rule in plain language and
 it writes the check.
 
@@ -62,21 +70,13 @@ A rule you write once runs in four places:
 - **Editor:** a diagnostic while you type ([`ast-grep lsp`](https://ast-grep.github.io/guide/tools/editors.html)).
 - **Terminal:** `ast-grep scan`.
 - **CI:** committed rules run with plain `ast-grep`. `byor init --gate` writes the workflow.
-- **AI agents:** a post-edit hook corrects each edit as it lands, and a pre-command gate corrects shell commands before they run.
-
-> byor is the sheepdog for your flock of coding agents: you set the rules, and
-> it reins in any that stray, while the work is still happening.
-
-The agent loop is the point. A style guide in `AGENTS.md` is a suggestion. A
-byor rule is enforced, one edit at a time and in context, so it gets applied
-instead of triaged at review.
+- **AI agents:** a post-edit hook corrects each edit as it lands, and a pre-command gate corrects shell commands before they run, scoped to what changed.
 
 ## What a rule can be
 
 | Kind | Catches | Example |
 | --- | --- | --- |
-| **Pattern** | a banned call, import, or construct | [no-requests](examples/rules/no-requests.yml) |
-| **Shape** | structure with no string to grep (the wrapper above) | [no-routing-functions](examples/rules/no-routing-functions.yml) |
+| **ast-grep rule** | a call, import, or code structure like the wrapper above | [no-requests](examples/rules/no-requests.yml) · [no-routing-functions](examples/rules/no-routing-functions.yml) |
 | **Check** | whatever a linter, type checker, or script decides | [dependency-gate](examples/config/scripts/dependency-gate.sh) |
 | **Command** | a shell command, before it runs | [no-pip-install](examples/command-rules/no-pip-install.yml) |
 
