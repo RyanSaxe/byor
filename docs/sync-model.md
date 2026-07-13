@@ -1,8 +1,7 @@
 # The Sync Model
 
-Everything in this document exists so the inner loop is dependable: rules
-resolve the same way on every machine, and a fresh clone can lint with no byor
-installed.
+This document exists so the inner loop is dependable: rules resolve the same
+way on every machine, and a fresh clone can lint with no byor installed.
 
 ## Why copies, not symlinks
 
@@ -10,12 +9,12 @@ Your global rules are canonical in `~/.config/byor/rules/` and copied into
 each repo's `.byor/rules/personal/global/`. The primary reason is the override
 model: because each repo holds its own copy of a global rule, a project or
 local rule can shadow it by ID, a rule can be promoted from global into the
-project, and a teammate's committed rule can win on the next sync — behaviors a
-single shared symlink target could not express. Copies are also what let a
+project, and a teammate's committed rule can win on the next sync. A single
+shared symlink target could not express those behaviors. Copies also let a
 fresh clone lint with zero byor installed.
 
-A symlinked *directory* in `ruleDirs` would in fact load, so symlinking is not
-strictly impossible — but ast-grep does not follow symlinked rule *files* or
+A symlinked *directory* in `ruleDirs` does load, so symlinking is not strictly
+impossible. But ast-grep does not follow symlinked rule *files* or
 symlinked child directories inside a rule directory, and `ruleDirs` does not
 accept globs, so copies are also the only approach that works reliably with
 plain `ast-grep scan` and `ast-grep lsp`. The cost is duplication; the benefits
@@ -64,7 +63,7 @@ The exceptions: `byor sync` itself (its body is the sync),
 `byor sync --check`, which reports without writing and exits 3 when stale,
 `byor init`, `byor profile add`, and `byor package add`, which sync as one of
 their own steps, and `byor doctor`, which is read-only — it reports staleness
-and the command that fixes it instead of repairing anything itself.
+and the command that fixes it instead of repairing anything.
 
 ```bash
 byor sync           # mirror this repo
@@ -143,7 +142,7 @@ packages claiming one ID is a hard error.
 `ast-grep scan` works with project rules immediately. Personal rules appear
 after `byor init` (or any byor command) runs.
 
-That property is what makes CI cheap: a fresh clone can gate on the committed
+That property makes CI cheap: a fresh clone can gate on the committed
 project rules with zero byor installed. Use `--error` so warning severities
 fail the build (a plain `ast-grep scan` exits 0 on warnings):
 
@@ -162,20 +161,25 @@ jobs:
 
 `byor init --gate` automates that CI file and a matching
 `.pre-commit-config.yaml`, and first makes them self-contained. It **promotes
-everything** — every effective global and package rule into `.byor/rules/project/`,
-every global and package check into `.byor/config.yml`, and any check that runs
-a `~/` script into a committed copy under `.byor/scripts/` with the command
-repointed. Each vendored copy carries a provenance marker recording its source:
-self-heal re-vendors the copy when that source changes on your machine, and
-removing the marker makes the copy user-owned, never rewritten. The emitted
-artifacts then run `ast-grep scan` through uvx with a pinned `ast-grep-cli`
-version — so the gate never drifts with upstream releases — and each check
-directly, so the whole gate enforces with **no byor and no `~/.config/byor`**
-— just uv, ast-grep, and the check commands. pre-commit passes each check its staged matching files
-(via a `files:` filter from `extensions`); CI runs each check whole-repo,
-mirroring byor's two scan modes. The workflow gates pushes to the branch
-recorded as `gate_branch` in `.byor/config.yml` at install time, so
-regenerating from a feature-branch checkout never rewrites it.
+everything**: every effective global and package rule into
+`.byor/rules/project/`, every global and package check into `.byor/config.yml`,
+and any check that runs a `~/` script into a committed copy under
+`.byor/scripts/` with the command repointed.
+
+Each vendored copy carries a provenance marker recording its source. Self-heal
+re-vendors the copy when that source changes on your machine; removing the
+marker makes the copy user-owned, never rewritten.
+
+The emitted artifacts run `ast-grep scan` through uvx with a pinned
+`ast-grep-cli` version, so the gate never drifts with upstream releases, and run
+each check directly. The whole gate enforces with **no byor and no
+`~/.config/byor`**: only uv, ast-grep, and the check commands. pre-commit passes
+each check its staged matching files (via a `files:` filter from `extensions`);
+CI runs each check whole-repo, mirroring byor's two scan modes.
+
+The workflow gates pushes to the branch recorded as `gate_branch` in
+`.byor/config.yml` at install time, so regenerating from a feature-branch
+checkout never rewrites it.
 
 `fail_on` in `.byor/config.yml` sets how strict the gate is. The default,
 `fail_on: all`, appends `--error` so every rule blocks regardless of severity.
@@ -203,7 +207,7 @@ A teammate can commit a project rule whose ID matches one of your synced
 global copies. After `git pull`, the repo contains duplicate IDs and
 `ast-grep scan`/LSP are hard-broken (ast-grep refuses to run on duplicate
 IDs) until sync removes the now-overridden copy. Any self-healing byor command
-heals it (doctor reports it) — but editor-only sessions never run byor.
+heals it (doctor reports it). But editor-only sessions never run byor.
 
 That gap is closed by opt-in git hook shims: `byor init --git-hooks` (or
 answering yes when `byor init` asks) installs `post-merge` and `post-checkout`
@@ -276,10 +280,12 @@ already committed (the team uses ast-grep independently), byor's edits to it
 still show in `git status`; init warns when it detects this.
 
 There is no deinit command yet, so offboarding a private setup is manual:
-delete `.byor/` and the repo-root `sgconfig.yml` (unless the team owns it),
-remove the `Managed by BYOR` block from `.git/info/exclude`, delete any
-`Managed by BYOR` hooks from `.git/hooks/` — including a `pre-commit.legacy`
-left by `pre-commit install`, which carries the marker and must be deleted
-too — and drop the repo's line from `~/.config/byor/repos.yml` (under
-`$XDG_CONFIG_HOME/byor` when that is set) so `sync --all` and `doctor` stop
-looking for it.
+
+- Delete `.byor/` and the repo-root `sgconfig.yml` (unless the team owns it).
+- Remove the `Managed by BYOR` block from `.git/info/exclude`.
+- Delete any `Managed by BYOR` hooks from `.git/hooks/`, including a
+  `pre-commit.legacy` left by `pre-commit install`: it carries the marker and
+  must be deleted too.
+- Drop the repo's line from `~/.config/byor/repos.yml` (under
+  `$XDG_CONFIG_HOME/byor` when that is set), so `sync --all` and `doctor` stop
+  looking for it.

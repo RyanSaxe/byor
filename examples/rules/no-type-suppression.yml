@@ -1,0 +1,28 @@
+# Demonstrates: one rule spanning two node kinds. A call pattern catches
+# `cast(...)`, a comment regex catches `# type: ignore`. Both are ways to
+# silence the type checker, and a linter config can ban neither as one rule
+# with a fix attached.
+id: no-type-suppression
+language: Python
+severity: error
+message: Don't silence the type checker. Fix the type.
+rule:
+  any:
+    - pattern: cast($TYPE, $VALUE)
+    - kind: comment
+      regex: '#\s*type:\s*ignore'
+metadata:
+  byor:
+    rationale: >
+      cast() and `# type: ignore` both assert a type the checker cannot
+      verify, which hides real model problems from reviewers and the next
+      change. An agent reaches for them to make an error go away.
+    agent_prompt: >
+      Fix the type at its source: narrow with a guard, add an @overload,
+      correct the annotation, or use a Protocol. Use cast or `# type: ignore`
+      only when the type system genuinely cannot express the shape, and say
+      why in a comment.
+    tags:
+      - python
+      - typing
+      - style-guide

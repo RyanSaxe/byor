@@ -71,7 +71,7 @@ The `ast-grep-ignore` directive goes on its own line directly above the
 violation, naming the rule id (a bare `ast-grep-ignore` silences every rule on
 the line below). Put the reason on the comment line above it. ast-grep also
 honors the directive at the end of the offending line itself, but a formatter
-that splits that line relocates the comment and silently invalidates it — the
+that splits that line relocates the comment and silently invalidates it. The
 line above is immune to reformatting.
 
 `byor add --allow-exceptions` ends the new rule's `agent_prompt` with the
@@ -84,7 +84,7 @@ standard sentence:
 In a repo with a committed gate (see [sync-model.md](sync-model.md)), only
 suppress rules the repo commits. The gate's runner knows nothing about your
 personal global or package rules, and ast-grep treats a suppression naming an
-unknown rule as an error (`unused-suppression`) — so committing that hatch
+unknown rule as an error (`unused-suppression`). Committing that hatch
 fails the build by design. Promote the rule to project scope first, then
 suppress it.
 
@@ -112,14 +112,14 @@ error).
 | `global` | `~/.config/byor/rules/` (canonical) | Your personal rules across every repo |
 
 Global rules are copied into `.byor/rules/personal/global/` by sync so
-ast-grep can read them. That directory is a generated build artifact — never
+ast-grep can read them. That directory is a generated build artifact. Never
 edit it by hand; sync mirrors it wholesale (see
 [sync-model.md](sync-model.md)). Organize rules in subdirectories by language
 or topic (e.g. `rules/python/no-typing-cast.yml`); sync preserves the relative
 paths.
 
-Same-ID rules resolve by scope precedence — project wins over local wins over
-package wins over global, mirroring the check tiers — and sync skips the losing
+Same-ID rules resolve by scope precedence: project wins over local wins over
+package wins over global, mirroring the check tiers. Sync skips the losing
 copy, no error. Conflicts that ast-grep would see are errors:
 
 | Where | Behavior |
@@ -130,8 +130,8 @@ copy, no error. Conflicts that ast-grep would see are errors:
 | Project ID matches global ID | Project wins; sync skips the copy |
 | Local ID matches global ID | Local wins; sync skips the copy |
 | Package ID matches global ID | Package wins; sync skips the global copy |
-| Project ID matches local ID | Error — a local variation of a project rule requires a different ID |
-| Two installed packages share an ID | Error — exclude one with `byor exclude` |
+| Project ID matches local ID | Error: a local variation of a project rule requires a different ID |
+| Two installed packages share an ID | Error: exclude one with `byor exclude` |
 
 ## Command rules
 
@@ -151,9 +151,9 @@ the package root, mirrored into `.byor/commands/personal/packages/<name>/`.
 
 The command tree deliberately never appears in sgconfig `ruleDirs`: a command
 rule must not fire when ast-grep scans a shell-script *file*, and a
-`.sh`-file rule must not block interactive commands. The two universes keep
-separate IDs — a command rule may share an ID with a file rule without
-conflict — but `byor exclude RULE_ID` and tag exclusions apply to both.
+`.sh`-file rule must not block interactive commands. The two trees keep
+separate IDs (a command rule may share an ID with a file rule without
+conflict), but `byor exclude RULE_ID` and tag exclusions apply to both.
 
 Create one with the `--command` flag and verify it in both directions:
 
@@ -183,13 +183,13 @@ byor add --scope project|local|global [--id RULE_ID] [--language LANGUAGE]
 - `--allow-exceptions` ends the rule's `agent_prompt` with the standard
   suppression sentence (see [Exceptions](#exceptions)): pre-filled in the
   `--edit` template, appended to the copied rule with `--from`. When the rule
-  has no `metadata.byor.agent_prompt`, it is created seeded from `message`
+  has no `metadata.byor.agent_prompt`, it is seeded from `message`
   so the prompt still carries the fix instruction.
 
 The new rule is written as `<rule-id>.yml` at the scope's rule root, then
 validated: YAML parses, required fields present, no illegal ID conflict. With
-`--edit`, validation runs on a draft before anything is written to the scope —
-if it fails, the error ends with `Your draft is saved at <path>.` and you can
+`--edit`, validation runs on a draft before anything is written to the scope.
+If it fails, the error ends with `Your draft is saved at <path>.` and you can
 rerun with `add --from <draft>`.
 
 After writing, `add` syncs the current repo (global scope also syncs every
@@ -214,10 +214,9 @@ validate, sync (fan out for global scope), report doctor problems.
 byor remove RULE_ID [--scope project|local|global|auto]
 ```
 
-Deletes the rule file. Scope resolution is identical to `edit`: `auto` (the
-default) resolves project, then local, then canonical global, and the global
-scope always deletes the canonical file under `~/.config/byor/rules/` —
-never just a generated copy. The post-action is the same as `add` and `edit`:
+Deletes the rule file. Scope resolution is identical to `edit`, and the global
+scope always deletes the canonical file under `~/.config/byor/rules/`, never
+just a generated copy. The post-action is the same as `add` and `edit`:
 sync (global scope fans out to every registered repo, removing the generated
 copies) and `doctor --quick`.
 
@@ -238,7 +237,7 @@ byor promote --check NAME
 - `--from global` copies the canonical global rule into project rules and
   never removes the canonical original. Sync then skips the global copy
   because the project owns the ID; deleting the project rule later lets the
-  global rule return naturally. `excluded_rule_ids` is not touched.
+  global rule return. `excluded_rule_ids` is not touched.
 - `--from package` copies an installed package's rule into project rules and
   leaves the package source alone, exactly like `--from global`. Sync then
   skips the package copy because the project owns the ID.
@@ -376,8 +375,8 @@ init:
 `byor package add` records the opt-in in `.byor/local.yml` (private, gitignored)
 and syncs. The package's rules mirror into `.byor/rules/personal/packages/`,
 git-ignored but visible to ast-grep. Rules and checks share one precedence:
-repo wins over package wins over global (by ID for rules, by name for checks) —
-opting into a package is an easy avenue to override your global setup.
+repo wins over package wins over global (by ID for rules, by name for checks).
+Opting into a package is an easy way to override your global setup.
 Excluding a package rule or check works through the usual `byor exclude`.
 
 To share a package's rules or checks with the team, promote them into tracked
@@ -387,7 +386,7 @@ installed package's rules, just as editing a global rule does.
 
 ## Another worked example
 
-A starting point for taste-level rules — again, not an enabled default:
+A starting point for taste-level rules, again not an enabled default:
 
 ```yaml
 id: no-trivial-delegating-function
@@ -413,8 +412,8 @@ metadata:
       - abstraction
 ```
 
-This `pattern` only catches a literal one-line `def`; the
+This `pattern` only catches a literal one-line `def`. The
 [`examples/`](../examples/) directory has `no-routing-functions`, a relational
 version that also catches multi-line bodies, awaited calls, and docstringed
-one-liners. The examples there run from a bare pattern up to that rule, each with
-the ast-grep technique it demonstrates.
+one-liners. Those examples range from a bare pattern up to that rule, each
+demonstrating a different ast-grep technique.

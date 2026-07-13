@@ -9,433 +9,185 @@
   <a href="LICENSE"><img src="https://img.shields.io/pypi/l/byor" alt="License"></a>
 </p>
 
-Your AI agent keeps breaking rules you have already given it. You tell it to
-stop writing wrapper functions that do nothing but forward to another call; it
-agrees, and twenty minutes later it writes:
+Custom code rules for the conventions your linter won't enforce.
+
+byor lets you write the checks a general linter leaves out: the rules specific
+to your team, your codebase, and your taste. It runs them in your editor, in CI,
+and inside your AI agent's loop as it writes.
+
+This function does nothing but forward a call:
 
 ```python
 def get_user(user_id: int) -> User:
     return fetch_user(user_id)
 ```
 
-So you add a line to your ever-growing `AGENTS.md` in the hope it fixes it. **It doesn't.**
-
-> `byor` is the sheepdog for your flock of coding agents: you set the rules and it
-> reins in any agent that attempts to stray in real time. 
-
-`byor` can do this reliably because the rules it creates are real executable checks, 
-not markdown prompts. You rarely write one of these rules by hand. If you tell your 
-agent to create a rule, or even give it critical feedback about code it has written,
-it will use `byor`'s skill to create the best automated system to keep your agent in
-check.
-
-## The inner loop
-
-Working with a coding agent is a loop: you set a goal and the agent runs until
-it gets there. Almost everything that keeps code quality honest sits outside
-that loop. You review the diff at the end, CI complains after the push, or you
-run a cleanup prompt once the feature works. `byor` moves enforcement inside
-the loop, in both directions: a post-edit hook checks each edit as the agent
-makes it, and a pre-command gate checks each shell command *before* it runs.
-The agent fixes the violation while it still has the context, or gets told
-what to run instead before the wrong command ever executes.
-
-Where the feedback lands changes what happens to it:
-
-- **You review the change, not a cleanup.** The code already follows your
-  rules when you first read it, so review time goes to what the change does.
-- **One violation now gets fixed; a thousand at the end get triaged.** An
-  outer pass that hands the agent a long report invites it to fix the easy
-  half and stop. The same feedback delivered one edit at a time just gets
-  applied.
-- **Bad decisions get caught before they are load-bearing.** When the agent
-  reaches for a library you banned, the correction at the first import is one
-  line. The same correction at review time, with a day of work built on top
-  of that library, is a rewrite.
-
-## Four examples
-
-Linters keep absorbing the rules general enough for everyone to agree on. The
-rules worth writing yourself are the ones that name your choices, and `byor`
-gives them the same enforcement a linter has. They come in four sizes.
-
-**A pattern.** Suppose this codebase uses httpx. No general linter can know
-that. A short [ast-grep](https://ast-grep.github.io) rule enforces it with no
-holes, because import statements are a choke point: every use of a library
-starts with one. Its `agent_prompt` tells the agent what to do instead of
-leaving it to guess:
-
-```yaml
-# .byor/rules/project/no-requests.yml
-id: no-requests
-language: Python
-severity: error
-message: This codebase uses httpx, not requests.
-rule:
-  any:
-    - kind: dotted_name
-      regex: ^requests(\.|$)
-      inside: { stopBy: end, kind: import_statement }
-    - pattern: from requests import $$$NAMES
-    - pattern: from requests.$SUB import $$$NAMES
-metadata:
-  byor:
-    agent_prompt: >
-      Use httpx instead. For simple calls the API is the same
-      (httpx.get, httpx.post); for anything repeated, use an httpx.Client
-      or httpx.AsyncClient with an explicit timeout. Do not add requests
-      to the dependencies.
-```
-
-The first clause matches the module name node inside any plain `import`, so
-the aliased, submodule, and even comma-combined (`import os, requests`) forms
-are all covered; the two patterns handle from-imports.
-
-**A shape.** There is no string to grep for in the wrapper at the top of this
-page. What makes it a violation is structure: a function whose body is a single
-call to something else, in any form (`return`, `await`, a bare call,
-`yield from`, with or without a docstring). ast-grep matches structure, so a
-rule can say exactly that:
+No linter flags it. Whether a pass-through wrapper is worth banning is a matter
+of taste, and a linter ships only the rules everyone already agrees on. byor
+flags it, because you decided your codebase shouldn't have them. The rule
+matches structure, not a string, and carries the instruction your agent gets
+when it trips:
 
 ```yaml
 # .byor/rules/project/no-routing-functions.yml
 id: no-routing-functions
 language: Python
 severity: warning
-message: Do not create functions whose only behavior is routing to another call.
+message: A function whose only job is forwarding a call.
 rule:
-  all:
-    - any:
-        - pattern: return $CALLEE($$$ARGS)
-        - pattern: return await $CALLEE($$$ARGS)
-        - pattern:
-            context: $CALLEE($$$ARGS)
-            selector: expression_statement
-        - pattern:
-            context: await $CALLEE($$$ARGS)
-            selector: expression_statement
-        - pattern:
-            context: yield from $CALLEE($$$ARGS)
-            selector: expression_statement
-    - any:
-        - all:
-            - nthChild: 1
-            - nthChild:
-                position: 1
-                reverse: true
-        - all:
-            - nthChild: 2
-            - nthChild:
-                position: 1
-                reverse: true
-            - follows:
-                kind: expression_statement
-                has:
-                  kind: string
-    - inside:
-        kind: block
-        inside:
-          kind: function_definition
-          field: body
+  kind: function_definition
+  has:
+    field: body
+    has:
+      kind: return_statement
+      pattern: return $CALLEE($$$ARGS)
+      all:
+        - nthChild: 1                          # the only statement
+        - nthChild: { position: 1, reverse: true }
 metadata:
   byor:
     agent_prompt: >
-      Remove this routing function and call the underlying implementation
-      directly. If the function must exist as a public API or integration
-      boundary, add real boundary behavior such as validation, translation,
-      authorization, retry policy, error handling, or instrumentation. Do not
-      preserve a wrapper whose only effect is changing argument order, defaults,
-      or names.
+      Call the implementation directly, or give the function real behavior
+      (validation, auth, retries). Don't keep a pure pass-through.
 ```
 
-**A script.** Some rules are not about the text of the code at all. This check
-fails whenever the dependency list differs from the last commit, so an agent
-must stop and ask before adding a package:
+That is the core shape. The [full rule](examples/rules/no-routing-functions.yml)
+also matches `await`, `yield from`, and docstringed bodies.
 
-```yaml
-# .byor/config.yml
-checks:
-  - name: dependency-gate
-    extensions: [toml]
-    run: .byor/scripts/dependency-gate.sh
-    gate: false
-```
+byor exists because agents don't follow prose. Every harness asks you to put
+your standards in an `AGENTS.md`, a skill, a Markdown style guide. The agent
+reads it, agrees, and drifts anyway. A byor rule is not a suggestion: the agent
+has to satisfy it before it moves on, in the loop where it wrote the code.
 
-```sh
-#!/bin/sh
-# The `dependencies = [...]` block, from its opening line to the first `]`.
-deps() { awk '/^dependencies = \[/ { open = 1 } open { print } open && /\]/ { exit }'; }
+> byor is the sheepdog for your flock of coding agents: you set the rules, and
+> it reins in any that stray, while the work is still happening.
 
-[ -f pyproject.toml ] || exit 0
-git rev-parse --verify --quiet HEAD >/dev/null 2>&1 || exit 0 # no commits yet: nothing to compare
-
-committed=$(git show HEAD:pyproject.toml 2>/dev/null | deps)
-current=$(deps <pyproject.toml)
-[ "$committed" = "$current" ] && exit 0
-
-echo "The dependency list in pyproject.toml differs from the last commit."
-echo "If you added or removed a package without being asked to, revert it and ask the user first."
-exit 1
-```
-
-`gate: false` marks a check that polices the agent rather than the code: the
-post-edit hook runs it, but the pre-commit and CI gates `byor` generates leave
-it out, where it would block a person adding a dependency on purpose. A rule
-like this only makes sense inside the loop. [examples/](examples/) has a second
-one, five lines of shell that reject hand-edits to `uv.lock`; it never fires on
-`uv add` run in a terminal, because the hook only sees the agent's own file
-edits.
-
-**A command.** Some rules are about what the agent *runs*, not what it writes,
-and those can only be enforced before the command executes. Your harness's
-permission system can deny a command, but a denial teaches nothing. A command
-rule denies it with the correction attached:
-
-```yaml
-# .byor/commands/project/no-pip-install.yml
-id: no-pip-install
-language: Bash
-severity: error
-message: This machine manages Python dependencies with uv, not pip.
-rule:
-  any:
-    - pattern: pip install $$$ARGS
-    - pattern: pip3 install $$$ARGS
-    - pattern: python -m pip install $$$ARGS
-metadata:
-  byor:
-    agent_prompt: >
-      Use uv instead: `uv add <package>` to add a dependency, `uv sync`
-      to install what the lockfile already says. Never invoke pip directly.
-```
-
-The command line is parsed as Bash, so the pattern matches `pip install`
-buried in `cd docs && pip install x | tee log` but not quoted prose like
-`echo "pip install x"` — the false positives regex-based permission rules are
-made of. The agent sees the `agent_prompt`, runs `uv add`, and moves on. This
-is steering, not a sandbox: it corrects an agent typing a command plainly and
-makes no claim to stop a determined evasion.
-
-Everything above is real and exercised in CI: the rules against valid and
-invalid samples, the scripts in both directions, the command rules against
-commands that must match and commands that must not. See
-[examples/](examples/) for the annotated versions.
-
-The first two are ordinary [ast-grep](https://ast-grep.github.io) rules, and
-they follow you everywhere you read code:
-
-- **IDE** — set up your IDE with `ast-grep lsp` to see `message` as a diagnostic.
-- **AI agent** — a post-edit hook hands over the `agent_prompt`, scoped to
-  the lines it changed, so the agent fixes the violation before moving on.
-- **Terminal** — `ast-grep scan` shows the `message`.
-
-ast-grep rules are `byor`'s built-in kind; it also runs any linter, type checker, or
-script you already use and folds their output into the same agent feedback.
+You rarely write these by hand. Tell your agent the rule in plain language and
+it writes the check.
 
 ## Install
 
 ```bash
-uv tool install byor && byor install   # install the CLI, then set up the skill + agent hooks (once)
-byor init                              # optional — only for repo-scoped or shared rules (see below)
+uv tool install byor    # the CLI (bundles ast-grep)
+byor install            # editor + agent integrations, once per machine
 ```
 
-`byor` bundles ast-grep, so Python 3.11+ is all you need to *run* it — the rules
-themselves work in any language ast-grep supports (TypeScript, Go, Rust, and
-more), not just Python. `byor install` registers your editor and agent
-integrations machine-wide. `byor init` is **optional**: run it only when you want
-rules or checks scoped to a repository, or shared with contributors — your
-personal global rules and checks already work in every repo without it.
-On a repo the team has not adopted byor for, `byor init --private` keeps the
-whole footprint out of git (nothing tracked, ignored via `.git/info/exclude`);
-see [docs/sync-model.md](docs/sync-model.md).
-[docs/ai-agents.md](docs/ai-agents.md) covers what each step writes.
+byor needs Python 3.11+; rules work in any language ast-grep supports. That is
+the whole machine setup, and your global rules already apply in every repo. To
+scope rules to one repository or share them with a team, run `byor init` there,
+or open your agent in the repo and say **"set up byor"**, which does it for you.
 
-After that one-time bootstrap, let your AI coding agent handle the rest: open it
-in the repo and say **"set up byor"**. The skill verifies the install, runs
-`byor init` if you want repo or team rules, and offers to import the preferences
-you already wrote in your CLAUDE.md / AGENTS.md as enforced rules.
+## Where rules run
 
-## Terminal and editor
+A rule you write once runs in four places:
 
-A rule under `.byor/rules/` is an ordinary ast-grep rule, so the ordinary tools
-read it:
+- **Editor:** a diagnostic while you type ([`ast-grep lsp`](https://ast-grep.github.io/guide/tools/editors.html)).
+- **Terminal:** `ast-grep scan`.
+- **CI:** committed rules run with plain `ast-grep`. `byor init --gate` writes the workflow.
+- **AI agents:** a post-edit hook corrects each edit as it lands, and a pre-command gate corrects shell commands before they run, scoped to what changed.
 
-```bash
-ast-grep scan            # lint the repo
-ast-grep scan src/       # ...or a path
-```
+## What a rule can be
 
-For live in-editor diagnostics, point your editor's ast-grep integration at
-`ast-grep lsp`: rules light up as you type and reload when you edit them.
-([editor setup](https://ast-grep.github.io/guide/tools/editors.html).)
+| Kind | Catches | Example |
+| --- | --- | --- |
+| **ast-grep rule** | a call, import, or code structure like the wrapper above | [no-requests](examples/rules/no-requests.yml) · [no-routing-functions](examples/rules/no-routing-functions.yml) |
+| **Check** | whatever a linter, type checker, or script decides | [dependency-gate](examples/config/scripts/dependency-gate.sh) |
+| **Command** | a shell command, before it runs | [no-pip-install](examples/command-rules/no-pip-install.yml) |
 
-## Rule scopes
+Every example runs in CI. More in [examples/](examples/) and [docs/rules.md](docs/rules.md).
 
-The same rule format lives at three scopes:
+## Scopes
+
+A rule can be yours alone or committed for the whole team. Committing it turns a
+preference into a standard: the rule is version-controlled, reviewed like any
+other change, and applied the same way for everyone, human or agent.
 
 | Scope | Lives in | Shared with |
 | --- | --- | --- |
 | `project` | `.byor/rules/project/` | Your team (committed) |
-| `local` | `.byor/rules/personal/local/` | You, this repo only |
-| `global` | `~/.config/byor/rules/` | You, in every repo |
+| `local` | `.byor/rules/personal/local/` | You, this repo |
+| `global` | `~/.config/byor/rules/` | You, every repo |
 
-Global rules are your personal standards; byor makes them apply in every repo.
-Project and local rules override a global rule with the same ID, so a team
-policy or a local experiment takes precedence. See [docs/rules.md](docs/rules.md)
-for the rule workflow and [docs/sync-model.md](docs/sync-model.md) for how byor
-copies global rules into each repo.
+A project or local rule overrides a global rule with the same ID. Command rules
+follow the same scopes under `.byor/commands/`. Packages and profiles tune which
+rules apply where; see [docs/rules.md](docs/rules.md).
 
-Tags in `metadata.byor.tags` are arbitrary labels you own. byor uses them for
-listing, profile setup, and repo-local exclusions; it does not reserve any tag
-names. Use `byor list --tags` to see the vocabulary already present in a repo.
+## AI agents
 
-Profiles are named templates in your global config that apply private
-repo-local exclusions at init time, or later with `byor profile add`. They are
-useful when a repo should opt out of broad groups of global rules or checks
-without deleting those personal standards everywhere:
+Agents are good at making an error disappear instead of fixing it. Hit a type
+error and one will reach for `cast()` or a `# type: ignore` rather than correct
+the signature. A rule catches the dodge:
 
 ```yaml
-profiles:
-  existing:
-    description: Low-friction defaults for mature repositories.
-    rules:
-      excluded_tags:
-        - legacy-risk
-    checks:
-      excluded_tags:
-        - strict
+# .byor/rules/project/no-type-suppression.yml
+id: no-type-suppression
+language: Python
+severity: error
+message: Don't silence the type checker. Fix the type.
+rule:
+  any:
+    - pattern: cast($TYPE, $VALUE)
+    - kind: comment
+      regex: '#\s*type:\s*ignore'
+metadata:
+  byor:
+    agent_prompt: >
+      Fix the type at its source: narrow with a guard, add an @overload,
+      correct the annotation, or use a Protocol. Use cast or `# type: ignore`
+      only when the type system genuinely cannot express the shape.
 ```
 
-Packages are the opposite of a global rule: a named bundle of rules (and
-optional checks) under `~/.config/byor/packages/` that a repo **opts into**
-rather than getting everywhere automatically. `byor package add <name>` installs
-one for you in a repo (personally, like a `local` rule — not committed); promote
-its rules or checks with `byor promote` to share them with the team. Reach for a
-package when a rule set is reusable but too situational to force on every repo.
-See [docs/rules.md](docs/rules.md).
-
-## With AI coding agents
-
-Agents can both obey your rules and write new ones:
-
-- **Feedback.** A post-edit hook runs `byor agent-check` after the agent edits a
-  file and feeds the diagnostics back into its context, scoped to the lines it
-  changed, so it fixes violations before moving on.
-- **Command gating.** A pre-command hook runs `byor command-check` before the
-  agent executes a shell command. On a match the command is denied with your
-  correction: where a permission system says "no", byor says "no, run this
-  instead". `command_checks` in config add a script escape hatch (the pending
-  command arrives on stdin; nonzero exit denies). Everything fails open — a
-  byor bug can never block your agent, only a matching rule can.
-- **Capture.** A bundled skill turns durable feedback ("never do this", "always
-  do that", "use uv, not pip") into an ast-grep rule or a command rule: the
-  agent drafts it, confirms once, and runs `byor add`. When a linter or type
-  checker fits better, the skill offers that instead.
-- **Setup.** The same skill onboards you: say "set up byor" and it checks the
-  install, optionally inits the repo, and imports the mechanically checkable
-  preferences from your existing CLAUDE.md / AGENTS.md as rules — and can clean up
-  an existing repo on a throwaway branch so you start without a wall of warnings.
-
-`byor install` wires up the agents you pick (once, machine-wide); `byor hook`
-adds or drops one later.
+The post-edit hook feeds that back the moment the agent writes the suppression,
+so it fixes the type instead of hiding it. Install the agents you use:
 
 ```bash
 byor install --agents claude-code,codex
-byor hook install --agent copilot       # add an agent later
-byor hook uninstall --agent copilot     # or remove one (--agent skill removes the skill)
+byor hook install --agent copilot     # add one later
 ```
 
-byor supports five harnesses:
+| Harness | Post-edit hook | Pre-command gate |
+| --- | --- | --- |
+| Claude Code | `PostToolUse` | `PreToolUse` |
+| Codex | `PostToolUse` | `PreToolUse` |
+| Copilot CLI | `postToolUse` | `preToolUse` |
+| OpenCode | plugin | not yet |
+| Pi | extension | not yet |
 
-| Harness | Skill | Post-edit hook | Pre-command gate | Diagnostic precision |
-| --- | --- | --- | --- | --- |
-| Claude Code | yes | `PostToolUse` | `PreToolUse` | the edited lines |
-| Codex | yes | `PostToolUse` | `PreToolUse` | the edited lines |
-| Copilot CLI | yes | `postToolUse` | `preToolUse` | the edited lines |
-| OpenCode | yes | `tool.execute.after` plugin | not yet | the changed file |
-| Pi | yes | `tool_result` extension | not yet | the changed file |
-
-Cursor and Antigravity are not supported: neither exposes a post-edit hook that
-byor can reliably integrate with, so byor omits them until that changes.
-
-A `checks:` section in `.byor/config.yml` (or your global config) runs extra
-command-line tools (a linter, a type checker, anything) on the changed files and
-folds their output into the same feedback. See
-[docs/ai-agents.md](docs/ai-agents.md).
-
-## Continuous integration
-
-Project rules are committed files that work with `ast-grep`, so CI doesn't need
-`byor`: a fresh clone already has everything `ast-grep scan` reads. Scan with
-`--error` so warnings fail the build (a plain scan exits 0 on warnings):
-
-```yaml
-- uses: astral-sh/setup-uv@v6
-- run: uvx --from ast-grep-cli ast-grep scan --error
-```
-
-`byor init --gate` generates this workflow and a matching `.pre-commit-config.yaml`
-for you — promoting your effective rules and checks into committed config first,
-so the gate stays byor-free but also covers your checks. Checks marked
-`gate: false` stay out of both files: they police the agent inside the loop,
-not the humans at the gate. See [docs/sync-model.md](docs/sync-model.md).
+Cursor and Antigravity expose no reliable post-edit hook, so byor omits them.
+Details in [docs/ai-agents.md](docs/ai-agents.md).
 
 ## Commands
 
-**Setup.** You run these once to get going.
+Setup, run once per machine or per repo:
 
 ```text
-byor install        Register byor's AI integrations (machine-wide)
-byor init           Initialize byor in a repository
-byor init --private Keep byor to yourself; commit nothing (git info/exclude)
-byor init --gate    Distribute a byor-free pre-commit + CI gate to the team
-byor hook           Add or remove an agent integration
-byor doctor         Check that everything is wired up
-byor profile        List or apply configured profiles
-byor package        List or install opt-in rule/check packages
+byor install   register byor's editor + agent integrations (machine-wide)
+byor init      set up byor in a repository (docs/sync-model.md)
+byor hook      add or remove one agent integration
+byor doctor    check that everything is wired up
+byor profile   list or apply exclusion profiles
+byor package   list or install opt-in rule bundles
 ```
 
-**Rules.** Your agent runs these as it captures and manages rules for you.
+Rules, mostly run by your agent as it captures feedback ([docs/rules.md](docs/rules.md)):
 
 ```text
-byor add            Create a rule in a scope
-byor list           Show rules and where they come from
-byor edit           Open a rule in $EDITOR
-byor remove         Delete a rule
-byor promote        Move a personal/package rule or a check into shared config
-byor exclude        Disable a global rule in this repository
-byor include        Re-enable an excluded global rule
+byor add       create a rule (--command for a command rule)
+byor list      show rules and where they resolve from
+byor edit      open a rule in $EDITOR
+byor remove    delete a rule
+byor promote   move a personal or package rule into shared config
+byor exclude   turn off a global rule in this repo
+byor include   turn a previously excluded rule back on
 ```
 
-**Automatic.** byor runs these itself: the hooks and self-heal.
-
-```text
-byor agent-check    Render diagnostics for your agent (post-edit hook)
-byor command-check  Gate a shell command before it runs (pre-command hook)
-byor sync           Mirror global rules into the repo
-```
-
-`byor command-check --command 'pip install x'` is also the way to test a
-command rule by hand.
-
-Every command takes `--help`, and repo-operating commands take `--repo PATH`
-(default: search upward from the current directory).
-
-## What's next
-
-byor's inner loop now has two deterministic mechanisms: the post-edit hook for
-what agents write, and the pre-command gate for what they run. Together they
-cover anything a rule, a linter, a type checker, a script, or a command
-pattern can express.
-
-The remaining strays are behavioral: an agent drifting off the plan you agreed
-on, stopping a loop early, editing files outside the scope you set. Teaching
-the sheepdog to herd those too is where byor is headed. If there is a rule you
-wish it could enforce, [open an issue](https://github.com/RyanSaxe/byor/issues).
+byor runs the rest itself: `byor agent-check` (the post-edit hook), `byor
+command-check` (the pre-command gate), and `byor sync` (mirror global rules into
+a repo). Every command takes `--help`; repo commands take `--repo PATH`.
 
 ## Documentation
 
-- [docs/rules.md](docs/rules.md) — rule format, scopes, and the rule workflow
-- [docs/ai-agents.md](docs/ai-agents.md) — AI agent integration and `agent-check`
-- [docs/sync-model.md](docs/sync-model.md) — copies, self-healing, and git hooks
-- [examples/](examples/) — reference rules (simple → advanced) and config setups
+- [docs/rules.md](docs/rules.md) — rule format, scopes, packages, profiles
+- [docs/ai-agents.md](docs/ai-agents.md) — agent integration, hooks, the gate
+- [docs/sync-model.md](docs/sync-model.md) — copies, self-healing, git hooks
+- [examples/](examples/) — reference rules and configs

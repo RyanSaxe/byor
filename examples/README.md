@@ -20,6 +20,7 @@ These are ordered from the simplest mechanism to the most expressive:
 | [`no-routing-functions`](rules/no-routing-functions.yml) | Relational rules — `any`/`all`, `inside`, `follows`, and `nthChild` with `reverse`, to match pass-through calls or `yield from` as a function's only statement. |
 | [`keyword-only-args`](rules/keyword-only-args.yml) | `utils` rules composed with nested `follows` to count sibling nodes — flagging a third positional parameter while exempting `self`/`cls` and anything after a bare `*` or `*args`. |
 | [`no-console-log`](rules/no-console-log.yml) | The same bare `pattern` mechanism in a non-Python language (`language: typescript`). |
+| [`no-type-suppression`](rules/no-type-suppression.yml) | One rule across two node kinds: a call pattern for `cast(...)` and a `kind: comment` regex for `# type: ignore`, catching both ways to silence the type checker. |
 
 Each file's `metadata.byor.agent_prompt` is the directive byor hands an AI agent
 when the rule trips; the leading comment explains the ast-grep technique.
@@ -50,8 +51,8 @@ invocation above.
 
 ## Config setup
 
-byor goes beyond plain ast-grep by wiring external linters and type checkers
-into the same loop and feeding their output to AI agents.
+byor wires external linters and type checkers into the same loop as ast-grep
+and feeds their output to AI agents.
 
 - [`config/config.yml`](config/config.yml) — an annotated global config
   (`~/.config/byor/config.yml`): the `checks` block (ruff + ty) and the `ai`

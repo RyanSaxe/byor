@@ -2,8 +2,8 @@
 
 byor turns your ast-grep rules into directive feedback for AI coding agents,
 delivered inside the agent's work loop: a post-edit hook checks each edit as
-it lands, and a pre-command gate checks each shell command before it runs —
-rather than a cleanup pass after the work is done. Every post-edit
+it lands, and a pre-command gate checks each shell command before it runs,
+not a cleanup pass after the work is done. Every post-edit
 integration wraps the same command:
 
 ```bash
@@ -57,16 +57,15 @@ Instruction:
 Do not use typing.cast here. Fix the type by narrowing, changing the signature, introducing a protocol, or restructuring the value flow. Keep a cast only when the needed invariant cannot be expressed by Python's type system. If this is genuinely necessary, add `# ast-grep-ignore: python.no-typing-cast` on its own line directly above the offending line, with a short comment above it explaining the type-system limitation.
 ```
 
-Every in-scope diagnostic is rendered — the agent sees the full set, never a
+Every in-scope diagnostic is rendered: the agent sees the full set, never a
 truncated sample it could mistake for the whole job. `--format json` prints all
 diagnostics as `{"issues": [{"file", "line", "column", "rule_id", "severity",
 "message", "code", "instruction"}, ...]}` with 1-based positions and
 repo-relative paths.
 
 `--concise` trims each diagnostic to its location and fix instruction, dropping
-the code block and the redundant `Message` line — fewer tokens injected back into
-the agent on every matching edit, while keeping the guidance it needs to
-self-correct:
+the code block and the redundant `Message` line. It injects fewer tokens per
+matching edit while keeping the guidance the agent needs to self-correct:
 
 ```text
 BYOR found 1 issue.
@@ -92,32 +91,36 @@ output:
   max_diagnostics: 10
 ```
 
-`--format json` is unaffected — JSON always carries every field.
+`--format json` is unaffected: JSON always carries every field.
 
 `--scope` keeps only diagnostics whose lines overlap the chosen ranges
 (default: `file` with `--files`, `edit` in hook mode). `diff` scopes to
-uncommitted `git diff HEAD` lines — an untracked file is all new lines, and
+uncommitted `git diff HEAD` lines: an untracked file is all new lines, and
 without usable git history the whole file stays in scope. `edit` scopes to the
 lines a hook payload's edit touched, so it requires `--stdin-hook`, and falls
 back to `diff` then `file` when the edit contents cannot be located. Under
 `edit`/`diff` scope, files missing on disk are skipped silently.
 
-`--stdin-hook HARNESS` (claude-code|codex|copilot, instead of `--files`)
-reads that harness's post-edit JSON payload on stdin, normalizes it to the
-edited file(s) and edit text, and replies in the harness's own feedback format
-(claude-code via stderr + exit 2; codex/copilot via a JSON envelope on
-stdout). A codex payload carries the patch text in `tool_input.command` as an
-`apply_patch` envelope; byor reads the changed files and their added lines
-from its `*** Add File:` / `*** Update File:` sections, following `*** Move
-to:` renames to the destination path. Payloads without a recognizable file — including malformed
-ones — exit 0 without scanning. Hook mode resolves the repository from the
-edited file, not the session's working directory — an agent editing a file in
-another repo gets that repo's rules (`--repo` still overrides). In a repo with no `.byor/config.yml`, hook mode
-scans the edit against your synced global rules and global checks instead;
-it stays silent only when you have neither (no `~/sgconfig.yml` from
-`byor install` and no global `checks:`). Hook feedback uses the same
-rendering, but its summary line reads `BYOR found N issues in AI-written
-code.` — there the diagnostics describe the agent's own edit.
+`--stdin-hook HARNESS` (claude-code|codex|copilot, instead of `--files`) reads
+that harness's post-edit JSON payload on stdin, normalizes it to the edited
+files and edit text, and replies in the harness's own feedback format:
+claude-code via stderr + exit 2, codex/copilot via a JSON envelope on stdout. A
+codex payload carries the patch text in `tool_input.command` as an
+`apply_patch` envelope, so byor reads the changed files and their added lines
+from its `*** Add File:` / `*** Update File:` sections, following `*** Move to:`
+renames to the destination path. A payload with no recognizable file, malformed
+ones included, exits 0 without scanning.
+
+Hook mode resolves the repository from the edited file, not the session's
+working directory, so an agent editing a file in another repo gets that repo's
+rules (`--repo` still overrides). In a repo with no `.byor/config.yml`, it scans
+the edit against your synced global rules and global checks instead, and stays
+silent only when you have neither: no `~/sgconfig.yml` from `byor install` and
+no global `checks:`.
+
+Hook feedback uses the same rendering, but the summary line reads `BYOR found N
+issues in AI-written code.`, since the diagnostics describe the agent's own
+edit.
 
 ## Extra checks
 
@@ -133,22 +136,24 @@ checks:
     tags: [format]
 ```
 
-`run` is shlex-split into argv and invoked directly (never through a shell);
-the in-scope files whose extension is listed in `extensions` are appended as
+`run` is shlex-split into argv and invoked directly, never through a shell. The
+in-scope files whose extension is listed in `extensions` are appended as
 trailing arguments (an empty `extensions` matches every in-scope file), so **a
-check command must accept a list of file paths**. When no file paths are
-provided, the command must treat that as a whole-repo scan while respecting
-normal ignored-file rules; generated CI gates intentionally run checks that way,
-so a check that quietly no-ops without arguments passes every CI run while
-enforcing nothing.
-The command runs without a shell — that is what keeps a committed check string from being a
-shell-injection vector — so there is no `&&`, pipe, redirection, or alias.
-Anything multi-step (autofix, then format, then report the rest) belongs in a
-script the check points at; byor expands a leading `~`/`~/` in the command so
-that script can live under `~/.config/byor` and resolve in every repo (see
-[Check scripts](#check-scripts)). Checks merge by `name` — a repo check wins
-over a same-named package check, which wins over a global one — and
-`.byor/local.yml` disables them per repo by name or by tag:
+check command must accept a list of file paths**. With no file paths, the
+command must scan the whole repo while respecting ignored-file rules. Generated
+CI gates run checks that way, so a check that quietly no-ops without arguments
+passes every CI run while enforcing nothing.
+
+Running without a shell keeps a committed check string from being a
+shell-injection vector: no `&&`, pipe, redirection, or alias. Anything
+multi-step (autofix, then format, then report the rest) belongs in a script the
+check points at, and byor expands a leading `~`/`~/` in the command so that
+script can live under `~/.config/byor` and resolve in every repo (see
+[Check scripts](#check-scripts)).
+
+Checks merge by `name`: a repo check wins over a same-named package check, which
+wins over a global one. `.byor/local.yml` disables them per repo by name or by
+tag:
 
 ```yaml
 checks:
@@ -158,8 +163,8 @@ checks:
     - strict
 ```
 
-Check tags are arbitrary user-defined labels, just like rule tags. They are
-useful for profile templates and for disabling a group of checks in one repo:
+Check tags are arbitrary user-defined labels, like rule tags. They are useful
+for profile templates and for disabling a group of checks in one repo:
 
 ```bash
 byor exclude --check-tag strict
@@ -170,14 +175,14 @@ byor exclude --check ruff
 A check that exits nonzero has its raw stdout and stderr appended under a
 `### <name>` header on the same channel as the diagnostics, and makes
 `agent-check` exit `2`. A check whose command cannot be found prints one
-warning line to stderr and is skipped — it never crashes the hook. `byor
+warning line to stderr and is skipped. It never crashes the hook. `byor
 list` and `byor doctor` show the effective checks with their origin and any
 exclusions.
 
-Scope: project checks live in committed `.byor/config.yml`, so they are shared
-with anyone who works in the repo — like a committed pre-commit config — and
-apply only to that repo. Global checks are your own and run in every repo you
-work in. Only commit (or add) checks whose commands you trust.
+Scope: project checks in committed `.byor/config.yml` apply only to that repo
+and are shared with everyone who works in it, like a committed pre-commit config.
+Global checks are your own and run in every repo. Only commit (or add) checks
+whose commands you trust.
 
 ### Agent-only checks
 
@@ -195,7 +200,7 @@ checks:
 ```
 
 The post-edit hook runs it like any other check, and `byor init --gate` still
-promotes it into tracked config so every contributor's agent is held to it —
+promotes it into tracked config so every contributor's agent is held to it,
 but the generated `.pre-commit-config.yaml` and CI workflow leave it out. The
 default is `gate: true`; existing configs are unaffected.
 
@@ -203,11 +208,11 @@ default is `gate: true`; existing configs are unaffected.
 
 Because `run` is a single shell-free command, anything with more than one step
 goes in a script the check points at. A script also lets a check *autofix*
-before it reports — the agent then spends tokens only on what it could not fix.
+before it reports. The agent then spends tokens only on what it could not fix.
 But an autofixing check must also **tell the agent what it changed**: the
 harness already notifies the agent that "a hook modified the file," and without
 a reason the agent re-reads and is surprised its code changed. So report the
-fixes and exit nonzero whenever the file was touched — even when nothing is left
+fixes and exit nonzero whenever the file was touched, even when nothing is left
 to fix, so byor still surfaces the note:
 
 ```sh
@@ -258,13 +263,13 @@ skill walks an agent through authoring one when a policy fits a script better
 than an ast-grep rule or an off-the-shelf tool.
 
 Checks that outgrow one file share code as a path-referenced subprocess, never
-a Python import — there is no package to import from, and `sys.path` tricks
+a Python import: there is no package to import from, and `sys.path` tricks
 break when scripts move between the two homes. A repo script resolves its
 helper relative to itself (`Path(__file__).parent / "lib" / "helper.py"`). A
 `~/` script must instead spell out the literal
 `~/.config/byor/scripts/lib/helper.py` string, because gate generation vendors
-scripts by following exactly those literal references — copying the helper to
-`.byor/scripts/lib/helper.py` and rewriting the string in place — and a
+scripts by following exactly those literal references, copying the helper to
+`.byor/scripts/lib/helper.py` and rewriting the string in place. A
 `__file__`-relative reference is invisible to that scan. byor's own Python
 checks share their file discovery this way (`.byor/scripts/lib/pyfiles.py`).
 
@@ -283,14 +288,14 @@ Hook mode reads the harness's JSON payload on stdin, matches the pending
 command against your `language: Bash` command rules (see
 [docs/rules.md](rules.md)) and `command_checks`, and replies with the
 harness's permission decision. On a match the decision is `deny` and the
-reason is the rule's `agent_prompt` — the correction lands in the agent's
+reason is the rule's `agent_prompt`. The correction lands in the agent's
 context, it rewrites the command, and reruns. This is what a permission
 system cannot do: an allowlist says "no"; byor says "no, run this instead".
 
 Contract details:
 
 - **Always exit 0.** A deny is a deliberate JSON decision on stdout, never an
-  exit code, so a crashed hook fails open to *allow* — a byor bug can never
+  exit code, so a crashed hook fails open to *allow*: a byor bug can never
   block your agent. The flip side: a broken command rule on disk silently
   disables the whole gate; `byor doctor` reports exactly that.
 - **The fast path costs nothing extra.** With no command rules and no command
@@ -307,7 +312,7 @@ Contract details:
   check is cut off and skipped.
 - **Steering, not a sandbox.** The gate corrects an agent typing a command
   plainly. `sh -c "pip install x"` embeds the command in a string the Bash
-  parser correctly reads as a string, so it passes — by design. Do not present
+  parser correctly reads as a string, so it passes, by design. Do not present
   command rules as a security boundary; that is the harness permission
   system's job.
 
@@ -318,7 +323,7 @@ plugins, and pre-execution support there is planned separately.
 
 `byor install` sets up the agents you choose (plus the harness-neutral `skill`)
 in one step; `byor hook` adds or removes a single one afterward. There is no
-per-repo step — each integration writes to its agent's own config under your
+per-repo step: each integration writes to its agent's own config under your
 home directory, so it applies in every repo you work in.
 
 ```bash
@@ -337,7 +342,7 @@ equivalent in TypeScript). `uninstall` removes only marker-bearing files;
 anything you edited (the marker removed) is preserved with a message.
 
 The global config can carry an `init:` section whose values become `byor
-init`'s defaults — the pre-selected answer for each interactive prompt and the
+init`'s defaults: the pre-selected answer for each interactive prompt and the
 answer used under `--non-interactive`. An explicit init flag always overrides
 the global default.
 
@@ -349,8 +354,6 @@ init:
 ```
 
 ## Per-agent status
-
-Each integration lands in its agent's own configuration under your home directory.
 
 | Agent | Integration |
 | --- | --- |
@@ -380,16 +383,16 @@ default) and **setup**.
 
 The hub teaches agents to *create* rules from your feedback, not just obey them.
 When you voice a durable, mechanically checkable preference about code syntax or
-structure — "never use X", "always do Y" — the agent:
+structure ("never use X", "always do Y"), the agent:
 
 1. **Drafts** a complete ast-grep rule: id, language, severity, message,
    `rule.pattern`, and `metadata.byor` with a rationale, an imperative
    `agent_prompt` for future AI readers, and tags.
-2. **Proposes a scope**: `project` for team policy voiced about this
+2. **Proposes a scope** (`project` for team policy voiced about this
    codebase, `global` for personal preferences that transcend the repo,
-   `local` for experiments — and shows you the drafted rule.
-3. **Confirms** with exactly one question — covering the rule, the scope, and
-   whether exceptions are acceptable — before writing anything. No rule is
+   `local` for experiments), then shows you the drafted rule.
+3. **Confirms** with exactly one question (covering the rule, the scope, and
+   whether exceptions are acceptable) before writing anything. No rule is
    ever created from an offhand remark. When you allow exceptions, the drafted
    `agent_prompt` ends with the standard suppression sentence.
 4. **Creates** the rule via `byor add --scope SCOPE --from FILE` (which
@@ -397,9 +400,9 @@ structure — "never use X", "always do Y" — the agent:
    `ast-grep scan` against an in-repo example of the violation.
 
 The skill tree that drives this ships with byor as Markdown (`byor/data/skill/`);
-when a feedback policy is really better solved by a linter, type checker, or
+when a feedback policy is better solved by a linter, type checker, or
 formatter (line length, import order, a wrong type), `references/checks.md` has
-the agent say so and offer to configure that tool and wire it in — as a byor
+the agent say so and offer to configure that tool and wire it in: as a byor
 `check`, in CI, or as a pre-commit hook. A preference no tool can express (naming
 philosophy, architectural taste) is declined with a pointer to the harness's
 own instruction file (CLAUDE.md, AGENTS.md, …).
@@ -410,7 +413,7 @@ own instruction file (CLAUDE.md, AGENTS.md, …).
 (`uv tool install byor && byor install`), say "set up byor" in your agent and it
 verifies the install with `byor doctor` (repairing or adding harnesses by
 re-running `byor install`), optionally runs `byor init` if you want repo-scoped
-or team-shared rules, and — with your say-so — scans your existing instruction
+or team-shared rules, and, with your say-so, scans your existing instruction
 files (CLAUDE.md, AGENTS.md, copilot-instructions.md), proposes rules for the
 mechanically checkable preferences, and creates the ones you approve. For an
 existing repo it can also run a one-time cleanup pass on an isolated branch so
@@ -419,7 +422,7 @@ your instruction files unless you ask.
 
 ### The skill is byor-owned
 
-The skill is global — one render per machine — and lives at two paths because
+The skill is global, one render per machine, and lives at two paths because
 no single one is read by every harness:
 
 | Harness | Reads the skill from |
@@ -433,7 +436,7 @@ It writes them from the packaged skill tree (`byor/data/skill/`) and keeps them
 current with the **same self-heal that runs on most byor commands**: any file
 (hub or reference) that drifts from the installed byor's skill is silently
 rewritten, so there is no refresh command to remember. The exception is
-`byor doctor`, which is read-only — it reports a drifted render as an
+`byor doctor`, which is read-only: it reports a drifted render as an
 `agent_files` failure instead of rewriting it.
 
 To take a render over, **remove its byor marker**: byor then leaves that file
@@ -452,8 +455,8 @@ exit 2, appends the diagnostics to the tool output the model sees. Any other
 exit code appends nothing, so a byor configuration error never breaks the
 agent loop.
 
-`edit` and `write` name the touched file in `filePath`; `apply_patch` — the
-only edit tool some models (e.g. GPT-5) use — instead carries a `patchText`,
+`edit` and `write` name the touched file in `filePath`; `apply_patch`, the
+only edit tool some models (e.g. GPT-5) use, instead carries a `patchText`,
 so the plugin reads the changed paths from its `*** Add File:` / `*** Update
 File:` markers and checks each. A file changed another way (for example via a
 shell command) is not auto-checked.
@@ -474,18 +477,18 @@ Install writes a `PostToolUse` hook (matcher `apply_patch|Edit|Write`) and a
 `PreToolUse` gate (matcher `Bash`) into `~/.codex/hooks.json`. Codex edits
 files through `apply_patch` (its real `tool_name`); `Edit`/`Write` remain in
 the matcher as Codex's documented aliases. Codex reports shell commands under
-`tool_name: "Bash"` in the `PreToolUse` payload — the same name Claude Code
-uses — regardless of the underlying exec handler (`exec_command`,
+`tool_name: "Bash"` in the `PreToolUse` payload, the same name Claude Code
+uses, regardless of the underlying exec handler (`exec_command`,
 `unified_exec`), so the gate matches on `Bash` (verified live against codex
 0.144). Codex does not run new or changed hooks until you trust them: run
-`/hooks` in the Codex session and approve the byor entries — again after an
-upgrade adds a hook — which `byor hook install --agent codex` reminds you of.
+`/hooks` in the Codex session and approve the byor entries, again after an
+upgrade adds a hook, which `byor hook install --agent codex` reminds you of.
 
 Codex must be recent enough that `apply_patch` edits fire `PostToolUse` hooks:
 older versions (through ~0.118) fired them only for the Bash tool, so byor saw
 no edits there. A newly-installed gate is silent until trusted; a command byor
-never sees (a shell handler that doesn't emit `PreToolUse`) is simply
-allowed — consistent with the gate's fail-open design.
+never sees (a shell handler that doesn't emit `PreToolUse`) is allowed,
+consistent with the gate's fail-open design.
 
 ### claude-code
 
@@ -512,12 +515,12 @@ if absent and preserving existing keys and hook groups:
 
 Claude Code pipes the tool-call JSON to the hook on stdin (which
 `--stdin-hook claude-code` parses) and, on exit 2, feeds the hook's stderr back
-to the model — hence `>&2`. `agent-check` exits 2 exactly when there are
+to the model, hence `>&2`. `agent-check` exits 2 exactly when there are
 diagnostics, so the instructions reach the model only when something needs
 fixing.
 
 The pre-command gate lands next to it as a `PreToolUse` group (matcher
-`Bash`, command `byor command-check --stdin-hook claude-code` — no `>&2`,
+`Bash`, command `byor command-check --stdin-hook claude-code`; no `>&2`
 because the gate replies with a JSON permission decision on stdout):
 
 ```json
