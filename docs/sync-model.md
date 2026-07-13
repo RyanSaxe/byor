@@ -10,12 +10,12 @@ Your global rules are canonical in `~/.config/byor/rules/` and copied into
 each repo's `.byor/rules/personal/global/`. The primary reason is the override
 model: because each repo holds its own copy of a global rule, a project or
 local rule can shadow it by ID, a rule can be promoted from global into the
-project, and a teammate's committed rule can win on the next sync — behaviors a
-single shared symlink target could not express. Copies are also what let a
-fresh clone lint with zero byor installed.
+project, and a teammate's committed rule can win on the next sync. A single
+shared symlink target could not express those behaviors. Copies are also what
+let a fresh clone lint with zero byor installed.
 
 A symlinked *directory* in `ruleDirs` would in fact load, so symlinking is not
-strictly impossible — but ast-grep does not follow symlinked rule *files* or
+strictly impossible. But ast-grep does not follow symlinked rule *files* or
 symlinked child directories inside a rule directory, and `ruleDirs` does not
 accept globs, so copies are also the only approach that works reliably with
 plain `ast-grep scan` and `ast-grep lsp`. The cost is duplication; the benefits
@@ -169,9 +169,9 @@ repointed. Each vendored copy carries a provenance marker recording its source:
 self-heal re-vendors the copy when that source changes on your machine, and
 removing the marker makes the copy user-owned, never rewritten. The emitted
 artifacts then run `ast-grep scan` through uvx with a pinned `ast-grep-cli`
-version — so the gate never drifts with upstream releases — and each check
-directly, so the whole gate enforces with **no byor and no `~/.config/byor`**
-— just uv, ast-grep, and the check commands. pre-commit passes each check its staged matching files
+version, so the gate never drifts with upstream releases, and run each check
+directly. The whole gate enforces with **no byor and no `~/.config/byor`**:
+just uv, ast-grep, and the check commands. pre-commit passes each check its staged matching files
 (via a `files:` filter from `extensions`); CI runs each check whole-repo,
 mirroring byor's two scan modes. The workflow gates pushes to the branch
 recorded as `gate_branch` in `.byor/config.yml` at install time, so
@@ -203,7 +203,7 @@ A teammate can commit a project rule whose ID matches one of your synced
 global copies. After `git pull`, the repo contains duplicate IDs and
 `ast-grep scan`/LSP are hard-broken (ast-grep refuses to run on duplicate
 IDs) until sync removes the now-overridden copy. Any self-healing byor command
-heals it (doctor reports it) — but editor-only sessions never run byor.
+heals it (doctor reports it). But editor-only sessions never run byor.
 
 That gap is closed by opt-in git hook shims: `byor init --git-hooks` (or
 answering yes when `byor init` asks) installs `post-merge` and `post-checkout`

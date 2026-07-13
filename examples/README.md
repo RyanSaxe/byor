@@ -50,8 +50,8 @@ invocation above.
 
 ## Config setup
 
-byor goes beyond plain ast-grep by wiring external linters and type checkers
-into the same loop and feeding their output to AI agents.
+byor wires external linters and type checkers into the same loop as ast-grep
+and feeds their output to AI agents.
 
 - [`config/config.yml`](config/config.yml) — an annotated global config
   (`~/.config/byor/config.yml`): the `checks` block (ruff + ty) and the `ai`

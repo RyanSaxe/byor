@@ -71,7 +71,7 @@ The `ast-grep-ignore` directive goes on its own line directly above the
 violation, naming the rule id (a bare `ast-grep-ignore` silences every rule on
 the line below). Put the reason on the comment line above it. ast-grep also
 honors the directive at the end of the offending line itself, but a formatter
-that splits that line relocates the comment and silently invalidates it — the
+that splits that line relocates the comment and silently invalidates it. The
 line above is immune to reformatting.
 
 `byor add --allow-exceptions` ends the new rule's `agent_prompt` with the
@@ -84,7 +84,7 @@ standard sentence:
 In a repo with a committed gate (see [sync-model.md](sync-model.md)), only
 suppress rules the repo commits. The gate's runner knows nothing about your
 personal global or package rules, and ast-grep treats a suppression naming an
-unknown rule as an error (`unused-suppression`) — so committing that hatch
+unknown rule as an error (`unused-suppression`). Committing that hatch
 fails the build by design. Promote the rule to project scope first, then
 suppress it.
 
@@ -118,8 +118,8 @@ edit it by hand; sync mirrors it wholesale (see
 or topic (e.g. `rules/python/no-typing-cast.yml`); sync preserves the relative
 paths.
 
-Same-ID rules resolve by scope precedence — project wins over local wins over
-package wins over global, mirroring the check tiers — and sync skips the losing
+Same-ID rules resolve by scope precedence: project wins over local wins over
+package wins over global, mirroring the check tiers. Sync skips the losing
 copy, no error. Conflicts that ast-grep would see are errors:
 
 | Where | Behavior |
@@ -151,9 +151,9 @@ the package root, mirrored into `.byor/commands/personal/packages/<name>/`.
 
 The command tree deliberately never appears in sgconfig `ruleDirs`: a command
 rule must not fire when ast-grep scans a shell-script *file*, and a
-`.sh`-file rule must not block interactive commands. The two universes keep
-separate IDs — a command rule may share an ID with a file rule without
-conflict — but `byor exclude RULE_ID` and tag exclusions apply to both.
+`.sh`-file rule must not block interactive commands. The two trees keep
+separate IDs (a command rule may share an ID with a file rule without
+conflict), but `byor exclude RULE_ID` and tag exclusions apply to both.
 
 Create one with the `--command` flag and verify it in both directions:
 
@@ -238,7 +238,7 @@ byor promote --check NAME
 - `--from global` copies the canonical global rule into project rules and
   never removes the canonical original. Sync then skips the global copy
   because the project owns the ID; deleting the project rule later lets the
-  global rule return naturally. `excluded_rule_ids` is not touched.
+  global rule return. `excluded_rule_ids` is not touched.
 - `--from package` copies an installed package's rule into project rules and
   leaves the package source alone, exactly like `--from global`. Sync then
   skips the package copy because the project owns the ID.
@@ -376,8 +376,8 @@ init:
 `byor package add` records the opt-in in `.byor/local.yml` (private, gitignored)
 and syncs. The package's rules mirror into `.byor/rules/personal/packages/`,
 git-ignored but visible to ast-grep. Rules and checks share one precedence:
-repo wins over package wins over global (by ID for rules, by name for checks) —
-opting into a package is an easy avenue to override your global setup.
+repo wins over package wins over global (by ID for rules, by name for checks).
+Opting into a package is an easy way to override your global setup.
 Excluding a package rule or check works through the usual `byor exclude`.
 
 To share a package's rules or checks with the team, promote them into tracked
