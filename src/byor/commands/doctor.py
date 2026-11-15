@@ -61,7 +61,7 @@ from byor.rules.sync import (
     repo_plans,
 )
 from byor.scaffold.githooks import shim_findings
-from byor.scaffold.ignore import ignore_block_current, outdated_ignore_blocks, rule_visibility_ok
+from byor.scaffold.ignore import ignore_block_statuses, rule_visibility_ok
 from byor.scaffold.precommit import CONFIG_RELPATH
 from byor.scan.astgrep import ast_grep_version, resolve_ast_grep, scan_command
 from byor.scan.checks import effective_checks
@@ -441,21 +441,43 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path) -> list
 
 
 def _ignore_block_check(repo_root: Path) -> Check:
-    if ignore_block_current(repo_root):
+    statuses = ignore_block_statuses(repo_root)
+    if any(status.state == "current" for status in statuses):
         return Check(
             id="ignore_block",
             ok=True,
             message="personal rules and .byor/local.yml are git-ignored",
         )
-    outdated = outdated_ignore_blocks(repo_root)
-    if outdated:
-        listed = ", ".join(os.path.relpath(path, repo_root) for path in outdated)
+
+    def listed(state: str) -> str:
+        return ", ".join(os.path.relpath(status.path, repo_root) for status in statuses if status.state == state)
+
+    if outdated := listed("outdated"):
         return Check(
             id="ignore_block",
             ok=False,
             message=(
-                f"the byor ignore block in {listed} is out of date, so some personal byor files"
+                f"the byor ignore block in {outdated} is out of date, so some personal byor files"
                 " are committable; run `byor sync` to update it"
+            ),
+        )
+    if damaged := listed("damaged"):
+        # `byor init` would replace everything from the first begin marker on, so it is not the fix.
+        return Check(
+            id="ignore_block",
+            ok=False,
+            message=(
+                f"the byor ignore block in {damaged} is damaged: it needs exactly one begin marker"
+                " and one end marker after it; fix the markers by hand, and byor then keeps the block current"
+            ),
+        )
+    if unreadable := listed("unreadable"):
+        return Check(
+            id="ignore_block",
+            ok=False,
+            message=(
+                f"byor cannot read {unreadable} as UTF-8, so it cannot check the ignore block there;"
+                " re-save it as UTF-8"
             ),
         )
     return Check(

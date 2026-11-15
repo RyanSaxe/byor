@@ -14,6 +14,8 @@ from support import git, write_global_command_rule
 from byor.cli import main
 from byor.errors import ConfigError
 from byor.scaffold.ignore import (
+    BLOCK_BEGIN,
+    BLOCK_END,
     IGNORED_PATTERNS,
     PRIVATE_IGNORED_PATTERNS,
     ignore_file,
@@ -199,3 +201,55 @@ def test_byor_sync_rewrites_an_outdated_private_block(home: Path) -> None:
     assert main(["sync", "--repo", str(repo)]) == 0
 
     assert all(pattern in exclude.read_text() for pattern in PRIVATE_IGNORED_PATTERNS)
+
+
+CURRENT_BLOCK = "\n".join((BLOCK_BEGIN, *IGNORED_PATTERNS, BLOCK_END))
+
+
+@pytest.mark.parametrize(
+    ("content", "doctor_says"),
+    [
+        pytest.param(
+            f"{BLOCK_BEGIN}\nsecrets.env\n{BLOCK_BEFORE_COMMAND_RULES}".encode(),
+            "is damaged",
+            id="unterminated-block-before-a-complete-one",
+        ),
+        pytest.param(b"# r\xe9sultats\n" + BLOCK_BEFORE_COMMAND_RULES.encode(), "as UTF-8", id="latin-1"),
+        pytest.param(CURRENT_BLOCK.encode(), "are git-ignored", id="current-block-without-final-newline"),
+    ],
+)
+def test_self_heal_leaves_a_block_it_cannot_safely_rewrite_byte_for_byte(
+    home: Path, *, capsys: pytest.CaptureFixture[str], content: bytes, doctor_says: str
+) -> None:
+    repo = shared_repo_with_an_old_block(home)
+    (repo / ".gitignore").write_bytes(content)
+
+    assert main(["list", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+    main(["doctor", "--repo", str(repo), "--quick"])
+
+    assert (repo / ".gitignore").read_bytes() == content
+    assert doctor_says in capsys.readouterr().out
+
+
+def test_refresh_rewrites_only_the_block_and_keeps_crlf_line_endings(home: Path) -> None:
+    repo = shared_repo_with_an_old_block(home)
+    (repo / ".gitignore").write_bytes(
+        f"node_modules/\n{BLOCK_BEFORE_COMMAND_RULES}dist/\n".replace("\n", "\r\n").encode()
+    )
+
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    expected = f"node_modules/\n{CURRENT_BLOCK}\ndist/\n".replace("\n", "\r\n").encode()
+    assert (repo / ".gitignore").read_bytes() == expected
+
+
+def test_a_shared_block_in_info_exclude_stays_shared(home: Path) -> None:
+    repo = shared_repo_with_an_old_block(home)
+    (repo / ".gitignore").write_text("node_modules/\n")
+    exclude = ignore_file(repo, private=True)
+    exclude.write_text(BLOCK_BEFORE_COMMAND_RULES)
+
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    assert exclude.read_text() == f"{CURRENT_BLOCK}\n"
