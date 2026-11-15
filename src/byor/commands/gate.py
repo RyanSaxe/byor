@@ -48,6 +48,7 @@ __all__ = (
     "regenerate_gate",
     "stale_gate_files",
     "transitive_vendored_scripts",
+    "vendor_check",
     "vendored_script_problems",
 )
 
@@ -288,13 +289,13 @@ def promote_everything(repo_root: Path, config_dir: Path) -> list[str]:
 
     repo_config = load_repo_config(repo_root)
     vendored: dict[str, Path] = {}
-    repo_config.checks = [_vendor_check(repo_root, check, vendored=vendored) for check in repo_config.checks]
+    repo_config.checks = [vendor_check(repo_root, check, vendored=vendored) for check in repo_config.checks]
     names = {check.name for check in repo_config.checks}
     promoted_checks: list[str] = []
     for effective in load_effective_checks(repo_root, config_dir):
         if effective.origin == "repo" or effective.name in names:
             continue
-        repo_config.checks.append(_vendor_check(repo_root, effective.definition, vendored=vendored))
+        repo_config.checks.append(vendor_check(repo_root, effective.definition, vendored=vendored))
         names.add(effective.name)
         promoted_checks.append(effective.name)
     save_repo_config(repo_root, repo_config)
@@ -362,7 +363,16 @@ def _exists_with_other_content(destination: Path, content: str) -> bool:
     return destination.is_file() and destination.read_text(encoding="utf-8") != content
 
 
-def _vendor_check(repo_root: Path, check: CheckDef, *, vendored: dict[str, Path]) -> CheckDef:
+def vendor_check(repo_root: Path, check: CheckDef, *, vendored: dict[str, Path] | None = None) -> CheckDef:
+    """Point a check's `~/` scripts at copies vendored into the repo's `.byor/scripts/`.
+
+    A committed gate runs on teammates' machines and CI runners, where a home path does not exist,
+    and pre-commit does not expand `~` at all. `init --gate` vendors every check this way, and
+    `byor promote --check` does the same for one check in a gated repo. `vendored` carries the
+    destinations already written in one pass, so two checks sharing a script copy it once; omit it
+    for a single check. A token naming a missing file is left as written.
+    """
+    vendored = {} if vendored is None else vendored
     tokens = shlex.split(check.run)
     rewritten: list[str] = []
     changed = False

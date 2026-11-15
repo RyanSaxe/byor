@@ -591,3 +591,21 @@ def test_gate_does_not_clobber_an_existing_ci_workflow_but_prints_guidance(
     out = capsys.readouterr().out
     assert ".github/workflows/byor-gate.yml already exists" in out
     assert "ast-grep scan" in out
+
+
+def test_promoting_a_home_script_check_into_a_gated_repo_vendors_it(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    repo = gate_repo(home)
+    (home / "later.sh").write_text("#!/bin/sh\necho hi\n")
+    write_global_check("later", "~/later.sh")
+
+    assert main(["promote", "--repo", str(repo), "--check", "later"]) == 0
+
+    assert next(c.run for c in load_repo_config(repo).checks if c.name == "later") == ".byor/scripts/later.sh"
+    assert (repo / ".byor" / "scripts" / "later.sh").is_file()
