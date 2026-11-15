@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from byor.agents.install import agent_file_problems
+from byor.agents.install import agent_file_problems, unrecorded_agents
 from byor.commands.gate import (
     directly_invoked_vendored_scripts,
     precommit_hook_installed,
@@ -23,6 +23,7 @@ from byor.commands.gate import (
     transitive_vendored_scripts,
     vendored_script_problems,
 )
+from byor.commands.package import available_packages
 from byor.config import (
     GlobalConfig,
     RepoConfig,
@@ -541,6 +542,7 @@ def _registry_check(config_dir: Path, global_config: GlobalConfig) -> Check:
     ]
     if missing:
         problems.append("run `byor sync --all --prune`")
+    problems.extend(_missing_package_problems(repos, set(available_packages(config_dir, global_config))))
     if problems:
         return Check(
             id="registered_repos",
@@ -550,8 +552,30 @@ def _registry_check(config_dir: Path, global_config: GlobalConfig) -> Check:
     return Check(
         id="registered_repos",
         ok=True,
-        message="all registered repository paths exist",
+        message="all registered repository paths exist and their packages are installed",
     )
+
+
+# sync loads a missing package as zero rules, so without this a repo silently
+# loses the package's rules and checks after the package is deleted or renamed.
+def _missing_package_problems(repos: list[Path], available: set[str]) -> list[str]:
+    problems: list[str] = []
+    missing: list[str] = []
+    for repo in repos:
+        if not repo.is_dir():
+            continue
+        try:
+            local = load_local_config(repo)
+        except ConfigError as error:
+            problems.append(str(error))
+            continue
+        missing.extend(f"{_home_display(repo)} ({name})" for name in local.packages if name not in available)
+    if missing:
+        problems.append(
+            f"repos name packages that are not installed: {', '.join(missing)}; "
+            "remove each from `packages` in its repo's .byor/local.yml, or restore the package"
+        )
+    return problems
 
 
 def _disabled_paths_check(global_config: GlobalConfig) -> Check | None:
@@ -603,10 +627,22 @@ def _extra_checks_check(
 
 
 def _agent_files_check(global_config: GlobalConfig) -> Check:
+    problems = _recorded_agent_problems(global_config.agents) + _unrecorded_agent_problems(global_config.agents)
+    if problems:
+        return Check(id="agent_files", ok=False, message="; ".join(problems))
     if not global_config.agents:
         return Check(id="agent_files", ok=True, message="no AI agents configured")
+    agents = ", ".join(global_config.agents)
+    return Check(
+        id="agent_files",
+        ok=True,
+        message=f"agent integrations installed for: {agents}",
+    )
+
+
+def _recorded_agent_problems(agents: list[str]) -> list[str]:
     problems: list[str] = []
-    for agent in global_config.agents:
+    for agent in agents:
         # A malformed harness config is itself a finding: report it per agent so
         # one broken file cannot crash doctor or hide the other agents' health.
         try:
@@ -615,11 +651,18 @@ def _agent_files_check(global_config: GlobalConfig) -> Check:
             problems.append(f"{error}; fix the JSON by hand")
             continue
         problems.extend(f"{problem}; run `byor install`" for problem in agent_problems)
-    if problems:
-        return Check(id="agent_files", ok=False, message="; ".join(problems))
-    agents = ", ".join(global_config.agents)
-    return Check(
-        id="agent_files",
-        ok=True,
-        message=f"agent integrations installed for: {agents}",
-    )
+    return problems
+
+
+def _unrecorded_agent_problems(recorded: list[str]) -> list[str]:
+    try:
+        unrecorded = unrecorded_agents(recorded)
+    except ConfigError as error:
+        return [f"{error}; fix the JSON by hand"]
+    if not unrecorded:
+        return []
+    listed = ", ".join(unrecorded)
+    return [
+        f"byor integrations are installed for agents missing from `agents` in ~/.config/byor/config.yml, "
+        f"so self-heal never updates them: {listed}; run `byor hook install --agent NAME` for each"
+    ]
