@@ -112,12 +112,12 @@ def test_doctor_has_no_leftover_row_once_the_old_entries_are_gone(capsys: pytest
 def test_an_absolute_registry_path_is_live_not_a_leftover(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     registry = home / "elsewhere" / "repos.yml"
     save_global_config(global_config_dir(), GlobalConfig(repos_path=str(registry)))
-    assert main(["init", "--repo", str(home), "--non-interactive"]) == 0
+    repo = make_repo(home)
     capsys.readouterr()
 
     main(["doctor", "--quick"])
 
-    assert load_repo_registry(registry) == [home.resolve()]
+    assert load_repo_registry(registry) == [repo.resolve()]
     assert "legacy_state" not in capsys.readouterr().out
 
 

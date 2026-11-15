@@ -376,3 +376,12 @@ def test_global_default_seeds_interactive_prompt(repo: Path, monkeypatch: pytest
 
     assert ".byor/" in (repo / ".git" / "info" / "exclude").read_text()
     assert not (repo / ".gitignore").exists()
+
+
+def test_init_refuses_the_home_directory(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    home = repo.parent
+
+    assert main(["init", "--repo", str(home), "--non-interactive"]) != 0
+
+    assert "cannot set up your home directory" in capsys.readouterr().err
+    assert not (home / ".byor").exists()
