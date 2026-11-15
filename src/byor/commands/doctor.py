@@ -727,6 +727,7 @@ def _unrecorded_agent_problems(recorded: list[str]) -> list[str]:
         listed = ", ".join(scan.found)
         problems.append(
             f"byor integrations are installed for agents missing from `agents` in byor's state.yml: {listed}; "
-            "the next byor command records them, or run `byor hook install --agent NAME` for each"
+            "any self-healing command such as `byor list` records them, "
+            "or run `byor hook install --agent NAME` for each"
         )
     return problems
