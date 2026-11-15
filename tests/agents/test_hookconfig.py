@@ -281,3 +281,18 @@ def test_install_writes_through_a_symlinked_settings_file(isolated_home: Path) -
     assert link.is_symlink()
     assert hook_installed("claude-code")
     assert json.loads(target.read_text())["theme"] == "dark"
+
+
+def test_uninstall_keeps_a_symlinked_settings_file_it_empties(isolated_home: Path) -> None:
+    target = isolated_home / "dotfiles" / "settings.json"
+    target.parent.mkdir()
+    target.write_text("{}\n")
+    link = config_path(isolated_home, "claude-code")
+    link.parent.mkdir(parents=True)
+    link.symlink_to(target)
+    install_hook("claude-code")
+
+    uninstall_hook("claude-code")
+
+    assert link.is_symlink()
+    assert json.loads(target.read_text()) == {}

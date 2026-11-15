@@ -206,7 +206,9 @@ def _uninstall_spec(spec: HookSpec) -> list[str]:
     if len(kept) == len(entries):
         return []
     _set_entries(config, spec, entries=kept)
-    if config:
+    # An emptied settings file byor would otherwise delete, but a symlinked one
+    # belongs to the user's dotfiles: keep the link and write `{}` through it.
+    if config or path.is_symlink():
         _save_config(path, config)
     else:
         path.unlink()
