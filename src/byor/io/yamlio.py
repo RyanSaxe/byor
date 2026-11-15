@@ -7,7 +7,9 @@ code.
 
 from __future__ import annotations
 
+import contextlib
 import io
+import json
 from typing import TYPE_CHECKING
 
 from ruamel.yaml import YAML
@@ -27,6 +29,7 @@ __all__ = (
     "new_yaml",
     "parse_yaml_mapping",
     "write_yaml_atomic",
+    "yaml_scalar",
 )
 
 # Wide enough that ruamel never rewraps long values like agent prompts.
@@ -78,3 +81,16 @@ def dump_yaml(data: CommentedMap) -> str:
 def write_yaml_atomic(path: Path, data: CommentedMap) -> None:
     content = dump_yaml(data)
     write_text_atomic(path, content)
+
+
+def yaml_scalar(value: str) -> str:
+    """Spell `value` for a generated `key: value` line so YAML reads back the same string.
+
+    A value that already reads back unchanged stays plain, so ordinary generated files keep their
+    look. Anything YAML would parse differently, such as `true`, `a: b`, `x #y` or a leading
+    quote, is double-quoted; JSON's string syntax is valid YAML for that.
+    """
+    with contextlib.suppress(YAMLError):
+        if YAML(typ="safe").load(f"key: {value}") == {"key": value}:
+            return value
+    return json.dumps(value, ensure_ascii=False)

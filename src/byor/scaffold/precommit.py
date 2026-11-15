@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from byor.io.fsio import MANAGED_NOTICE, write_marked_text
+from byor.io.yamlio import yaml_scalar
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -75,9 +76,9 @@ def _local_repo_block(checks: list[CheckDef], fail_on: Literal["all", "error"]) 
 
 def _hook(hook_id: str, name: str, *, entry: str, extensions: list[str]) -> str:
     lines = [
-        f"      - id: {hook_id}",
-        f"        name: {name}",
-        f"        entry: {entry}",
+        f"      - id: {yaml_scalar(hook_id)}",
+        f"        name: {yaml_scalar(name)}",
+        f"        entry: {yaml_scalar(entry)}",
         "        language: system",
     ]
     if extensions:

@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from byor.io.fsio import write_marked_text
+from byor.io.yamlio import yaml_scalar
 from byor.scaffold.precommit import GATE_MARKER, ast_grep_entry
 
 if TYPE_CHECKING:
@@ -49,9 +50,9 @@ def _gate_steps(checks: list[CheckDef], fail_on: Literal["all", "error"]) -> lis
         "      - uses: astral-sh/setup-uv@v6",
         "        with:",
         "          enable-cache: true",
-        f"      - run: {ast_grep_entry(fail_on)}",
+        f"      - run: {yaml_scalar(ast_grep_entry(fail_on))}",
     ]
-    steps.extend(f"      - run: {check.run}" for check in checks)
+    steps.extend(f"      - run: {yaml_scalar(check.run)}" for check in checks)
     return steps
 
 

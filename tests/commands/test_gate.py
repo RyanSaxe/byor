@@ -10,6 +10,7 @@ shim and commits nothing.
 from pathlib import Path
 
 import pytest
+from ruamel.yaml import YAML
 from support import git, install_package, write_global_check, write_global_rule, write_package_rule, write_rule
 
 from byor.cli import main
@@ -52,6 +53,19 @@ def test_gate_promotes_rules_and_checks_and_writes_portable_artifacts(
     assert f"uvx --from ast-grep-cli=={AST_GREP_CLI_VERSION} ast-grep scan --error" in workflow
     assert "npm install" not in workflow
     assert "ruff-check" in workflow
+
+
+def test_gate_files_read_back_every_check_command_exactly(home: Path) -> None:
+    commands = ["grep -n 'TODO: '", "true", "echo done #1", "'quoted' start"]
+    for index, command in enumerate(commands):
+        write_global_check(f"check-{index}", command)
+    repo = gate_repo(home)
+
+    precommit = YAML(typ="safe").load((repo / ".pre-commit-config.yaml").read_text())
+    workflow = YAML(typ="safe").load((repo / ".github" / "workflows" / "byor-gate.yml").read_text())
+
+    assert [hook["entry"] for hook in precommit["repos"][0]["hooks"][1:]] == commands
+    assert [step["run"] for step in workflow["jobs"]["byor"]["steps"][3:]] == commands
 
 
 def test_gate_leaves_agent_only_checks_out_of_the_committed_files(home: Path) -> None:
