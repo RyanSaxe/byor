@@ -26,13 +26,16 @@ from byor.commands.gate import (
 from byor.commands.package import available_packages
 from byor.config import (
     GlobalConfig,
+    MachineState,
     RepoConfig,
     RepoPaths,
     command_rule_dir_relpaths,
     global_commands_dir,
     global_rules_dir,
+    legacy_machine_state,
     load_global_config,
     load_local_config,
+    load_machine_state,
     load_package_checks,
     load_repo_config,
     load_repo_registry,
@@ -49,7 +52,7 @@ from byor.errors import (
     RuleValidationError,
 )
 from byor.io.output import write_line, write_lines
-from byor.io.paths import global_config_dir, home_sgconfig_path, resolve_repo_root
+from byor.io.paths import global_config_dir, global_state_dir, home_sgconfig_path, resolve_repo_root
 from byor.io.yamlio import load_yaml_mapping
 from byor.rules.rules import check_id_conflicts, load_rules
 from byor.rules.sync import (
@@ -103,7 +106,7 @@ def collect_checks(repo_root: Path, config_dir: Path, *, quick: bool) -> list[Ch
     staleness) but keeps the cheap checks.
     """
     global_config = load_global_config(config_dir)
-    checks = _global_checks(config_dir, global_config, quick=quick)
+    checks = _global_checks(config_dir, global_state_dir(), global_config=global_config, quick=quick)
     checks.extend(
         _repo_checks(
             repo_root,
@@ -115,16 +118,16 @@ def collect_checks(repo_root: Path, config_dir: Path, *, quick: bool) -> list[Ch
     return checks
 
 
-def _global_checks(config_dir: Path, global_config: GlobalConfig, *, quick: bool) -> list[Check]:
+def _global_checks(config_dir: Path, state_dir: Path, *, global_config: GlobalConfig, quick: bool) -> list[Check]:
+    state = load_machine_state(state_dir)
     checks = [
         _ast_grep_check(global_config),
         _home_sgconfig_check(config_dir, global_config),
-        _agent_files_check(global_config),
-        _registry_check(config_dir, global_config),
+        _agent_files_check(state),
+        _registry_check(config_dir, state_dir, global_config=global_config),
     ]
-    disabled = _disabled_paths_check(global_config)
-    if disabled is not None:
-        checks.append(disabled)
+    optional = (_disabled_paths_check(state), _legacy_state_check(config_dir, state_dir))
+    checks.extend(check for check in optional if check is not None)
     if not quick:
         checks.append(_global_rules_check(config_dir, global_config))
         checks.append(_global_command_rules_check(config_dir, global_config))
@@ -533,8 +536,8 @@ def _vendored_scripts_check(repo_root: Path, repo_config: RepoConfig) -> Check |
     )
 
 
-def _registry_check(config_dir: Path, global_config: GlobalConfig) -> Check:
-    repos = load_repo_registry(repo_registry_path(config_dir, global_config))
+def _registry_check(config_dir: Path, state_dir: Path, *, global_config: GlobalConfig) -> Check:
+    repos = load_repo_registry(repo_registry_path(state_dir, global_config))
     missing = [f"{repo} no longer exists" for repo in repos if not repo.is_dir()]
     tallies = Counter(repo.resolve() for repo in repos)
     problems = missing + [
@@ -578,13 +581,31 @@ def _missing_package_problems(repos: list[Path], available: set[str]) -> list[st
     return problems
 
 
-def _disabled_paths_check(global_config: GlobalConfig) -> Check | None:
-    if not global_config.disabled_repos:
+def _disabled_paths_check(state: MachineState) -> Check | None:
+    if not state.disabled_repos:
         return None
-    listed = ", ".join(_home_display(entry) for entry in global_config.disabled_repos)
-    count = len(global_config.disabled_repos)
+    listed = ", ".join(_home_display(entry) for entry in state.disabled_repos)
+    count = len(state.disabled_repos)
     noun = "path" if count == 1 else "paths"
     return Check(id="disabled_paths", ok=True, message=f"{count} {noun} disabled: {listed}")
+
+
+def _legacy_state_check(config_dir: Path, state_dir: Path) -> Check | None:
+    try:
+        leftovers = legacy_machine_state(config_dir, state_dir)
+    except ConfigError as error:
+        return Check(id="legacy_state", ok=False, message=f"{error}; fix config.yml by hand")
+    if not leftovers:
+        return None
+    listed = ", ".join(leftovers)
+    return Check(
+        id="legacy_state",
+        ok=False,
+        message=(
+            f"byor no longer reads these entries in {_home_display(config_dir)}, because it keeps them in "
+            f"{_home_display(state_dir)} now: {listed}; delete them"
+        ),
+    )
 
 
 def _home_display(path: Path) -> str:
@@ -626,13 +647,13 @@ def _extra_checks_check(
     return Check(id="extra_checks", ok=True, message=f"checks: {listed}")
 
 
-def _agent_files_check(global_config: GlobalConfig) -> Check:
-    problems = _recorded_agent_problems(global_config.agents) + _unrecorded_agent_problems(global_config.agents)
+def _agent_files_check(state: MachineState) -> Check:
+    problems = _recorded_agent_problems(state.agents) + _unrecorded_agent_problems(state.agents)
     if problems:
         return Check(id="agent_files", ok=False, message="; ".join(problems))
-    if not global_config.agents:
+    if not state.agents:
         return Check(id="agent_files", ok=True, message="no AI agents configured")
-    agents = ", ".join(global_config.agents)
+    agents = ", ".join(state.agents)
     return Check(
         id="agent_files",
         ok=True,
@@ -663,6 +684,6 @@ def _unrecorded_agent_problems(recorded: list[str]) -> list[str]:
         return []
     listed = ", ".join(unrecorded)
     return [
-        f"byor integrations are installed for agents missing from `agents` in ~/.config/byor/config.yml, "
+        f"byor integrations are installed for agents missing from `agents` in byor's state.yml, "
         f"so self-heal never updates them: {listed}; run `byor hook install --agent NAME` for each"
     ]

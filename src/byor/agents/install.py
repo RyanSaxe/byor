@@ -20,10 +20,10 @@ from byor.agents.opencode import (
 )
 from byor.agents.pi import PI_EXTENSION, PI_EXTENSION_RELPATH, PI_MARKER
 from byor.agents.skill import global_skill_dirs, skill_files
-from byor.config import load_global_config, save_global_config
+from byor.config import load_machine_state, save_machine_state
 from byor.io.fsio import MANAGED_MARKER, marked_text_status, prune_empty_dirs, write_marked_text
 from byor.io.output import write_lines
-from byor.io.paths import global_config_dir
+from byor.io.paths import global_state_dir
 
 if TYPE_CHECKING:
     import argparse
@@ -75,20 +75,20 @@ HARNESS_MANUAL_STEPS: dict[Harness, str] = {
 
 
 def run_hook(args: argparse.Namespace) -> int:
-    config_dir = global_config_dir()
-    config = load_global_config(config_dir)
+    state_dir = global_state_dir()
+    state = load_machine_state(state_dir)
     if args.hook_action == "install":
         messages = install_agent(args.agent)
-        recorded = args.agent not in config.agents
+        recorded = args.agent not in state.agents
         if recorded:
-            config.agents.append(args.agent)
+            state.agents.append(args.agent)
     else:
         messages = uninstall_agent(args.agent)
-        recorded = args.agent in config.agents
+        recorded = args.agent in state.agents
         if recorded:
-            config.agents.remove(args.agent)
+            state.agents.remove(args.agent)
     if recorded:
-        save_global_config(config_dir, config)
+        save_machine_state(state_dir, state)
     write_lines(messages)
     return 0
 

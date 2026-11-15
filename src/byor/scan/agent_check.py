@@ -15,11 +15,12 @@ from typing import TYPE_CHECKING, Literal
 
 from byor.agents.harness import EditPayload, Harness, emit, parse_payload
 from byor.commands.heal import heal_worktree
-from byor.config import disabled_entry, load_global_config, repo_config_path
+from byor.config import disabled_entry, load_global_config, load_machine_state, repo_config_path
 from byor.errors import ByorError
 from byor.io.paths import (
     display_path,
     global_config_dir,
+    global_state_dir,
     home_sgconfig_path,
     resolve_repo_root,
 )
@@ -145,7 +146,7 @@ def _hook_diagnostics(args: argparse.Namespace, *, harness: Harness) -> int:
     if not payload.edits:
         return 0
     repo_root = _hook_repo_root(explicit=args.repo, payload=payload)
-    if disabled_entry(repo_root, global_config) is not None:
+    if disabled_entry(repo_root, load_machine_state(global_state_dir())) is not None:
         # `byor disable` covers this repo: silent exit, nothing is scanned.
         return 0
     worktree_line = heal_worktree(repo_root, config_dir)

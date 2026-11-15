@@ -23,24 +23,24 @@ from byor.config import (
     command_rule_dir_relpaths,
     disabled_entry,
     global_commands_dir,
-    global_config_path,
     global_rules_dir,
     load_global_config,
+    load_machine_state,
     load_repo_config,
     local_config_path,
     register_repo,
     repo_config_path,
     repo_registry_path,
     rule_dir_relpaths,
-    save_global_config,
     save_local_config,
+    save_machine_state,
     save_repo_config,
     save_repo_registry,
 )
 from byor.errors import ByorError, RepoNotInitializedError
 from byor.io.gitio import git_output
 from byor.io.output import write_line, write_lines
-from byor.io.paths import display_path, global_config_dir, resolve_repo_root
+from byor.io.paths import display_path, global_config_dir, global_state_dir, resolve_repo_root
 from byor.rules.rules import discover_rule_files
 from byor.rules.sync import load_canonical_rules, summarize_changes, sync_repo
 from byor.scaffold.githooks import install_git_shims
@@ -77,7 +77,7 @@ class InitOptions:
 def run_init(args: argparse.Namespace) -> int:
     repo_root = resolve_repo_root(explicit=args.repo)
     config_dir = global_config_dir()
-    _require_enabled(repo_root, config_dir, interactive=not args.non_interactive)
+    _require_enabled(repo_root, global_state_dir(), interactive=not args.non_interactive)
     defaults = load_global_config(config_dir).init
     options = _options_from_args(args, defaults)
     write_lines(initialize_repo(repo_root, config_dir, options=options))
@@ -85,15 +85,15 @@ def run_init(args: argparse.Namespace) -> int:
     return 0
 
 
-def _require_enabled(repo_root: Path, config_dir: Path, *, interactive: bool) -> None:
+def _require_enabled(repo_root: Path, state_dir: Path, *, interactive: bool) -> None:
     """Stop init in a disabled repo unless the user lifts the entry.
 
     Only an exact entry is removable here: a prefix entry covers other paths
     too, so lifting it on one child's confirmation would silently re-enable
     all of them — the message names the entry and `byor enable` instead.
     """
-    config = load_global_config(config_dir)
-    entry = disabled_entry(repo_root, config)
+    state = load_machine_state(state_dir)
+    entry = disabled_entry(repo_root, state)
     if entry is None:
         return
     if entry != repo_root.resolve():
@@ -106,14 +106,16 @@ def _require_enabled(repo_root: Path, config_dir: Path, *, interactive: bool) ->
     if prompt_choice(question, ("no", "yes"), default=0) != 1:
         msg = f"aborted: the repository stays disabled; run `byor enable {repo_root}` to re-enable it"
         raise ByorError(msg)
-    config.disabled_repos.remove(entry)
-    save_global_config(config_dir, config)
+    state.disabled_repos.remove(entry)
+    save_machine_state(state_dir, state)
     write_line(f"Enabled byor in {repo_root}")
 
 
 def initialize_repo(repo_root: Path, config_dir: Path, *, options: InitOptions) -> list[str]:
     messages: list[str] = []
-    global_config = _bootstrap_global_dir(config_dir)
+    global_config = load_global_config(config_dir)
+    state_dir = global_state_dir()
+    _bootstrap_global_dir(config_dir, state_dir, config=global_config)
     repo_config = _ensure_repo_layout(repo_root, private=options.private)
     sgconfig_message = ensure_rule_dirs(
         repo_root / repo_config.paths.sgconfig,
@@ -132,7 +134,7 @@ def initialize_repo(repo_root: Path, config_dir: Path, *, options: InitOptions) 
         )
     if options.git_hooks:
         messages.extend(install_git_shims(repo_root))
-    if options.register and register_repo(repo_root, repo_registry_path(config_dir, global_config)):
+    if options.register and register_repo(repo_root, repo_registry_path(state_dir, global_config)):
         messages.append("Registered repository for `byor sync --all`")
     messages.extend(_apply_profiles_and_packages(repo_root, config_dir, global_config=global_config, options=options))
     _, sync_result = sync_repo(repo_root, load_canonical_rules(config_dir))
@@ -189,18 +191,14 @@ def _existing_violations_note(repo_root: Path, config_dir: Path) -> str | None:
     return f"{violations_part} across {files_part}; run `byor agent-check` to see them"
 
 
-def _bootstrap_global_dir(config_dir: Path) -> GlobalConfig:
-    if global_config_path(config_dir).is_file():
-        config = load_global_config(config_dir)
-    else:
-        config = GlobalConfig()
-        save_global_config(config_dir, config)
+# config.yml stays absent until the user writes one: its defaults are built in, and byor never
+# writes the user's settings.
+def _bootstrap_global_dir(config_dir: Path, state_dir: Path, *, config: GlobalConfig) -> None:
     global_rules_dir(config_dir, config).mkdir(parents=True, exist_ok=True)
     global_commands_dir(config_dir, config).mkdir(parents=True, exist_ok=True)
-    registry_path = repo_registry_path(config_dir, config)
+    registry_path = repo_registry_path(state_dir, config)
     if not registry_path.is_file():
         save_repo_registry(registry_path, [])
-    return config
 
 
 def _ensure_repo_layout(repo_root: Path, *, private: bool) -> RepoConfig:

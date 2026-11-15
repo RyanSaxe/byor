@@ -41,6 +41,7 @@ TRACKED_FILES = (
 # ast-grep-ignore: python.question-mocks
 def repo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg-state"))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -49,6 +50,10 @@ def repo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 def config_dir(repo: Path) -> Path:
     return repo.parent / "xdg" / "byor"
+
+
+def state_dir(repo: Path) -> Path:
+    return repo.parent / "xdg-state" / "byor"
 
 
 def test_init_creates_repository_and_global_layout(repo: Path) -> None:
@@ -72,9 +77,10 @@ def test_init_creates_repository_and_global_layout(repo: Path) -> None:
     gitignore = (repo / ".gitignore").read_text()
     assert all(pattern in gitignore for pattern in IGNORED_PATTERNS)
 
-    assert (config_dir(repo) / "config.yml").is_file()
+    # The user's settings file stays theirs to write; byor records the repo in its state folder.
+    assert not (config_dir(repo) / "config.yml").exists()
     assert (config_dir(repo) / "rules").is_dir()
-    assert load_repo_registry(config_dir(repo) / "repos.yml") == [repo.resolve()]
+    assert load_repo_registry(state_dir(repo) / "repos.yml") == [repo.resolve()]
 
 
 def test_init_defaults_project_name_to_repo_dir(repo: Path) -> None:
@@ -214,7 +220,7 @@ def test_init_is_idempotent(repo: Path) -> None:
 
     for path, content in snapshot.items():
         assert path.read_text() == content, path
-    assert load_repo_registry(config_dir(repo) / "repos.yml") == [repo.resolve()]
+    assert load_repo_registry(state_dir(repo) / "repos.yml") == [repo.resolve()]
 
 
 def test_init_preserves_existing_sgconfig_content(repo: Path) -> None:

@@ -15,6 +15,7 @@ from byor.errors import ConfigError
 __all__ = (
     "display_path",
     "global_config_dir",
+    "global_state_dir",
     "home_sgconfig_path",
     "resolve_repo_root",
     "resolve_within",
@@ -34,6 +35,14 @@ def global_config_dir() -> Path:
     if xdg_config_home:
         return Path(xdg_config_home) / "byor"
     return Path.home() / ".config" / "byor"
+
+
+# What byor records about this computer, kept apart from the user's config directory.
+def global_state_dir() -> Path:
+    xdg_state_home = os.environ.get("XDG_STATE_HOME")
+    if xdg_state_home:
+        return Path(xdg_state_home) / "byor"
+    return Path.home() / ".local" / "state" / "byor"
 
 
 def home_sgconfig_path(home: Path | None = None) -> Path:

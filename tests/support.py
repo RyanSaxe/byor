@@ -17,10 +17,11 @@ from byor.config import (
     CheckDef,
     load_global_config,
     load_local_config,
+    load_machine_state,
     save_global_config,
     save_local_config,
 )
-from byor.io.paths import global_config_dir
+from byor.io.paths import global_config_dir, global_state_dir
 
 RULE_TEMPLATE = "id: {rule_id}\nlanguage: Python\nmessage: {message}\nrule:\n  pattern: cast($TYPE, $VALUE)\n"
 NOOP_EDITOR = shlex.join([sys.executable, "-c", "pass"])
@@ -84,7 +85,7 @@ def repo_with_agents(home: Path, *agents: str) -> Path:
 
 
 def global_agents() -> list[str]:
-    return load_global_config(global_config_dir()).agents
+    return load_machine_state(global_state_dir()).agents
 
 
 def write_rule(

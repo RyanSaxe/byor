@@ -16,6 +16,7 @@ from byor.config import (
     GlobalConfig,
     InitDefaults,
     LocalConfig,
+    MachineState,
     ProfileConfig,
     RepoConfig,
     RepoPaths,
@@ -25,6 +26,7 @@ from byor.config import (
     global_rules_dir,
     load_global_config,
     load_local_config,
+    load_machine_state,
     load_package_command_checks,
     load_repo_config,
     load_repo_registry,
@@ -32,6 +34,7 @@ from byor.config import (
     repo_registry_path,
     save_global_config,
     save_local_config,
+    save_machine_state,
     save_repo_config,
 )
 from byor.errors import ConfigError, RepoNotInitializedError
@@ -59,11 +62,11 @@ def test_repo_config_rejects_unsupported_version(tmp_path: Path) -> None:
         load_repo_config(tmp_path)
 
 
-def test_global_config_rejects_wrongly_typed_agents(tmp_path: Path) -> None:
-    (tmp_path / "config.yml").write_text("version: 1\nai:\n  agents: not-a-list\n")
+def test_machine_state_rejects_wrongly_typed_agents(tmp_path: Path) -> None:
+    (tmp_path / "state.yml").write_text("version: 1\nagents: not-a-list\n")
 
     with pytest.raises(ConfigError, match="list of strings"):
-        load_global_config(tmp_path)
+        load_machine_state(tmp_path)
 
 
 def test_repo_config_round_trips_checks(tmp_path: Path) -> None:
@@ -237,7 +240,6 @@ def test_global_config_round_trips(tmp_path: Path) -> None:
 
 def test_global_config_round_trips_checks_and_init_defaults(tmp_path: Path) -> None:
     config = GlobalConfig(
-        agents=["claude-code", "skill"],
         checks=[CheckDef("mypy", ["py"], "mypy", tags=["strict"])],
         init=InitDefaults(
             private=True,
@@ -260,17 +262,12 @@ def test_global_config_round_trips_checks_and_init_defaults(tmp_path: Path) -> N
     assert load_global_config(tmp_path) == config
 
 
-def test_global_config_round_trips_disabled_repos_and_omits_the_empty_list(tmp_path: Path) -> None:
-    config = GlobalConfig(disabled_repos=[tmp_path / "legacy", tmp_path / "clients"])
+def test_machine_state_round_trips_agents_and_disabled_repos(tmp_path: Path) -> None:
+    state = MachineState(agents=["claude-code", "skill"], disabled_repos=[tmp_path / "legacy", tmp_path / "clients"])
 
-    save_global_config(tmp_path, config)
+    save_machine_state(tmp_path, state)
 
-    assert load_global_config(tmp_path) == config
-
-    save_global_config(tmp_path, GlobalConfig())
-
-    assert load_global_config(tmp_path).disabled_repos == []
-    assert "disabled_repos" not in (tmp_path / "config.yml").read_text()
+    assert load_machine_state(tmp_path) == state
 
 
 def test_global_config_rejects_malformed_profiles(tmp_path: Path) -> None:
@@ -342,7 +339,7 @@ def test_global_config_partial_file_fills_defaults(tmp_path: Path) -> None:
     assert loaded.output_concise is False
 
 
-def test_global_paths_resolve_relative_to_config_dir_unless_absolute(
+def test_global_paths_resolve_relative_to_their_directory_unless_absolute(
     tmp_path: Path,
 ) -> None:
     relative = GlobalConfig()
@@ -351,7 +348,7 @@ def test_global_paths_resolve_relative_to_config_dir_unless_absolute(
 
     assert global_rules_dir(tmp_path, relative) == tmp_path / "rules"
     assert global_commands_dir(tmp_path, relative) == tmp_path / "commands"
-    assert repo_registry_path(tmp_path, relative) == tmp_path / "repos.yml"
+    assert repo_registry_path(tmp_path / "state", relative) == tmp_path / "state" / "repos.yml"
     assert global_rules_dir(tmp_path, absolute) == elsewhere
 
 
