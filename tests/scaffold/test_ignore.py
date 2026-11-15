@@ -6,6 +6,7 @@ visibility file is the subtle part: it negates the gitignore patterns so ast-gre
 ignored personal rule copies.
 """
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from support import git, write_global_command_rule
 
 from byor.cli import main
 from byor.errors import ConfigError
+from byor.rules.sync import STALE_EXIT_CODE
 from byor.scaffold.ignore import (
     BLOCK_BEGIN,
     BLOCK_END,
@@ -253,3 +255,18 @@ def test_a_shared_block_in_info_exclude_stays_shared(home: Path) -> None:
     assert main(["list", "--repo", str(repo)]) == 0
 
     assert exclude.read_text() == f"{CURRENT_BLOCK}\n"
+
+
+def test_sync_check_counts_an_outdated_block_as_stale(home: Path) -> None:
+    repo = shared_repo_with_an_old_block(home)
+
+    assert main(["sync", "--check", "--repo", str(repo)]) == STALE_EXIT_CODE
+
+
+def test_sync_leaves_the_block_of_an_uninitialized_repo_alone(home: Path) -> None:
+    repo = shared_repo_with_an_old_block(home)
+    shutil.rmtree(repo / ".byor")
+
+    assert main(["sync", "--repo", str(repo)]) != 0
+
+    assert (repo / ".gitignore").read_text() == "node_modules/\n\n" + BLOCK_BEFORE_COMMAND_RULES

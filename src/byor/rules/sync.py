@@ -41,7 +41,7 @@ from byor.rules.rules import (
     load_rules,
     require_unique_ids,
 )
-from byor.scaffold.ignore import refresh_ignore_blocks, write_rule_visibility_file
+from byor.scaffold.ignore import outdated_ignore_blocks, refresh_ignore_blocks, write_rule_visibility_file
 
 if TYPE_CHECKING:
     import argparse
@@ -500,9 +500,11 @@ def _sync_all(config_dir: Path, canonical: CanonicalRules, *, check: bool) -> in
 
 
 def _sync_and_report(repo_root: Path, canonical: CanonicalRules) -> None:
-    for path in refresh_ignore_blocks(repo_root):
-        sys.stdout.write(f"Updated the byor ignore block in {os.path.relpath(path, repo_root)}\n")
+    # sync_repo raises for a repo without .byor/config.yml, so the ignore block of an
+    # uninitialized repo is never touched, and a block that cannot be rewritten never stops
+    # the rules from syncing.
     plan, result = sync_repo(repo_root, canonical)
+    _refresh_and_report_ignore_blocks(repo_root)
     # A steady-state sync (the post-merge/post-checkout shims run one on every
     # pull) must not narrate forever: silence is the unix success signal, so a
     # sync that changed nothing prints nothing; `byor list` keeps skips
@@ -516,8 +518,18 @@ def _sync_and_report(repo_root: Path, canonical: CanonicalRules) -> None:
             sys.stdout.write(f"  {skipped.id}: {skipped.reason}\n")
 
 
+def _refresh_and_report_ignore_blocks(repo_root: Path) -> None:
+    try:
+        changed = refresh_ignore_blocks(repo_root)
+    except OSError as error:
+        sys.stderr.write(f"byor: could not update the byor ignore block in {repo_root}: {error}\n")
+        return
+    for path in changed:
+        sys.stdout.write(f"Updated the byor ignore block in {os.path.relpath(path, repo_root)}\n")
+
+
 def _report_staleness(repo_root: Path, canonical: CanonicalRules) -> int:
-    if repo_is_stale(repo_root, canonical):
+    if repo_is_stale(repo_root, canonical) or outdated_ignore_blocks(repo_root):
         sys.stdout.write(f"Sync is stale in {repo_root}; run `byor sync`.\n")
         return STALE_EXIT_CODE
     sys.stdout.write(f"Sync is fresh in {repo_root}\n")
