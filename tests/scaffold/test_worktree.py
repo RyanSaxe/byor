@@ -247,7 +247,7 @@ def test_doctor_in_a_worktree_reports_a_missing_package_its_own_local_config_nam
 
 @pytest.mark.parametrize("copy_ignored", [False, True])
 def test_copy_ignored_brings_other_ignored_files_into_a_new_worktree_only_when_set(
-    home: Path, *, copy_ignored: bool
+    home: Path, capsys: pytest.CaptureFixture[str], *, copy_ignored: bool
 ) -> None:
     save_global_config(global_config_dir(), GlobalConfig(worktrees_copy_ignored=copy_ignored))
     main_repo = make_main_checkout(home, private=False)
@@ -258,6 +258,7 @@ def test_copy_ignored_brings_other_ignored_files_into_a_new_worktree_only_when_s
     main(["list", "--repo", str(worktree)])
 
     assert (worktree / ".env").exists() is copy_ignored
+    assert ("byor file and 1 other ignored file from the main checkout" in capsys.readouterr().err) is copy_ignored
 
 
 def test_commands_skip_the_other_ignored_files_while_another_process_copies_them(home: Path) -> None:

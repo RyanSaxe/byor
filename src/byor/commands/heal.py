@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from byor.agents.install import AGENT_CHOICES, install_agent, unrecorded_agents
 from byor.config import (
@@ -25,6 +26,9 @@ from byor.rules.sync import load_canonical_rules, summarize_changes, sync_repo
 from byor.scaffold.ignore import refresh_ignore_blocks
 from byor.scaffold.sgconfig import ensure_home_sgconfig
 from byor.scaffold.worktree import copy_from_main_checkout, pending_copy, worktree_disabled_entry
+
+if TYPE_CHECKING:
+    from byor.scaffold.worktree import PendingCopy
 
 __all__ = (
     "heal_global",
@@ -157,9 +161,7 @@ def heal_worktree(repo_root: Path, config_dir: Path) -> list[str]:
         return [f"byor: skipping worktree self-heal: {error} (run 'byor sync' to retry)"]
     if copied is None:
         return []
-    count = len(copied.byor_relpaths) + len(copied.other_relpaths)
-    noun = "file" if count == 1 else "files"
-    lines = [f"byor: copied {count} byor {noun} from the main checkout {copied.main_root}"]
+    lines = [f"byor: copied {_copied_files(copied)} from the main checkout {copied.main_root}"]
     if not copied.byor_relpaths:
         return lines
     lines.extend(heal_ignore_blocks(repo_root))
@@ -168,3 +170,17 @@ def heal_worktree(repo_root: Path, config_dir: Path) -> list[str]:
     except ByorError as error:
         lines.append(f"byor: skipping the sync after the worktree copy: {error} (run 'byor sync' after fixing it)")
     return lines
+
+
+# With worktrees.copy_ignored on, most copied files are the user's own, so count them apart from byor's.
+def _copied_files(copied: PendingCopy) -> str:
+    parts = []
+    if copied.byor_relpaths:
+        parts.append(_count(len(copied.byor_relpaths), "byor file"))
+    if copied.other_relpaths:
+        parts.append(_count(len(copied.other_relpaths), "other ignored file"))
+    return " and ".join(parts)
+
+
+def _count(number: int, noun: str) -> str:
+    return f"{number} {noun}{'' if number == 1 else 's'}"
