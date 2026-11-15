@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from byor.agents.harness import HARNESS_CHOICES, Harness
-from byor.agents.hookconfig import hook_problem, install_hook, uninstall_hook
+from byor.agents.hookconfig import has_byor_hook, hook_problem, install_hook, uninstall_hook
 from byor.agents.opencode import (
     OPENCODE_MARKER,
     OPENCODE_PLUGIN,
@@ -35,6 +35,7 @@ __all__ = (
     "install_agent",
     "run_hook",
     "uninstall_agent",
+    "unrecorded_agents",
 )
 
 # The stdin-hook harnesses, mapped for Harness lookup by agent name.
@@ -146,6 +147,26 @@ def agent_file_problems(agents: Sequence[str]) -> list[str]:
             if problem is not None:
                 problems.append(problem)
     return problems
+
+
+def unrecorded_agents(recorded: Sequence[str]) -> list[str]:
+    """List agents that have byor's hooks or plugin file but are missing from `recorded`.
+
+    Self-heal refreshes only recorded agents, so an integration installed by
+    hand or by an older byor stays at whatever version wrote it. The skill is
+    left out because `byor install` always records it.
+    """
+    found: list[str] = []
+    for agent in AGENT_CHOICES:
+        if agent in recorded or agent == "skill":
+            continue
+        if (plugin := PLUGIN_AGENTS.get(agent)) is not None:
+            status = marked_text_status(_plugin_path(plugin), plugin.content, marker=plugin.marker)
+            if status in ("unchanged", "drifted"):
+                found.append(agent)
+        elif (harness := HARNESS_BY_NAME.get(agent)) is not None and has_byor_hook(harness):
+            found.append(agent)
+    return found
 
 
 def _install_skill() -> list[str]:

@@ -26,6 +26,7 @@ __all__ = (
     "HookEvent",
     "HookSpec",
     "global_hook_dir",
+    "has_byor_hook",
     "hook_command",
     "hook_installed",
     "hook_problem",
@@ -235,6 +236,24 @@ def _spec_has_byor_entry(config: dict[str, JsonValue], spec: HookSpec, *, relpat
 
 def hook_installed(harness: Harness) -> bool:
     return hook_problem(harness) is None
+
+
+def has_byor_hook(harness: Harness) -> bool:
+    """Report whether byor wrote a hook into any of the harness's global configs.
+
+    Unlike `hook_installed`, an out-of-date or partial install counts: doctor
+    uses this to find byor hooks for an agent missing from the global config's
+    `agents`, which self-heal never refreshes. A malformed config raises
+    ConfigError, as `hook_problem` does.
+    """
+    for spec in _harness_specs(harness):
+        path = _config_path(spec)
+        if not path.is_file():
+            continue
+        relpath = _display_relpath(spec)
+        if _spec_has_byor_entry(_load_config(path, relpath), spec, relpath=relpath):
+            return True
+    return False
 
 
 def hook_problem(harness: Harness) -> str | None:

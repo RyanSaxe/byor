@@ -33,10 +33,13 @@ from byor.commands.doctor import collect_checks
 from byor.config import (
     CheckDef,
     LocalConfig,
+    load_global_config,
     load_repo_config,
+    save_global_config,
     save_local_config,
     save_repo_config,
 )
+from byor.io.paths import global_config_dir
 from byor.scaffold.githooks import SHIM_MARKER
 from byor.scan.astgrep import NOT_FOUND_MESSAGE
 
@@ -494,6 +497,38 @@ def test_doctor_flags_registered_repos_whose_path_is_gone(home: Path, capsys: py
     out = capsys.readouterr().out
     assert f"{gone} no longer exists" in out
     assert "run `byor sync --all --prune`" in out
+
+
+def test_doctor_flags_a_registered_repo_that_names_a_deleted_package(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    other = make_repo(home, name="other")
+    install_package(other, "python-strict")
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  registered_repos" in out
+    assert "repos name packages that are not installed: ~/other (python-strict)" in out
+
+
+def test_doctor_flags_byor_hooks_for_an_agent_missing_from_the_global_config(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = repo_with_agents(home, "claude-code")
+    config = load_global_config(global_config_dir())
+    config.agents.remove("claude-code")
+    save_global_config(global_config_dir(), config)
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  agent_files" in out
+    assert "missing from `agents` in ~/.config/byor/config.yml, so self-heal never updates them: claude-code;" in out
+    assert "run `byor hook install --agent NAME` for each" in out
 
 
 def test_doctor_flags_a_missing_opencode_plugin(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
