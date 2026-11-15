@@ -28,11 +28,18 @@ WORKFLOW_RELPATH = ".github/workflows/byor-gate.yml"
 
 
 def write_ci_workflow(
-    repo_root: Path, checks: list[CheckDef], *, default_branch: str, fail_on: Literal["all", "error"]
+    repo_root: Path,
+    checks: list[CheckDef],
+    *,
+    default_branch: str,
+    fail_on: Literal["all", "error"],
+    explain_user_owned: bool,
 ) -> list[str]:
     text = workflow_text(checks, default_branch=default_branch, fail_on=fail_on)
     result = write_marked_text(repo_root / WORKFLOW_RELPATH, text, marker=GATE_MARKER)
     if result == "unmarked":
+        if not explain_user_owned:
+            return []
         # An unmarked workflow is user-owned; without this message the gate
         # would be recorded as installed while CI silently enforces nothing.
         return [

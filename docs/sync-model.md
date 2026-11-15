@@ -303,7 +303,9 @@ current committed rules and checks (`byor doctor` only reports them stale). So t
 usual and the gate refreshes itself; teammates only ever run it, and need
 nothing byor. byor owns each file by its marker header (the whole file, not a
 block within it): a pre-existing, unmarked `.pre-commit-config.yaml` is never
-overwritten — byor prints the block to paste in instead.
+overwritten. `byor init --gate` prints the block to paste in instead, and
+`byor doctor` fails `gate_files` while the file lacks one of the gate's
+commands.
 
 Under `--private` the gate commits nothing: byor installs a local
 `.git/hooks/pre-commit` shim that runs `byor agent-check` on the staged files

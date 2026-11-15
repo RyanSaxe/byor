@@ -585,6 +585,26 @@ def test_gate_does_not_clobber_an_existing_precommit_config(home: Path, capsys: 
     assert "already exists" in capsys.readouterr().out
 
 
+def test_a_user_owned_precommit_config_is_explained_once_then_checked_by_doctor(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = home / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    config = repo / ".pre-commit-config.yaml"
+    config.write_text("repos: []\n")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+    block = capsys.readouterr().out.split("add this to its `repos:` list:\n", 1)[1].split("\n\n", 1)[0]
+
+    assert main(["list", "--repo", str(repo)]) == 0
+    assert "already exists" not in capsys.readouterr().err
+    assert main(["doctor", "--repo", str(repo)]) != 0
+    assert ".pre-commit-config.yaml does not run" in capsys.readouterr().out
+
+    config.write_text(f"repos:\n{block}\n")
+    assert main(["doctor", "--repo", str(repo)]) == 0
+
+
 # The pre-commit writer already printed adoption guidance; the CI writer used
 # to no-op silently, leaving the user with gate: true and no CI enforcement.
 def test_gate_does_not_clobber_an_existing_ci_workflow_but_prints_guidance(

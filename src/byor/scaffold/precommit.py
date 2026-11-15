@@ -53,10 +53,14 @@ def precommit_config_text(checks: list[CheckDef], *, fail_on: Literal["all", "er
     return f"{GATE_MARKER}\nrepos:\n{_local_repo_block(checks, fail_on)}"
 
 
-def write_precommit_config(repo_root: Path, checks: list[CheckDef], *, fail_on: Literal["all", "error"]) -> list[str]:
+def write_precommit_config(
+    repo_root: Path, checks: list[CheckDef], *, fail_on: Literal["all", "error"], explain_user_owned: bool
+) -> list[str]:
     text = precommit_config_text(checks, fail_on=fail_on)
     result = write_marked_text(repo_root / CONFIG_RELPATH, text, marker=GATE_MARKER)
     if result == "unmarked":
+        if not explain_user_owned:
+            return []
         return [
             f"{CONFIG_RELPATH} already exists; add this to its `repos:` list:",
             _local_repo_block(checks, fail_on),

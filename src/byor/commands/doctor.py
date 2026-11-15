@@ -21,6 +21,7 @@ from byor.commands.gate import (
     referenced_vendored_scripts,
     stale_gate_files,
     transitive_vendored_scripts,
+    user_owned_gate_gaps,
     vendored_script_problems,
 )
 from byor.commands.package import available_packages
@@ -616,6 +617,13 @@ def _gate_check(repo_root: Path, repo_config: RepoConfig) -> Check | None:
             id="gate_files",
             ok=False,
             message=f"gate files are stale: {', '.join(stale)}; run `byor init --gate`",
+        )
+    gaps = user_owned_gate_gaps(repo_root, repo_config)
+    if gaps:
+        return Check(
+            id="gate_files",
+            ok=False,
+            message=f"{'; '.join(gaps)}; run `byor init --gate` to print the lines to add",
         )
     return Check(id="gate_files", ok=True, message="gate files match the configured checks")
 

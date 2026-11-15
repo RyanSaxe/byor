@@ -33,6 +33,7 @@ from byor.scaffold.githooks import install_precommit_shim
 from byor.scaffold.precommit import (
     CONFIG_RELPATH,
     GATE_MARKER,
+    ast_grep_entry,
     precommit_config_text,
     write_precommit_config,
 )
@@ -48,6 +49,7 @@ __all__ = (
     "regenerate_gate",
     "stale_gate_files",
     "transitive_vendored_scripts",
+    "user_owned_gate_gaps",
     "vendor_check",
     "vendor_promoted_check",
     "vendored_script_problems",
@@ -102,13 +104,20 @@ def install_gate(repo_root: Path, config_dir: Path, *, private: bool) -> list[st
     if repo_config.gate_branch is None:
         repo_config.gate_branch = default_branch(repo_root)
     save_repo_config(repo_root, repo_config)
-    messages += regenerate_gate(repo_root)
+    messages += regenerate_gate(repo_root, explain_user_owned=True)
     if precommit_hook_installed(repo_root) is not True:
         messages.append(PRECOMMIT_INSTALL_HINT)
     return messages
 
 
-def regenerate_gate(repo_root: Path) -> list[str]:
+def regenerate_gate(repo_root: Path, *, explain_user_owned: bool = False) -> list[str]:
+    """Rewrite the gate files byor owns from the repo's checks.
+
+    A gate file without byor's marker belongs to the user and is never rewritten.
+    With `explain_user_owned`, the messages say what to add to it. Only `byor init
+    --gate` asks for that; afterwards doctor reports a user-owned file that lacks
+    the gate's commands.
+    """
     repo_config = load_repo_config(repo_root)
     checks = repo_config.checks
     messages = _revendor_scripts(repo_root, checks)
@@ -116,8 +125,14 @@ def regenerate_gate(repo_root: Path) -> list[str]:
     gated = _gated_checks(checks)
     return (
         messages
-        + write_ci_workflow(repo_root, gated, default_branch=branch, fail_on=repo_config.fail_on)
-        + write_precommit_config(repo_root, gated, fail_on=repo_config.fail_on)
+        + write_ci_workflow(
+            repo_root,
+            gated,
+            default_branch=branch,
+            fail_on=repo_config.fail_on,
+            explain_user_owned=explain_user_owned,
+        )
+        + write_precommit_config(repo_root, gated, fail_on=repo_config.fail_on, explain_user_owned=explain_user_owned)
     )
 
 
@@ -250,6 +265,42 @@ def stale_gate_files(repo_root: Path, repo_config: RepoConfig) -> list[str]:
         for relpath, content in desired.items()
         if marked_text_status(repo_root / relpath, content, marker=GATE_MARKER) in ("missing", "drifted")
     ]
+
+
+def user_owned_gate_gaps(repo_root: Path, repo_config: RepoConfig) -> list[str]:
+    """Gate commands missing from gate files the user owns, one problem per file.
+
+    The commands are compared, not the text, so a user may lay the hooks or
+    steps out however they like. A command left over from an older render, such
+    as one `fail_on` has since changed, counts as missing its current form.
+    """
+    wanted = [ast_grep_entry(repo_config.fail_on), *(check.run for check in _gated_checks(repo_config.checks))]
+    problems: list[str] = []
+    for relpath, key in ((CONFIG_RELPATH, "entry"), (WORKFLOW_RELPATH, "run")):
+        path = repo_root / relpath
+        if marked_text_status(path, "", marker=GATE_MARKER) != "unmarked":
+            continue
+        try:
+            present = _nested_values(parse_yaml_mapping(path.read_text(encoding="utf-8"), source=path), key)
+        except (OSError, UnicodeDecodeError, ConfigError) as error:
+            problems.append(f"{relpath} cannot be read: {error}")
+            continue
+        missing = [command for command in wanted if command not in present]
+        if missing:
+            listed = ", ".join(f"`{command}`" for command in missing)
+            problems.append(f"{relpath} does not run {listed}")
+    return problems
+
+
+# Every string stored under `key` at any depth: hook entries sit under
+# repos[].hooks[], workflow steps under jobs.<name>.steps[].
+def _nested_values(node: object, key: str) -> set[str]:
+    if isinstance(node, dict):
+        found = {value for name, value in node.items() if name == key and isinstance(value, str)}
+        return found.union(*(_nested_values(value, key) for value in node.values()))
+    if isinstance(node, list):
+        return set().union(*(_nested_values(item, key) for item in node))
+    return set()
 
 
 def _gate_branch(repo_root: Path, repo_config: RepoConfig) -> str:
