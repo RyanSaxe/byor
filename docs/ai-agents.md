@@ -341,9 +341,10 @@ byor keeps an agent in `agents` exactly when its byor integration is
 installed. Self-heal restores whichever side is missing: it reinstalls the
 hooks or plugin file of a recorded agent, and it records an agent whose byor
 hooks or plugin file it finds. Removing only one side by hand therefore does
-not last. `byor hook uninstall` removes both. A hook entry you mixed your own
-commands into is yours: uninstall leaves it in place, and self-heal never
-records an agent because of it.
+not last. `byor hook uninstall` removes both. A hook entry you edited in any
+way is yours: a command mixed in or chained after byor's, an added field such
+as `timeout`, or a different matcher. byor never rewrites or removes it, doctor
+treats it as healthy, and self-heal never records an agent because of it.
 
 Generated files carry the marker
 `<!-- Managed by BYOR. Manual edits may be overwritten. -->` (a `//` comment
@@ -555,6 +556,6 @@ correction in `permissionDecisionReason`, which Claude Code feeds back to the
 model; an allow prints nothing. Either way the hook exits 0.
 
 Install is idempotent, and upgrading from a post-edit-only install adds the
-`PreToolUse` group without touching the existing one. `uninstall` removes only
-hook groups whose every command is byor's; a group you mixed your own hooks
-into counts as user-edited and stays.
+`PreToolUse` group without touching the existing one. Install also removes a
+group an older byor wrote with a matcher it no longer uses. `uninstall` removes
+only groups exactly as byor wrote them; a group you edited stays.

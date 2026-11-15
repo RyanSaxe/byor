@@ -64,15 +64,17 @@ def test_install_merges_into_existing_global_settings(home: Path) -> None:
 def test_outdated_claude_settings_hook_is_updated(home: Path) -> None:
     settings = claude_settings(home)
     settings.parent.mkdir(parents=True)
+    # The matcher byor wrote before it stopped firing on notebook edits.
     stale = {
-        "matcher": "Write",
-        "hooks": [{"type": "command", "command": "byor agent-check --stdin-hook x"}],
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [{"type": "command", "command": f"{BYOR_COMMAND_SIGNATURE} claude-code >&2"}],
     }
     settings.write_text(json.dumps({"hooks": {"PostToolUse": [stale]}}))
 
     install_agents("claude-code")
 
-    assert f"{BYOR_COMMAND_SIGNATURE} claude-code" in claude_command(home)
+    entries = json.loads(settings.read_text())["hooks"]["PostToolUse"]
+    assert [entry["matcher"] for entry in entries] == ["Write|Edit|MultiEdit"]
 
 
 def test_invalid_claude_settings_fail_cleanly(home: Path, capsys: pytest.CaptureFixture[str]) -> None:

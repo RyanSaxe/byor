@@ -67,6 +67,8 @@ class HookSpec:
     owns_file: bool = False
     """True when the file is byor's alone (a dedicated `byor.json`), so install
     writes it wholesale and uninstall deletes it — no user entries to preserve."""
+    legacy_matchers: tuple[str, ...] = ()
+    """Matchers older byor versions wrote; an entry with one is still byor's, so install replaces it."""
 
 
 HOOK_SPECS: dict[tuple[Harness, HookEvent], HookSpec] = {
@@ -79,6 +81,7 @@ HOOK_SPECS: dict[tuple[Harness, HookEvent], HookSpec] = {
         matcher="Write|Edit|MultiEdit",
         nests_command=True,
         stderr_feedback=True,
+        legacy_matchers=("Write|Edit|MultiEdit|NotebookEdit",),
     ),
     ("claude-code", "pre-command"): HookSpec(
         harness="claude-code",
@@ -97,6 +100,7 @@ HOOK_SPECS: dict[tuple[Harness, HookEvent], HookSpec] = {
         key_path=("hooks", "PostToolUse"),
         matcher="apply_patch|Edit|Write",
         nests_command=True,
+        legacy_matchers=("Edit|Write",),
     ),
     ("codex", "pre-command"): HookSpec(
         harness="codex",
@@ -153,9 +157,13 @@ def _install_spec(spec: HookSpec) -> list[str]:
     config = _load_config(path, relpath)
     entries = _entries(config, spec, relpath=relpath)
     current = _byor_entry(spec)
-    if current in entries:
-        return []
-    kept = [entry for entry in entries if not _is_byor_entry(entry, signature=spec.signature)]
+    kept = [entry for entry in entries if entry == current or not _is_byor_entry(entry, spec=spec)]
+    if current in kept:
+        if len(kept) == len(entries):
+            return []
+        _set_entries(config, spec, entries=kept)
+        _save_config(path, config)
+        return [f"Removed an out-of-date {spec.harness} {spec.event} hook from {relpath}"]
     if any(_contains_byor_command(entry, signature=spec.signature) for entry in kept):
         return []
     _set_entries(config, spec, entries=[*kept, current])
@@ -202,7 +210,7 @@ def _uninstall_spec(spec: HookSpec) -> list[str]:
     relpath = _display_relpath(spec)
     config = _load_config(path, relpath)
     entries = _entries(config, spec, relpath=relpath)
-    kept = [entry for entry in entries if not _is_byor_entry(entry, signature=spec.signature)]
+    kept = [entry for entry in entries if not _is_byor_entry(entry, spec=spec)]
     if len(kept) == len(entries):
         return []
     _set_entries(config, spec, entries=kept)
@@ -245,10 +253,10 @@ def has_byor_hook(harness: Harness) -> bool:
 
     Unlike `hook_installed`, an out-of-date or partial install counts, because
     self-heal uses this to record an agent whose byor hooks are installed. An
-    entry the user mixed their own commands into is theirs, the same rule
-    `uninstall_hook` follows when it leaves such an entry in place, so it never
-    counts; otherwise an uninstall would be undone by the next command. A
-    malformed config raises ConfigError, as `hook_problem` does.
+    entry the user edited is theirs, the same rule `uninstall_hook` follows when
+    it leaves such an entry in place, so it never counts; otherwise an uninstall
+    would be undone by the next command. A malformed config raises ConfigError,
+    as `hook_problem` does.
     """
     for spec in _harness_specs(harness):
         path = _config_path(spec)
@@ -256,17 +264,14 @@ def has_byor_hook(harness: Harness) -> bool:
             continue
         relpath = _display_relpath(spec)
         entries = _entries(_load_config(path, relpath), spec, relpath=relpath)
-        if any(_is_byor_entry(entry, signature=spec.signature) for entry in entries):
+        if any(_is_byor_entry(entry, spec=spec) for entry in entries):
             return True
     return False
 
 
 def hook_problem(harness: Harness) -> str | None:
-    for spec in _harness_specs(harness):
-        problem = _spec_problem(spec)
-        if problem is not None:
-            return problem
-    return None
+    problems = [problem for spec in _harness_specs(harness) if (problem := _spec_problem(spec)) is not None]
+    return "; ".join(problems) or None
 
 
 def _spec_problem(spec: HookSpec) -> str | None:
@@ -275,17 +280,19 @@ def _spec_problem(spec: HookSpec) -> str | None:
         return f"the {spec.harness} {spec.event} hook is not installed"
     relpath = _display_relpath(spec)
     entries = _entries(_load_config(path, relpath), spec, relpath=relpath)
-    if _byor_entry(spec) in entries:
-        return None
-    # An entry the user mixed their own commands into is user-owned: install_hook
-    # leaves it alone, so doctor must treat it as healthy rather than demand a
-    # reinstall that would never change anything.
+    current = _byor_entry(spec)
+    stale = [entry for entry in entries if entry != current and _is_byor_entry(entry, spec=spec)]
+    if current in entries:
+        return f"the {spec.harness} {spec.event} hook has an out-of-date second entry" if stale else None
+    # An entry the user edited is user-owned: install_hook leaves it alone, so
+    # doctor must treat it as healthy rather than demand a reinstall that would
+    # never change anything.
     if any(
-        _contains_byor_command(entry, signature=spec.signature) and not _is_byor_entry(entry, signature=spec.signature)
+        _contains_byor_command(entry, signature=spec.signature) and not _is_byor_entry(entry, spec=spec)
         for entry in entries
     ):
         return None
-    if any(_is_byor_entry(entry, signature=spec.signature) for entry in entries):
+    if stale:
         return f"the {spec.harness} {spec.event} hook is out of date"
     return f"the {spec.harness} {spec.event} hook is not installed"
 
@@ -409,9 +416,43 @@ def _descend(config: dict[str, JsonValue], keys: tuple[str, ...]) -> JsonValue:
     return node
 
 
-def _is_byor_entry(entry: JsonValue, *, signature: str) -> bool:
-    commands = _entry_commands(entry)
-    return bool(commands) and all(_is_byor_command(command, signature=signature) for command in commands)
+def _is_byor_entry(entry: JsonValue, *, spec: HookSpec) -> bool:
+    """Report whether byor wrote this entry and nobody has edited it since, so byor may replace or remove it.
+
+    Ownership is exact rather than a substring match: the entry has only the
+    keys byor writes, the matcher this or an older byor version used, and hook
+    objects that run exactly byor's command. Any edit, such as a command chained
+    after byor's, an added timeout or a narrowed matcher, makes the entry the
+    user's. byor then leaves it in place and treats it as healthy.
+    """
+    if not isinstance(entry, dict):
+        return False
+    if spec.matcher is None:
+        matcher_ok = "matcher" not in entry
+    else:
+        matcher_ok = entry.get("matcher") in (spec.matcher, *spec.legacy_matchers)
+    if not matcher_ok:
+        return False
+    command = hook_command(spec)
+    if spec.nests_command:
+        hooks = entry.get("hooks")
+        return (
+            set(entry) <= {"matcher", "hooks"}
+            and isinstance(hooks, list)
+            and bool(hooks)
+            and all(_is_byor_hook_object(hook, command=command) for hook in hooks)
+        )
+    return _is_byor_hook_object(entry, command=command)
+
+
+def _is_byor_hook_object(hook: JsonValue, *, command: str) -> bool:
+    return (
+        isinstance(hook, dict)
+        and set(hook) <= {"type", "command"}
+        and hook.get("type", "command") == "command"
+        and isinstance(hook.get("command"), str)
+        and str(hook.get("command")).strip() == command
+    )
 
 
 def _contains_byor_command(entry: JsonValue, *, signature: str) -> bool:
