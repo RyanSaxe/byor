@@ -229,6 +229,19 @@ that fire at the same moment wait for one copy to finish. A command that still
 finds another copy running after a few seconds stops and asks you to run it
 again, rather than run against a half-copied worktree.
 
+To also bring the other files git ignores, such as `.env` or a local build
+cache, set `worktrees.copy_ignored` in `config.yml`:
+
+```yaml
+worktrees:
+  copy_ignored: true # default false: copy only byor's files
+```
+
+The same rules apply to those files: byor copies one only when the worktree's
+git ignores it too, and never overwrites one the worktree has. A large ignored
+folder, such as `node_modules`, makes that first copy slow, and the first agent
+hook in a new worktree waits for it.
+
 `byor doctor` and `byor sync --check` never copy. In a worktree that has not
 copied yet, both say to run `byor sync`. byor treats a worktree of a repo you
 disabled as disabled too, so it copies nothing there and doctor stays quiet.
