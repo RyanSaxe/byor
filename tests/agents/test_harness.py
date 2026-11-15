@@ -96,11 +96,12 @@ def test_codex_parses_the_apply_patch_envelope() -> None:
     assert payload.edits == {Path("src/model.py"): ["new = 1\nalso = 2"]}
 
 
-def test_codex_patch_paths_are_relative_to_the_session_cwd() -> None:
+def test_codex_patch_paths_are_relative_to_the_session_cwd(tmp_path: Path) -> None:
+    session_cwd = tmp_path / "repo" / "src"
     patch = "*** Begin Patch\n*** Add File: mod.py\n+print(1)\n*** End Patch"
-    raw = json.dumps({"cwd": "/repo/src", "tool_name": "apply_patch", "tool_input": {"command": patch}})
+    raw = json.dumps({"cwd": str(session_cwd), "tool_name": "apply_patch", "tool_input": {"command": patch}})
 
-    assert parse_payload("codex", raw) == EditPayload(edits={Path("/repo/src/mod.py"): ["print(1)"]})
+    assert parse_payload("codex", raw) == EditPayload(edits={session_cwd / "mod.py": ["print(1)"]})
 
 
 def test_apply_patch_handles_multiple_files_and_pure_deletions() -> None:
