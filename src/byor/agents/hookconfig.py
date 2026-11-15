@@ -364,7 +364,8 @@ def _load_config(path: Path, relpath: str) -> dict[str, JsonValue]:
 
 
 def _save_config(path: Path, config: dict[str, JsonValue]) -> None:
-    content = json.dumps(config, indent=2) + "\n"
+    # ensure_ascii=False keeps the user's own non-ASCII text as written instead of \u escapes.
+    content = json.dumps(config, indent=2, ensure_ascii=False) + "\n"
     try:
         write_text_atomic(path, content)
     except OSError as error:
