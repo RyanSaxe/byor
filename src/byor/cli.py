@@ -553,6 +553,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ByorError as error:
         sys.stderr.write(f"byor: {error}\n")
         return error.exit_code
+    except OSError as error:
+        # A file byor could not read or write, such as a read-only linked config
+        # dir: one line naming the path, not a traceback.
+        sys.stderr.write(f"byor: {error}\n")
+        return 1
 
 
 if __name__ == "__main__":

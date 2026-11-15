@@ -78,6 +78,10 @@ def prune_empty_dirs(root: Path, *, keep_root: bool = True) -> None:
 
 
 def write_text_atomic(path: Path, content: str) -> None:
+    # Write through a symlink into the file it points at: replacing the link
+    # itself would cut a dotfiles- or Nix-managed file loose from its source.
+    if path.is_symlink():
+        path = path.resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     handle_fd, temp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
     try:

@@ -20,6 +20,14 @@ accept globs, so copies are also the only approach that works reliably with
 plain `ast-grep scan` and `ast-grep lsp`. The cost is duplication; the benefits
 are the override model and compatibility.
 
+The same limit applies to your global rules folder: in a repo without
+`byor init`, the edit hook scans through `~/sgconfig.yml`, so a rule file in
+`~/.config/byor/rules` that is itself a symlink never fires there. `byor doctor`
+reports such files. Link the whole folder instead, or copy the files. When byor
+writes a file you linked, such as `~/.claude/settings.json`, it writes through
+the link into the file it points at, and a read-only target is an error that
+names the file.
+
 Copies can go stale. The UX principle:
 
 **Staleness is self-healing, not prevented by user discipline.**

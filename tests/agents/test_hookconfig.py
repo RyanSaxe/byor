@@ -266,3 +266,18 @@ def _config_with_entry(key_path: tuple[str, ...], entry: dict[str, object]) -> d
         node = child
     node[key_path[-1]] = [entry]
     return config
+
+
+def test_install_writes_through_a_symlinked_settings_file(isolated_home: Path) -> None:
+    target = isolated_home / "dotfiles" / "settings.json"
+    target.parent.mkdir()
+    target.write_text('{"theme": "dark"}\n')
+    link = config_path(isolated_home, "claude-code")
+    link.parent.mkdir(parents=True)
+    link.symlink_to(target)
+
+    install_hook("claude-code")
+
+    assert link.is_symlink()
+    assert hook_installed("claude-code")
+    assert json.loads(target.read_text())["theme"] == "dark"

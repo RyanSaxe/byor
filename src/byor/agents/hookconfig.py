@@ -348,7 +348,13 @@ def _load_config(path: Path, relpath: str) -> dict[str, JsonValue]:
 
 def _save_config(path: Path, config: dict[str, JsonValue]) -> None:
     content = json.dumps(config, indent=2) + "\n"
-    write_text_atomic(path, content)
+    try:
+        write_text_atomic(path, content)
+    except OSError as error:
+        # A settings file linked into a read-only store lands here; self-heal
+        # reports a ConfigError per agent instead of failing every command.
+        msg = f"cannot write {path}: {error.strerror or error}"
+        raise ConfigError(msg) from error
 
 
 def _entries(config: dict[str, JsonValue], spec: HookSpec, *, relpath: str) -> list[JsonValue]:

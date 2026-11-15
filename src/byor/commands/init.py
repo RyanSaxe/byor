@@ -7,6 +7,7 @@ without scattering setup decisions across commands.
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -200,8 +201,11 @@ def _existing_violations_note(repo_root: Path, config_dir: Path) -> str | None:
 # config.yml stays absent until the user writes one: its defaults are built in, and byor never
 # writes the user's settings.
 def _bootstrap_global_dir(config_dir: Path, state_dir: Path, *, config: GlobalConfig) -> None:
-    global_rules_dir(config_dir, config).mkdir(parents=True, exist_ok=True)
-    global_commands_dir(config_dir, config).mkdir(parents=True, exist_ok=True)
+    for directory in (global_rules_dir(config_dir, config), global_commands_dir(config_dir, config)):
+        # A read-only config dir supplied without these folders simply has no
+        # global rules or command rules; init needs neither to exist.
+        with contextlib.suppress(OSError):
+            directory.mkdir(parents=True, exist_ok=True)
     registry_path = repo_registry_path(state_dir, config)
     if not registry_path.is_file():
         save_repo_registry(registry_path, [])
