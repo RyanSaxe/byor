@@ -132,3 +132,17 @@ def test_add_of_a_package_whose_rule_id_collides_leaves_local_config_as_it_was(h
 
     assert load_local_config(repo).packages == ["a"]
     assert main(["sync", "--repo", str(repo)]) == 0
+
+
+def test_add_in_a_disabled_repo_prints_the_notice_and_changes_nothing(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_package_rule(home, "a", relpath="no-cast.yml", rule_id="no-cast")
+    repo = make_repo(home)
+    assert main(["disable", str(repo)]) == 0
+    capsys.readouterr()
+
+    assert main(["package", "add", "a", "--repo", str(repo)]) == 0
+
+    assert "this repository is disabled for byor" in capsys.readouterr().err
+    assert load_local_config(repo).packages == []
