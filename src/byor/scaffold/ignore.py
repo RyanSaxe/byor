@@ -62,6 +62,7 @@ PRIVATE_IGNORED_PATTERNS = (
 
 BLOCK_BEGIN = f"# >>> {MANAGED_NOTICE} >>>"
 BLOCK_END = "# <<< Managed by BYOR <<<"
+BYTE_ORDER_MARK = "\ufeff"
 
 VISIBILITY_MARKER = f"# {MANAGED_NOTICE}"
 
@@ -243,8 +244,13 @@ def _writable(path: Path) -> bool:
 
 
 def _find_block(lines: list[str]) -> _Block | Literal["damaged"] | None:
-    begins = [index for index, line in enumerate(lines) if line.rstrip("\r\n") == BLOCK_BEGIN]
-    ends = [index for index, line in enumerate(lines) if line.rstrip("\r\n") == BLOCK_END]
+    # git skips a UTF-8 byte-order mark before the first line, so the markers must too.
+    texts = [
+        line.rstrip("\r\n").removeprefix(BYTE_ORDER_MARK) if index == 0 else line.rstrip("\r\n")
+        for index, line in enumerate(lines)
+    ]
+    begins = [index for index, text in enumerate(texts) if text == BLOCK_BEGIN]
+    ends = [index for index, text in enumerate(texts) if text == BLOCK_END]
     if not begins and not ends:
         return None
     if len(begins) != 1 or len(ends) != 1 or ends[0] < begins[0]:
@@ -291,13 +297,24 @@ def write_ignore_block(repo_root: Path, *, private: bool) -> bool:
     A shared setup ignores only the always-personal state, in .gitignore. A
     private setup hides byor's whole footprint via .git/info/exclude so nothing
     byor creates is tracked. Idempotent; returns True only when the file changed.
+    A damaged block raises ConfigError instead of being rewritten, because byor
+    cannot tell which of the lines after a stray marker are the user's.
     """
     if private and not (repo_root / ".git").exists():
         msg = f"{repo_root} has no .git directory; cannot use private mode"
         raise ConfigError(msg)
     path = ignore_file(repo_root, private=private)
     current = path.read_text(encoding="utf-8") if path.is_file() else ""
-    updated = _with_block(current, _patterns(private=private))
+    bom = BYTE_ORDER_MARK if current.startswith(BYTE_ORDER_MARK) else ""
+    lines = current.removeprefix(bom).splitlines(keepends=True)
+    block = _find_block(lines)
+    if block == "damaged":
+        msg = (
+            f"the byor ignore block in {path} is damaged: it needs exactly one begin marker and one"
+            " end marker after it; fix the markers by hand, then run byor init again"
+        )
+        raise ConfigError(msg)
+    updated = bom + _with_block(lines, existing=block, patterns=_patterns(private=private))
     if updated == current:
         return False
     write_text_atomic(path, updated)
@@ -308,23 +325,12 @@ def _patterns(*, private: bool) -> tuple[str, ...]:
     return PRIVATE_IGNORED_PATTERNS if private else IGNORED_PATTERNS
 
 
-def _with_block(content: str, patterns: tuple[str, ...]) -> str:
+def _with_block(lines: list[str], *, existing: _Block | None, patterns: tuple[str, ...]) -> str:
     block = "\n".join((BLOCK_BEGIN, *patterns, BLOCK_END)) + "\n"
-    lines = content.splitlines(keepends=True)
-    begin = _marker_index(lines, BLOCK_BEGIN, start=0)
-    if begin is None:
-        if content and not content.endswith("\n"):
-            content += "\n"
-        separator = "\n" if content else ""
-        return content + separator + block
-    end = _marker_index(lines, BLOCK_END, start=begin + 1)
-    # A missing end marker means the block was damaged; reclaim through EOF.
-    tail = "".join(lines[end + 1 :]) if end is not None else ""
-    return "".join(lines[:begin]) + block + tail
-
-
-def _marker_index(lines: list[str], marker: str, *, start: int) -> int | None:
-    for index in range(start, len(lines)):
-        if lines[index].rstrip("\n") == marker:
-            return index
-    return None
+    if existing is not None:
+        return "".join(lines[: existing.begin]) + block + "".join(lines[existing.end + 1 :])
+    content = "".join(lines)
+    if content and not content.endswith("\n"):
+        content += "\n"
+    separator = "\n" if content else ""
+    return content + separator + block
