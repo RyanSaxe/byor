@@ -13,6 +13,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from byor.agents.harness import emit_deny, parse_command_payload
+from byor.commands.heal import heal_worktree
 from byor.config import (
     command_rule_dir_relpaths,
     disabled_entry,
@@ -94,6 +95,9 @@ def _hook_gate(args: argparse.Namespace, *, harness: Harness) -> int:
     repo_root = resolve_repo_root(explicit=args.repo, start=payload.cwd)
     if disabled_entry(repo_root, global_config) is not None:
         return 0
+    worktree_line = heal_worktree(repo_root, config_dir)
+    if worktree_line is not None:
+        sys.stderr.write(f"{worktree_line}\n")
     rendered = _gate(repo_root, payload.command, global_config=global_config, config_dir=config_dir)
     stdout, exit_code = emit_deny(harness, rendered)
     if stdout:

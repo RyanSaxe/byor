@@ -16,6 +16,7 @@ from byor.errors import ByorError, ConfigError
 from byor.rules.sync import load_canonical_rules, summarize_changes, sync_repo
 from byor.scaffold.ignore import refresh_ignore_blocks
 from byor.scaffold.sgconfig import ensure_home_sgconfig
+from byor.scaffold.worktree import adopt_main_checkout
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -24,6 +25,7 @@ __all__ = (
     "heal_global",
     "heal_ignore_blocks",
     "heal_repo",
+    "heal_worktree",
 )
 
 
@@ -88,3 +90,16 @@ def heal_ignore_blocks(repo_root: Path) -> list[str]:
     except (ConfigError, OSError) as error:
         return [f"byor: skipping ignore block self-heal: {error} (run 'byor doctor')"]
     return [f"byor: updated the byor ignore block in {os.path.relpath(path, repo_root)}" for path in changed]
+
+
+def heal_worktree(repo_root: Path, config_dir: Path) -> str | None:
+    """Give a new linked worktree its main checkout's byor files, quietly.
+
+    Runs before `heal_repo` and at the start of both agent hooks, so the first command or edit in
+    a fresh worktree already sees the repo's rules. A failed copy degrades to a warning, like the
+    other heals, and the command or hook goes on with whatever the worktree has.
+    """
+    try:
+        return adopt_main_checkout(repo_root, config_dir)
+    except (ByorError, OSError) as error:
+        return f"byor: skipping worktree self-heal: {error} (run 'byor init' in this worktree)"

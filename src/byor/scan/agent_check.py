@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from byor.agents.harness import EditPayload, Harness, emit, parse_payload
+from byor.commands.heal import heal_worktree
 from byor.config import disabled_entry, load_global_config, repo_config_path
 from byor.errors import ByorError
 from byor.io.paths import (
@@ -147,6 +148,9 @@ def _hook_diagnostics(args: argparse.Namespace, *, harness: Harness) -> int:
     if disabled_entry(repo_root, global_config) is not None:
         # `byor disable` covers this repo: silent exit, nothing is scanned.
         return 0
+    worktree_line = heal_worktree(repo_root, config_dir)
+    if worktree_line is not None:
+        sys.stderr.write(f"{worktree_line}\n")
     if not _has_any_rules(repo_root) and not global_config.checks:
         return 0
     payload = _resolved_payload(payload, repo_root)

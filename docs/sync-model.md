@@ -166,6 +166,20 @@ jobs:
       - run: uvx --from ast-grep-cli ast-grep scan --error
 ```
 
+**A new worktree.** `git worktree add` checks out only tracked files, so the
+worktree starts without `.byor/local.yml` and the generated copies, and under
+`--private` without any of `.byor/` or `sgconfig.yml`. The first byor command
+or agent hook in it copies each of those files from the main checkout, which
+byor finds through the worktree's `.git` file. It never overwrites a file the
+worktree already has, then syncs and prints one line:
+
+```text
+byor: copied 17 byor files from the main checkout /home/me/project
+```
+
+A separate clone has no link to another checkout, so it still needs
+`byor init`.
+
 ## The team gate
 
 `byor init --gate` automates that CI file and a matching
