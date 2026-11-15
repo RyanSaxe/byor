@@ -107,17 +107,17 @@ def heal_ignore_blocks(repo_root: Path) -> list[str]:
 
     The preamble runs this after `heal_repo`, so a repo initialized before byor gained a personal
     path stops offering the new copies to git on its next command. A repo without
-    `.byor/config.yml` is skipped, since only `byor init` chooses where a block goes. Like the
-    other heals, a git or file error degrades to a warning so the command still runs, and a repo
-    whose blocks are current returns no lines.
+    `.byor/config.yml` is skipped, since only `byor init` chooses where a block goes. A file byor
+    cannot write is skipped without a line, because repeating it on every command would not help;
+    `byor doctor` and `byor sync` name it. A repo whose blocks are current returns no lines.
     """
     if not repo_config_path(repo_root).is_file():
         return []
     try:
-        changed = refresh_ignore_blocks(repo_root)
-    except (ConfigError, OSError) as error:
+        refreshed = refresh_ignore_blocks(repo_root)
+    except ConfigError as error:
         return [f"byor: skipping ignore block self-heal: {error} (run 'byor doctor')"]
-    return [f"byor: updated the byor ignore block in {os.path.relpath(path, repo_root)}" for path in changed]
+    return [f"byor: updated the byor ignore block in {os.path.relpath(path, repo_root)}" for path in refreshed.changed]
 
 
 def heal_worktree(repo_root: Path, config_dir: Path) -> str | None:

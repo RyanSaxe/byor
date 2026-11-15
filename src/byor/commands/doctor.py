@@ -61,7 +61,7 @@ from byor.rules.sync import (
     repo_plans,
 )
 from byor.scaffold.githooks import shim_findings
-from byor.scaffold.ignore import ignore_block_statuses, rule_visibility_ok
+from byor.scaffold.ignore import IgnoreBlockStatus, ignore_block_statuses, rule_visibility_ok
 from byor.scaffold.precommit import CONFIG_RELPATH
 from byor.scaffold.worktree import pending_copy
 from byor.scan.astgrep import ast_grep_version, resolve_ast_grep, scan_command
@@ -465,52 +465,53 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path) -> list
 
 def _ignore_block_check(repo_root: Path) -> Check:
     statuses = ignore_block_statuses(repo_root)
-    if any(status.state == "current" for status in statuses):
-        return Check(
-            id="ignore_block",
-            ok=True,
-            message="personal rules and .byor/local.yml are git-ignored",
-        )
 
-    def listed(state: str) -> str:
-        return ", ".join(os.path.relpath(status.path, repo_root) for status in statuses if status.state == state)
+    def having(state: str) -> list[IgnoreBlockStatus]:
+        return [status for status in statuses if status.state == state]
 
-    if outdated := listed("outdated"):
-        return Check(
-            id="ignore_block",
-            ok=False,
-            message=(
-                f"the byor ignore block in {outdated} is out of date, so some personal byor files"
-                " are committable; run `byor sync` to update it"
-            ),
-        )
-    if damaged := listed("damaged"):
-        # `byor init` would replace everything from the first begin marker on, so it is not the fix.
-        return Check(
-            id="ignore_block",
-            ok=False,
-            message=(
-                f"the byor ignore block in {damaged} is damaged: it needs exactly one begin marker"
-                " and one end marker after it; fix the markers by hand, and byor then keeps the block current"
-            ),
-        )
-    if unreadable := listed("unreadable"):
-        return Check(
-            id="ignore_block",
-            ok=False,
-            message=(
-                f"byor cannot read {unreadable} as UTF-8, so it cannot check the ignore block there;"
-                " re-save it as UTF-8"
-            ),
-        )
-    return Check(
-        id="ignore_block",
-        ok=False,
-        message=(
-            "the byor ignore block is gone, so personal rules and .byor/local.yml"
-            " are committable; run `byor init` to restore it"
+    def listed(selected: list[IgnoreBlockStatus]) -> str:
+        return ", ".join(os.path.relpath(status.path, repo_root) for status in selected)
+
+    outdated = having("outdated")
+    stuck = [status for status in outdated if not status.writable]
+    covered = bool(having("current"))
+    reasons = "; ".join(f"{listed([status])}: {status.reason}" for status in having("unreadable"))
+    # Checked in order, and the first case that applies decides. An outdated block counts even
+    # beside a current one, so doctor agrees with `byor sync --check`. A `None` message means ok.
+    cases: list[tuple[bool, str | None]] = [
+        (
+            bool(stuck),
+            f"the byor ignore block in {listed(stuck)} is out of date and the file is not writable;"
+            " make it writable, then run `byor sync`",
         ),
-    )
+        (
+            bool(outdated),
+            f"the byor ignore block in {listed(outdated)} is out of date"
+            f"{'' if covered else ', so some personal byor files are committable'}; run `byor sync` to update it",
+        ),
+        (covered, None),
+        (
+            # `byor init` would replace everything from the first begin marker on, so it is not the fix.
+            bool(having("damaged")),
+            f"the byor ignore block in {listed(having('damaged'))} is damaged: it needs exactly one begin marker"
+            " and one end marker after it; fix the markers by hand, and byor then keeps the block current",
+        ),
+        (
+            bool(having("edited")),
+            f"the byor ignore block in {listed(having('edited'))} was edited, and its lines no longer say whether"
+            " it is for a shared or a private setup, so byor leaves it alone; restore byor's lines between the markers",
+        ),
+        (bool(reasons), f"byor cannot read an ignore file, so it cannot check the byor block there ({reasons})"),
+        (
+            True,
+            "the byor ignore block is gone, so personal rules and .byor/local.yml are committable;"
+            " run `byor init` to restore it",
+        ),
+    ]
+    message = next(message for applies, message in cases if applies)
+    if message is None:
+        return Check(id="ignore_block", ok=True, message="personal rules and .byor/local.yml are git-ignored")
+    return Check(id="ignore_block", ok=False, message=message)
 
 
 def _git_shims_check(repo_root: Path) -> Check | None:

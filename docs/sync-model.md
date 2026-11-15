@@ -65,20 +65,23 @@ The exceptions: `byor sync` itself (its body is the sync),
 their own steps, and `byor doctor`, which is read-only — it reports staleness
 and the command that fixes it instead of repairing anything.
 
-The same step, and `byor sync`, also rewrite a byor ignore block that an
+The same step, and `byor sync`, also update a byor ignore block that an
 older byor wrote before it gained a personal path, such as the command-rule
-copies under `.byor/commands/personal/`. Only the pattern lines between
-byor's markers change. The markers, every other line and the file's line
-endings stay as they were, and the block keeps the setup it was written for,
-shared or private:
+copies under `.byor/commands/personal/`. byor adds the patterns the block
+lacks just before its end marker. Every line already in the file stays as
+it was, including lines you added inside the markers, and the block keeps
+the setup it was written for, shared or private. A symlinked ignore file is
+updated through the link:
 
 ```text
 byor: updated the byor ignore block in .gitignore
 ```
 
 byor leaves a block alone when the file has no block, when its markers do
-not pair up as one begin and one end, or when the file is not UTF-8.
-`byor doctor` names each of these cases. A block that cannot be rewritten
+not pair up as one begin and one end, when its lines no longer say whether
+the setup is shared or private, when the file is not UTF-8, or when the
+file is not writable. `byor doctor` names each of these cases, and
+`byor sync` names a file it cannot write. A block that cannot be updated
 never stops the rules from syncing.
 
 ```bash

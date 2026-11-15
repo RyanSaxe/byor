@@ -505,28 +505,25 @@ def _sync_and_report(repo_root: Path, canonical: CanonicalRules) -> None:
     # uninitialized repo is never touched, and a block that cannot be rewritten never stops
     # the rules from syncing.
     plan, result = sync_repo(repo_root, canonical)
-    _refresh_and_report_ignore_blocks(repo_root)
+    refreshed = refresh_ignore_blocks(repo_root)
     # A steady-state sync (the post-merge/post-checkout shims run one on every
     # pull) must not narrate forever: silence is the unix success signal, so a
     # sync that changed nothing prints nothing; `byor list` keeps skips
     # visible on demand.
-    if not result.changed:
-        return
-    sys.stdout.write(f"Synced {_count(len(plan.desired), 'global rule')} into {repo_root}\n")
-    if plan.skipped:
-        sys.stdout.write(f"Skipped {_count(len(plan.skipped), 'global rule')}:\n")
-        for skipped in plan.skipped:
-            sys.stdout.write(f"  {skipped.id}: {skipped.reason}\n")
-
-
-def _refresh_and_report_ignore_blocks(repo_root: Path) -> None:
-    try:
-        changed = refresh_ignore_blocks(repo_root)
-    except OSError as error:
-        sys.stderr.write(f"byor: could not update the byor ignore block in {repo_root}: {error}\n")
-        return
-    for path in changed:
-        sys.stdout.write(f"Updated the byor ignore block in {os.path.relpath(path, repo_root)}\n")
+    if result.changed:
+        sys.stdout.write(f"Synced {_count(len(plan.desired), 'global rule')} into {repo_root}\n")
+        if plan.skipped:
+            sys.stdout.write(f"Skipped {_count(len(plan.skipped), 'global rule')}:\n")
+            for skipped in plan.skipped:
+                sys.stdout.write(f"  {skipped.id}: {skipped.reason}\n")
+    # Full paths, because `sync --all` reports many repos in one stream.
+    for path in refreshed.changed:
+        sys.stdout.write(f"Updated the byor ignore block in {path}\n")
+    for path, reason in refreshed.unwritable:
+        sys.stderr.write(
+            f"byor: cannot update the out-of-date byor ignore block in {path}: {reason}; "
+            "make the file writable, then run `byor sync`\n"
+        )
 
 
 def _report_staleness(repo_root: Path, canonical: CanonicalRules) -> int:
@@ -535,7 +532,15 @@ def _report_staleness(repo_root: Path, canonical: CanonicalRules) -> int:
             f"Sync is stale in {repo_root}; run `byor sync` to copy byor's files from the main checkout.\n"
         )
         return STALE_EXIT_CODE
-    if repo_is_stale(repo_root, canonical) or outdated_ignore_blocks(repo_root):
+    outdated = outdated_ignore_blocks(repo_root)
+    if unwritable := [status for status in outdated if not status.writable]:
+        listed = ", ".join(os.path.relpath(status.path, repo_root) for status in unwritable)
+        sys.stdout.write(
+            f"Sync is stale in {repo_root}: the byor ignore block in {listed} is out of date and the file is"
+            " not writable; make it writable, then run `byor sync`.\n"
+        )
+        return STALE_EXIT_CODE
+    if repo_is_stale(repo_root, canonical) or outdated:
         sys.stdout.write(f"Sync is stale in {repo_root}; run `byor sync`.\n")
         return STALE_EXIT_CODE
     sys.stdout.write(f"Sync is fresh in {repo_root}\n")
