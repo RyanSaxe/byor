@@ -23,7 +23,7 @@ from byor.config import (
     load_repo_registry,
     save_global_config,
 )
-from byor.scaffold.ignore import IGNORED_PATTERNS
+from byor.scaffold.ignore import BLOCK_END, IGNORED_PATTERNS
 
 TRACKED_FILES = (
     "sgconfig.yml",
@@ -419,6 +419,18 @@ def test_a_shared_init_after_a_private_one_lets_byors_config_be_committed(repo: 
 
     assert ".byor/" not in (repo / ".git" / "info" / "exclude").read_text()
     assert "?? .byor/config.yml" in git(repo, "status", "--porcelain", "--untracked-files=all")
+
+
+def test_a_shared_init_after_a_private_one_keeps_the_lines_the_user_added_to_the_block(repo: Path) -> None:
+    git(repo, "init", "--quiet")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--private"]) == 0
+    exclude = repo / ".git" / "info" / "exclude"
+    exclude.write_text(exclude.read_text().replace(BLOCK_END, f"secrets.env\n{BLOCK_END}"))
+    (repo / "secrets.env").write_text("token\n")
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--no-private"]) == 0
+
+    assert "secrets.env" not in git(repo, "status", "--porcelain", "--untracked-files=all")
 
 
 def test_init_without_private_keeps_a_private_repo_private(repo: Path) -> None:

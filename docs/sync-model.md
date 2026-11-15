@@ -388,6 +388,11 @@ ones), keeping all rules loadable by ast-grep.
 already committed (the team uses ast-grep independently), byor's edits to it
 still show in `git status`; init warns when it detects this.
 
+Running `byor init` again keeps a private setup private.
+`byor init --no-private` turns it shared: it removes byor's block from
+`.git/info/exclude`, keeping any lines you added inside it, and writes the
+shared block to `.gitignore`.
+
 There is no deinit command yet, so offboarding a private setup is manual:
 
 - Delete `.byor/` and the repo-root `sgconfig.yml` (unless the team owns it).

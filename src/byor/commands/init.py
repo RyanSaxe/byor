@@ -49,6 +49,7 @@ from byor.rules.rules import discover_rule_files
 from byor.rules.sync import summarize_changes
 from byor.scaffold.githooks import install_git_shims
 from byor.scaffold.ignore import (
+    RemovedPrivateBlock,
     has_private_block,
     ignore_file,
     remove_private_block,
@@ -246,8 +247,14 @@ def _bootstrap_global_dir(config_dir: Path, state_dir: Path, *, config: GlobalCo
 # and sgconfig.yml ignored, so the shared setup's tracked config could never be committed.
 def _drop_private_block(repo_root: Path) -> list[str]:
     result = remove_private_block(repo_root)
-    if result == "removed":
-        return ["Removed the private byor block from .git/info/exclude, so .byor/ and sgconfig.yml can be committed"]
+    if isinstance(result, RemovedPrivateBlock):
+        removed = "Removed the private byor block from .git/info/exclude, so .byor/ and sgconfig.yml can be committed"
+        if result.kept_lines:
+            kept = (
+                "the line you added inside it stays" if result.kept_lines == 1 else "the lines you added inside it stay"
+            )
+            removed += f"; {kept} in .git/info/exclude"
+        return [removed]
     if result == "damaged":
         return [
             "warning: .git/info/exclude has a damaged byor block; remove it by hand so .byor/ and "
