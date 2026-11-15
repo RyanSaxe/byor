@@ -41,8 +41,7 @@ def run_profile(args: argparse.Namespace) -> int:
     if args.profile_action == "add":
         repo_root = resolve_repo_root(explicit=args.repo)
         load_repo_config(repo_root)
-        add_profile_to_local(repo_root, config, name=args.name)
-        write_line(f"Added profile '{args.name}' to .byor/local.yml")
+        write_line(add_profile_to_local(repo_root, config, name=args.name))
         _, result = sync_repo(repo_root, load_canonical_rules(config_dir))
         if result.changed:
             write_line(f"Synced {summarize_changes(result)} into {repo_root}")
@@ -51,25 +50,32 @@ def run_profile(args: argparse.Namespace) -> int:
     raise ConfigError(msg)
 
 
+# local.yml keeps only a profile's exclusions, not its name, so a profile whose
+# exclusions are all there already counts as applied and nothing is written.
 def add_profile_to_local(
     repo_root: Path,
     global_config: GlobalConfig,
     *,
     name: str,
-) -> None:
+) -> str:
     profile = _profile(global_config, name)
     local = load_local_config(repo_root)
-    _extend_unique(local.excluded_rule_ids, profile.excluded_rule_ids)
-    _extend_unique(local.excluded_rule_tags, profile.excluded_rule_tags)
-    _extend_unique(local.excluded_checks, profile.excluded_checks)
-    _extend_unique(local.excluded_check_tags, profile.excluded_check_tags)
+    added = [
+        _extend_unique(local.excluded_rule_ids, profile.excluded_rule_ids),
+        _extend_unique(local.excluded_rule_tags, profile.excluded_rule_tags),
+        _extend_unique(local.excluded_checks, profile.excluded_checks),
+        _extend_unique(local.excluded_check_tags, profile.excluded_check_tags),
+    ]
+    if not any(added):
+        return f"Profile '{name}' is already applied in .byor/local.yml"
     save_local_config(repo_root, local)
+    return f"Added profile '{name}' to .byor/local.yml"
 
 
-def _extend_unique(target: list[str], additions: list[str]) -> None:
-    for value in additions:
-        if value not in target:
-            target.append(value)
+def _extend_unique(target: list[str], additions: list[str]) -> bool:
+    missing = [value for value in dict.fromkeys(additions) if value not in target]
+    target.extend(missing)
+    return bool(missing)
 
 
 def _profile(global_config: GlobalConfig, name: str) -> ProfileConfig:

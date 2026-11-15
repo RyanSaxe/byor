@@ -236,13 +236,10 @@ def _apply_profiles_and_packages(
     global_config: GlobalConfig,
     options: InitOptions,
 ) -> list[str]:
-    messages: list[str] = []
-    for name in options.profiles:
-        add_profile_to_local(repo_root, global_config, name=name)
-        messages.append(f"Added profile '{name}' to .byor/local.yml")
-    for name in options.packages:
-        add_package_to_local(repo_root, config_dir, global_config=global_config, name=name)
-        messages.append(f"Installed package '{name}' in .byor/local.yml")
+    messages = [add_profile_to_local(repo_root, global_config, name=name) for name in options.profiles]
+    messages += [
+        add_package_to_local(repo_root, config_dir, global_config=global_config, name=name) for name in options.packages
+    ]
     return messages
 
 

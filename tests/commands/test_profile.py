@@ -78,7 +78,9 @@ def test_profile_add_preserves_existing_exclusions_and_is_idempotent(
     capsys.readouterr()
 
     assert main(["profile", "add", "existing", "--repo", str(repo)]) == 0
+    capsys.readouterr()
     assert main(["profile", "add", "existing", "--repo", str(repo)]) == 0
+    assert "Profile 'existing' is already applied" in capsys.readouterr().out
 
     local = load_local_config(repo)
     assert local.excluded_checks == ["mypy"]  # manual exclusion survives
