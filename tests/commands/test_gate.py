@@ -609,6 +609,7 @@ def test_promoting_a_home_script_check_into_a_gated_repo_vendors_it(
 
     assert next(c.run for c in load_repo_config(repo).checks if c.name == "later") == ".byor/scripts/later.sh"
     assert (repo / ".byor" / "scripts" / "later.sh").is_file()
+    assert load_local_config(repo).vendored_scripts == [".byor/scripts/later.sh"]
 
 
 def test_promoting_a_check_never_replaces_a_script_a_repo_check_runs(

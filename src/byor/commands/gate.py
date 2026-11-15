@@ -300,17 +300,18 @@ def promote_everything(repo_root: Path, config_dir: Path) -> list[str]:
         names.add(effective.name)
         promoted_checks.append(effective.name)
     save_repo_config(repo_root, repo_config)
-    _record_vendored_scripts(repo_root, repo_config.checks)
+    _record_vendored_scripts(
+        repo_root, transitive_vendored_scripts(repo_root, referenced_vendored_scripts(repo_config.checks))
+    )
     sync_repo(repo_root, load_canonical_rules(config_dir))
     rules_part = _promoted_part("rule", rules)
     checks_part = _promoted_part("check", promoted_checks)
     return [f"Promoted {rules_part} and {checks_part} into tracked config"]
 
 
-# `byor init --gate` is the maintainer's explicit step, so the vendored copies
-# its checks reference become this checkout's to keep current from here on.
-def _record_vendored_scripts(repo_root: Path, checks: list[CheckDef]) -> None:
-    relpaths = transitive_vendored_scripts(repo_root, referenced_vendored_scripts(checks))
+# `byor init --gate` and `byor promote --check` are the maintainer's explicit steps, so the
+# vendored copies they write become this checkout's to keep current from here on.
+def _record_vendored_scripts(repo_root: Path, relpaths: list[str]) -> None:
     local = load_local_config(repo_root)
     merged = sorted({*local.vendored_scripts, *relpaths})
     if merged != local.vendored_scripts:
@@ -392,7 +393,8 @@ def vendor_promoted_check(repo_root: Path, check: CheckDef, *, repo_checks: list
 
     A committed copy may come from another machine, such as a teammate's script of the same name,
     so promoting a check whose script would land on it from a different source is an error, and a
-    copy from the same source is reused as it is.
+    copy from the same source is reused as it is. The copies this writes become this checkout's to
+    keep current, as `init --gate` makes them.
     """
     in_use = transitive_vendored_scripts(repo_root, referenced_vendored_scripts(repo_checks))
     vendored: dict[str, Path] = {}
@@ -401,7 +403,10 @@ def vendor_promoted_check(repo_root: Path, check: CheckDef, *, repo_checks: list
         if copy.is_file():
             # A copy without a provenance marker is user-owned and matches no source.
             vendored[relpath.casefold()] = (_vendored_source(copy) or copy).resolve()
-    return vendor_check(repo_root, check, vendored=vendored)
+    promoted = vendor_check(repo_root, check, vendored=vendored)
+    written = transitive_vendored_scripts(repo_root, referenced_vendored_scripts([promoted]))
+    _record_vendored_scripts(repo_root, [relpath for relpath in written if relpath not in in_use])
+    return promoted
 
 
 def _vendor_script(repo_root: Path, source: Path, *, vendored: dict[str, Path]) -> str:
