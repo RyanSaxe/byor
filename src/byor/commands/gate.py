@@ -41,6 +41,7 @@ from byor.scan.checks import load_effective_checks
 
 __all__ = (
     "directly_invoked_vendored_scripts",
+    "drifted_vendored_scripts",
     "heal_gate",
     "install_gate",
     "precommit_hook_installed",
@@ -209,12 +210,36 @@ def vendored_script_problems(repo_root: Path, relpath: str, *, executable_requir
         problems.append(
             f"{relpath} is not executable; run `chmod +x {relpath}` and `git update-index --chmod=+x {relpath}`"
         )
-    source = _vendored_source(path)
-    if source is not None and source.is_file() and relpath in _recorded_vendored_scripts(repo_root):
-        expected = _expected_vendored_text(path.name, source, repo_root=repo_root)
-        if expected is not None and path.read_text(encoding="utf-8") != expected:
-            problems.append(f"{relpath} drifted from {_source_display(source)}; run `byor init --gate`")
+    source = _drifted_source(repo_root, relpath)
+    if source is not None:
+        problems.append(f"{relpath} drifted from {_source_display(source)}; run `byor sync`")
     return problems
+
+
+def drifted_vendored_scripts(repo_root: Path, checks: list[CheckDef]) -> list[str]:
+    """Vendored scripts the repo's checks run whose recorded source changed on this machine.
+
+    These are the copies doctor reports as drifted and the next `byor sync`
+    re-vendors, so `sync --check` uses this to count them as stale. Like
+    doctor, it follows scripts that other vendored scripts call, and it only
+    compares a copy this checkout vendored whose source exists here: a
+    teammate's copy or a user-owned one is never drifted.
+    """
+    relpaths = transitive_vendored_scripts(repo_root, referenced_vendored_scripts(checks))
+    return [relpath for relpath in relpaths if _drifted_source(repo_root, relpath) is not None]
+
+
+def _drifted_source(repo_root: Path, relpath: str) -> Path | None:
+    path = repo_root / relpath
+    if not path.is_file() or relpath not in _recorded_vendored_scripts(repo_root):
+        return None
+    source = _vendored_source(path)
+    if source is None or not source.is_file():
+        return None
+    expected = _expected_vendored_text(path.name, source, repo_root=repo_root)
+    if expected is None or path.read_text(encoding="utf-8") == expected:
+        return None
+    return source
 
 
 def _revendor_scripts(repo_root: Path, checks: list[CheckDef]) -> list[str]:

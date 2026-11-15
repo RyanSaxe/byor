@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from byor.commands.gate import regenerate_gate, stale_gate_files
+from byor.commands.gate import drifted_vendored_scripts, regenerate_gate, stale_gate_files
 from byor.config import (
     load_global_config,
     load_repo_config,
@@ -140,7 +140,9 @@ def _report_staleness(repo_root: Path, canonical: CanonicalRules) -> int:
         )
         return STALE_EXIT_CODE
     repo_config = load_repo_config(repo_root)
-    stale_gate = repo_config.gate and bool(stale_gate_files(repo_root, repo_config))
+    stale_gate = repo_config.gate and bool(
+        stale_gate_files(repo_root, repo_config) or drifted_vendored_scripts(repo_root, repo_config.checks)
+    )
     if repo_is_stale(repo_root, canonical) or outdated or stale_gate:
         sys.stdout.write(f"Sync is stale in {repo_root}; run `byor sync`.\n")
         return STALE_EXIT_CODE

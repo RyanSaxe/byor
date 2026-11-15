@@ -285,12 +285,12 @@ and any check that runs a `~/` script into a committed copy under
 
 Each vendored copy carries a provenance marker recording its source as the
 check names it, such as `~/.config/byor/scripts/lint.sh`, even when that folder
-is a symlink. `byor init --gate` also lists the copies in `.byor/local.yml`, and
-self-heal re-vendors only those, when their source changes. A teammate's clone
-has no such list, so a same-named script in their home never replaces the
-committed copy. A gate set up by an older byor has no list either: run
-`byor init --gate` once on the machine that maintains it. Removing the marker
-makes the copy user-owned, never rewritten.
+is a symlink. `byor init --gate` and `byor promote --check` list the copies they
+write in `.byor/local.yml`, and self-heal and `byor sync` re-vendor only those,
+when their source changes. A teammate's clone has no such list, so a same-named
+script in their home never replaces the committed copy. A gate set up by an
+older byor has no list either: run `byor init --gate` once on the machine that
+maintains it. Removing the marker makes the copy user-owned, never rewritten.
 
 The emitted artifacts run `ast-grep scan` through uvx with a pinned
 `ast-grep-cli` version, so the gate never drifts with upstream releases, and run

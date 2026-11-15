@@ -131,9 +131,9 @@ def test_gate_workflow_branch_is_stable_across_checkouts(home: Path) -> None:
     assert main(["doctor", "--repo", str(repo)]) == 0
 
 
-# Doctor's drift remediation says "run `byor init --gate`", which users run
-# from whatever branch they are on; re-recording gate_branch there resurrected
-# the CI branch flap the recorded value exists to prevent.
+# Users rerun `byor init --gate` from whatever branch they are on;
+# re-recording gate_branch there resurrected the CI branch flap the recorded
+# value exists to prevent.
 def test_rerunning_init_gate_keeps_the_recorded_branch(home: Path) -> None:
     repo = gate_repo(home)
     git(repo, "commit", "--allow-empty", "-q", "-m", "init")
