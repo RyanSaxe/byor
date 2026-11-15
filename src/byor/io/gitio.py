@@ -33,7 +33,7 @@ def default_branch(repo_root: Path) -> str:
     return git_output(repo_root, "branch", "--show-current") or "main"
 
 
-def git_stdout(repo_root: Path, *args: str) -> str | None:
+def git_stdout(repo_root: Path, *args: str, stdin: str | None = None) -> str | None:
     git = shutil.which("git")
     if git is None:
         return None
@@ -43,6 +43,7 @@ def git_stdout(repo_root: Path, *args: str) -> str | None:
         # never round-tripped byte-for-byte.
         result = subprocess.run(
             [git, "-C", str(repo_root), *args],
+            input=stdin,
             capture_output=True,
             text=True,
             encoding="utf-8",

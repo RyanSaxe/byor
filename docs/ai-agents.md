@@ -341,7 +341,9 @@ byor keeps an agent in `agents` exactly when its byor integration is
 installed. Self-heal restores whichever side is missing: it reinstalls the
 hooks or plugin file of a recorded agent, and it records an agent whose byor
 hooks or plugin file it finds. Removing only one side by hand therefore does
-not last. `byor hook uninstall` removes both.
+not last. `byor hook uninstall` removes both. A hook entry you mixed your own
+commands into is yours: uninstall leaves it in place, and self-heal never
+records an agent because of it.
 
 Generated files carry the marker
 `<!-- Managed by BYOR. Manual edits may be overwritten. -->` (a `//` comment
@@ -380,8 +382,8 @@ byor can reliably integrate with, so byor omits them until that changes.
 ### skill
 
 The `byor` skill is a hub `SKILL.md` plus reference files
-(`references/patterns.md`, `references/checks.md`, `references/setup.md`,
-`references/packages.md`, `references/profiles.md`),
+(`references/patterns.md`, `references/checks.md`, `references/commands.md`,
+`references/setup.md`, `references/packages.md`, `references/profiles.md`),
 following the Agent Skills progressive-disclosure pattern so the shared
 rule-authoring guidance lives in one place. It does two things: **capture** (the
 default) and **setup**.

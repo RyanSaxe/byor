@@ -7,7 +7,9 @@ dataclasses instead of raw mappings.
 
 from __future__ import annotations
 
+import os
 import shlex
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -37,6 +39,7 @@ __all__ = (
     "global_packages_dir",
     "global_rules_dir",
     "legacy_machine_state",
+    "load_current_machine_state",
     "load_global_config",
     "load_local_config",
     "load_machine_state",
@@ -400,7 +403,10 @@ def load_global_config(config_dir: Path) -> GlobalConfig:
     if not path.is_file():
         return GlobalConfig()
     data = load_yaml_mapping(path)
-    _check_version(data, path)
+    # The user writes config.yml, and byor no longer creates it, so a hand-written file
+    # without `version`, or an empty one, means version 1; only a different version fails.
+    if "version" in data:
+        _check_version(data, path)
     paths = _section(data, "paths", path=path)
     ast_grep = _section(data, "ast_grep", path=path)
     output = _section(data, "output", path=path)
@@ -483,7 +489,7 @@ def save_machine_state(state_dir: Path, state: MachineState) -> None:
     data["version"] = CONFIG_VERSION
     data["agents"] = list(state.agents)
     data["disabled_repos"] = [str(entry) for entry in state.disabled_repos]
-    write_yaml_atomic(path, data)
+    _write_state_file(path, data)
 
 
 def migrate_machine_state(config_dir: Path, state_dir: Path) -> None:
@@ -492,22 +498,82 @@ def migrate_machine_state(config_dir: Path, state_dir: Path) -> None:
     Older versions kept `ai.agents` and `disabled_repos` in config.yml and wrote `repos.yml` beside
     it. The first run of this version copies all three into the state directory and leaves the old
     file and keys as they are, because config.yml belongs to the user; `byor doctor` then asks the
-    user to delete them. An existing `state.yml` marks the move done, so later runs cost one stat.
+    user to delete them. The state directory itself marks the move done, so a `state.yml` lost
+    later starts empty instead of bringing back agents and disabled paths the user has changed
+    since, and later runs cost one stat. The directory is built under a temporary name and renamed
+    into place, so a failed move leaves nothing behind and runs again on the next command.
 
     Raises:
-        ConfigError: config.yml is malformed, or the state directory cannot be written.
+        ConfigError: an old record cannot be read or parsed, or the state directory cannot be
+            created, naming the file or directory at fault.
 
     """
-    if machine_state_path(state_dir).is_file():
+    if not _move_pending(state_dir):
         return
-    config = load_global_config(config_dir)
-    legacy_registry = config_dir / config.repos_path
-    registry = repo_registry_path(state_dir, config)
+    config_path = global_config_path(config_dir)
     try:
-        if legacy_registry.is_file() and not registry.exists():
-            write_text_atomic(registry, legacy_registry.read_text(encoding="utf-8"))
-        save_machine_state(state_dir, _legacy_machine_state(config_dir))
+        config = load_global_config(config_dir)
+        legacy = _legacy_machine_state(config_dir)
     except OSError as error:
+        msg = f"cannot read {config_path}: {error}"
+        raise ConfigError(msg) from error
+    legacy_registry = config_dir / config.repos_path
+    registry_text = None
+    # An absolute `paths.repos` names one file from both directories, so there is nothing to copy.
+    if legacy_registry != repo_registry_path(state_dir, config):
+        registry_text = _read_legacy_text(legacy_registry)
+    _create_state_dir(state_dir, config=config, state=legacy, registry_text=registry_text)
+
+
+def load_current_machine_state(config_dir: Path, state_dir: Path) -> MachineState:
+    """Return the machine state in force, reading the old config.yml records until the move happens.
+
+    Hooks carry on when the one-time move fails, and until it succeeds an older byor's
+    `disabled_repos` and `ai.agents` in config.yml are still the user's records, so a repo they
+    disabled stays disabled. Commands stop when the move fails, so for them this is
+    `load_machine_state`. Raises ConfigError for a malformed record and OSError for a directory
+    byor cannot read, which hooks treat as an internal error and skip.
+    """
+    if state_dir.exists():
+        return load_machine_state(state_dir)
+    return _legacy_machine_state(config_dir)
+
+
+def _move_pending(state_dir: Path) -> bool:
+    try:
+        return not state_dir.exists()
+    except OSError as error:
+        msg = f"cannot read byor's state directory {state_dir}: {error}"
+        raise ConfigError(msg) from error
+
+
+def _read_legacy_text(path: Path) -> str | None:
+    try:
+        if not path.is_file():
+            return None
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as error:
+        msg = f"{path}: not valid UTF-8: {error}"
+        raise ConfigError(msg) from error
+    except OSError as error:
+        msg = f"cannot read {path}: {error}"
+        raise ConfigError(msg) from error
+
+
+def _create_state_dir(state_dir: Path, *, config: GlobalConfig, state: MachineState, registry_text: str | None) -> None:
+    staging = state_dir.with_name(f".{state_dir.name}.moving-{os.getpid()}")
+    try:
+        shutil.rmtree(staging, ignore_errors=True)
+        staging.mkdir(parents=True)
+        if registry_text is not None:
+            write_text_atomic(repo_registry_path(staging, config), registry_text)
+        save_machine_state(staging, state)
+        staging.rename(state_dir)
+    except (OSError, ConfigError) as error:
+        shutil.rmtree(staging, ignore_errors=True)
+        # Another byor process finished the move first; its directory is the one to keep.
+        if state_dir.is_dir():
+            return
         msg = f"cannot write byor's state to {state_dir}: {error}"
         raise ConfigError(msg) from error
 
@@ -515,10 +581,11 @@ def migrate_machine_state(config_dir: Path, state_dir: Path) -> None:
 def legacy_machine_state(config_dir: Path, state_dir: Path) -> list[str]:
     """Name the entries older byor versions wrote under the config directory that remain there.
 
-    Returns labels such as "`ai.agents` in config.yml" and "repos.yml" for doctor to report. byor
-    reads none of them after `migrate_machine_state` copied them, so an edit to one silently does
-    nothing, which is why doctor asks the user to delete them. Raises ConfigError for a malformed
-    config.yml, as `load_global_config` does.
+    Returns labels such as "`ai.agents` in config.yml" and "repos.yml" for doctor to report; the
+    registry's label is its `paths.repos` value, so a custom location is named as configured.
+    byor reads none of them after `migrate_machine_state` copied them, so an edit to one silently
+    does nothing, which is why doctor asks the user to delete them. Raises ConfigError for a
+    malformed config.yml, as `load_global_config` does.
     """
     leftovers: list[str] = []
     path = global_config_path(config_dir)
@@ -532,7 +599,7 @@ def legacy_machine_state(config_dir: Path, state_dir: Path) -> list[str]:
     legacy_registry = config_dir / config.repos_path
     # An absolute `paths.repos` names the same file from both directories, and that file is live.
     if legacy_registry.is_file() and legacy_registry != repo_registry_path(state_dir, config):
-        leftovers.append("repos.yml")
+        leftovers.append(Path(config.repos_path).as_posix())
     return leftovers
 
 
@@ -559,7 +626,17 @@ def save_repo_registry(path: Path, repos: list[Path]) -> None:
     data = _load_or_new(path)
     data["version"] = CONFIG_VERSION
     data["repos"] = [str(repo) for repo in repos]
-    write_yaml_atomic(path, data)
+    _write_state_file(path, data)
+
+
+# The state directory is the one place byor writes on every computer, so an
+# unwritable one must read as a config error naming the path, not a traceback.
+def _write_state_file(path: Path, data: CommentedMap) -> None:
+    try:
+        write_yaml_atomic(path, data)
+    except OSError as error:
+        msg = f"cannot write byor's state to {path}: {error}"
+        raise ConfigError(msg) from error
 
 
 def register_repo(repo_root: Path, registry_path: Path) -> bool:

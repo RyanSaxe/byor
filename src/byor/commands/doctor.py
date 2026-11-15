@@ -39,6 +39,7 @@ from byor.config import (
     load_package_checks,
     load_repo_config,
     load_repo_registry,
+    local_config_path,
     repo_config_path,
     repo_registry_path,
     rule_dir_relpaths,
@@ -61,8 +62,9 @@ from byor.rules.sync import (
     repo_plans,
 )
 from byor.scaffold.githooks import shim_findings
-from byor.scaffold.ignore import ignore_block_current, outdated_ignore_blocks, rule_visibility_ok
+from byor.scaffold.ignore import IgnoreBlockStatus, ignore_block_statuses, rule_visibility_ok
 from byor.scaffold.precommit import CONFIG_RELPATH
+from byor.scaffold.worktree import pending_copy, worktree_disabled_entry
 from byor.scan.astgrep import ast_grep_version, resolve_ast_grep, scan_command
 from byor.scan.checks import effective_checks
 
@@ -106,7 +108,9 @@ def collect_checks(repo_root: Path, config_dir: Path, *, quick: bool) -> list[Ch
     staleness) but keeps the cheap checks.
     """
     global_config = load_global_config(config_dir)
-    checks = _global_checks(config_dir, global_state_dir(), global_config=global_config, quick=quick)
+    checks = _global_checks(
+        config_dir, global_state_dir(), global_config=global_config, current_repo=repo_root, quick=quick
+    )
     checks.extend(
         _repo_checks(
             repo_root,
@@ -118,13 +122,15 @@ def collect_checks(repo_root: Path, config_dir: Path, *, quick: bool) -> list[Ch
     return checks
 
 
-def _global_checks(config_dir: Path, state_dir: Path, *, global_config: GlobalConfig, quick: bool) -> list[Check]:
+def _global_checks(
+    config_dir: Path, state_dir: Path, *, global_config: GlobalConfig, current_repo: Path, quick: bool
+) -> list[Check]:
     state = load_machine_state(state_dir)
     checks = [
         _ast_grep_check(global_config),
         _home_sgconfig_check(config_dir, global_config),
         _agent_files_check(state),
-        _registry_check(config_dir, state_dir, global_config=global_config),
+        _registry_check(config_dir, state_dir, global_config=global_config, current_repo=current_repo),
     ]
     optional = (_disabled_paths_check(state), _legacy_state_check(config_dir, state_dir))
     checks.extend(check for check in optional if check is not None)
@@ -141,6 +147,9 @@ def _repo_checks(
     global_config: GlobalConfig,
     quick: bool,
 ) -> list[Check]:
+    copy_check = _worktree_copy_check(repo_root)
+    if copy_check is not None:
+        return [copy_check]
     if not repo_config_path(repo_root).is_file():
         return [
             Check(
@@ -315,6 +324,33 @@ def _command_rules_check(repo_root: Path, paths: RepoPaths, *, global_config: Gl
     )
 
 
+# Doctor never copies, so a fresh worktree gets the one command that does instead of `byor init`,
+# which would write a fresh local.yml and lose the main checkout's settings for good.
+def _worktree_copy_check(repo_root: Path) -> Check | None:
+    try:
+        pending = pending_copy(repo_root)
+    except ConfigError:
+        return None
+    if pending is None:
+        return None
+    entry = worktree_disabled_entry(repo_root, load_machine_state(global_state_dir()))
+    if entry is not None:
+        # byor copies nothing into a disabled checkout's worktree, so `byor sync` would never clear this.
+        return Check(
+            id="repo",
+            ok=True,
+            message=f"byor is disabled here by {_home_display(entry)}, so it copies nothing into this worktree",
+        )
+    return Check(
+        id="repo",
+        ok=False,
+        message=(
+            f"this worktree has not copied byor's files from its main checkout "
+            f"{_home_display(pending.main_root)} yet; run `byor sync`"
+        ),
+    )
+
+
 def _repo_config_check(repo_root: Path) -> tuple[RepoConfig, Check]:
     try:
         config = load_repo_config(repo_root)
@@ -441,31 +477,54 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path) -> list
 
 
 def _ignore_block_check(repo_root: Path) -> Check:
-    if ignore_block_current(repo_root):
-        return Check(
-            id="ignore_block",
-            ok=True,
-            message="personal rules and .byor/local.yml are git-ignored",
-        )
-    outdated = outdated_ignore_blocks(repo_root)
-    if outdated:
-        listed = ", ".join(os.path.relpath(path, repo_root) for path in outdated)
-        return Check(
-            id="ignore_block",
-            ok=False,
-            message=(
-                f"the byor ignore block in {listed} is out of date, so some personal byor files"
-                " are committable; run `byor sync` to update it"
-            ),
-        )
-    return Check(
-        id="ignore_block",
-        ok=False,
-        message=(
-            "the byor ignore block is gone, so personal rules and .byor/local.yml"
-            " are committable; run `byor init` to restore it"
+    statuses = ignore_block_statuses(repo_root)
+
+    def having(state: str) -> list[IgnoreBlockStatus]:
+        return [status for status in statuses if status.state == state]
+
+    def listed(selected: list[IgnoreBlockStatus]) -> str:
+        return ", ".join(Path(os.path.relpath(status.path, repo_root)).as_posix() for status in selected)
+
+    outdated = having("outdated")
+    stuck = [status for status in outdated if not status.writable]
+    covered = bool(having("current"))
+    reasons = "; ".join(f"{listed([status])}: {status.reason}" for status in having("unreadable"))
+    # Checked in order, and the first case that applies decides. An outdated block counts even
+    # beside a current one, so doctor agrees with `byor sync --check`. A `None` message means ok.
+    cases: list[tuple[bool, str | None]] = [
+        (
+            bool(stuck),
+            f"the byor ignore block in {listed(stuck)} is out of date and the file is not writable;"
+            " make it writable, then run `byor sync`",
         ),
-    )
+        (
+            bool(outdated),
+            f"the byor ignore block in {listed(outdated)} is out of date"
+            f"{'' if covered else ', so some personal byor files are committable'}; run `byor sync` to update it",
+        ),
+        (covered, None),
+        (
+            # `byor init` would replace everything from the first begin marker on, so it is not the fix.
+            bool(having("damaged")),
+            f"the byor ignore block in {listed(having('damaged'))} is damaged: it needs exactly one begin marker"
+            " and one end marker after it; fix the markers by hand, and byor then keeps the block current",
+        ),
+        (
+            bool(having("edited")),
+            f"the byor ignore block in {listed(having('edited'))} was edited, and its lines no longer say whether"
+            " it is for a shared or a private setup, so byor leaves it alone; restore byor's lines between the markers",
+        ),
+        (bool(reasons), f"byor cannot read an ignore file, so it cannot check the byor block there ({reasons})"),
+        (
+            True,
+            "the byor ignore block is gone, so personal rules and .byor/local.yml are committable;"
+            " run `byor init` to restore it",
+        ),
+    ]
+    message = next(message for applies, message in cases if applies)
+    if message is None:
+        return Check(id="ignore_block", ok=True, message="personal rules and .byor/local.yml are git-ignored")
+    return Check(id="ignore_block", ok=False, message=message)
 
 
 def _git_shims_check(repo_root: Path) -> Check | None:
@@ -536,8 +595,12 @@ def _vendored_scripts_check(repo_root: Path, repo_config: RepoConfig) -> Check |
     )
 
 
-def _registry_check(config_dir: Path, state_dir: Path, *, global_config: GlobalConfig) -> Check:
+def _registry_check(config_dir: Path, state_dir: Path, *, global_config: GlobalConfig, current_repo: Path) -> Check:
     repos = load_repo_registry(repo_registry_path(state_dir, global_config))
+    # The repo doctor runs in may be unregistered, as every worktree is, so check its packages too.
+    registered = {repo.resolve() for repo in repos}
+    is_unregistered = local_config_path(current_repo).is_file() and current_repo.resolve() not in registered
+    unregistered = [current_repo] if is_unregistered else []
     missing = [f"{repo} no longer exists" for repo in repos if not repo.is_dir()]
     tallies = Counter(repo.resolve() for repo in repos)
     problems = missing + [
@@ -545,7 +608,8 @@ def _registry_check(config_dir: Path, state_dir: Path, *, global_config: GlobalC
     ]
     if missing:
         problems.append("run `byor sync --all --prune`")
-    problems.extend(_missing_package_problems(repos, set(available_packages(config_dir, global_config))))
+    available = set(available_packages(config_dir, global_config))
+    problems.extend(_missing_package_problems([*repos, *unregistered], available))
     if problems:
         return Check(
             id="registered_repos",
@@ -676,14 +740,13 @@ def _recorded_agent_problems(agents: list[str]) -> list[str]:
 
 
 def _unrecorded_agent_problems(recorded: list[str]) -> list[str]:
-    try:
-        unrecorded = unrecorded_agents(recorded)
-    except ConfigError as error:
-        return [f"{error}; fix the JSON by hand"]
-    if not unrecorded:
-        return []
-    listed = ", ".join(unrecorded)
-    return [
-        f"byor integrations are installed for agents missing from `agents` in byor's state.yml, "
-        f"so self-heal never updates them: {listed}; run `byor hook install --agent NAME` for each"
-    ]
+    scan = unrecorded_agents(recorded)
+    problems = [f"{problem}; fix the file by hand" for problem in scan.problems]
+    if scan.found:
+        listed = ", ".join(scan.found)
+        problems.append(
+            f"byor integrations are installed for agents missing from `agents` in byor's state.yml: {listed}; "
+            "any self-healing command such as `byor list` records them, "
+            "or run `byor hook install --agent NAME` for each"
+        )
+    return problems

@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING, Literal
 
 from byor.agents.harness import EditPayload, Harness, emit, parse_payload
 from byor.commands.heal import heal_worktree
-from byor.config import disabled_entry, load_global_config, load_machine_state, repo_config_path
-from byor.errors import ByorError
+from byor.config import load_current_machine_state, load_global_config, repo_config_path
+from byor.errors import ByorError, WorktreeCopyBusyError
 from byor.io.paths import (
     display_path,
     global_config_dir,
@@ -24,6 +24,7 @@ from byor.io.paths import (
     home_sgconfig_path,
     resolve_repo_root,
 )
+from byor.scaffold.worktree import worktree_disabled_entry
 from byor.scan.astgrep import ScanMatch, resolve_ast_grep, scan_files
 from byor.scan.checks import CheckOutcome, load_effective_checks, run_checks
 from byor.scan.linescope import Range, diff_ranges, edit_ranges, overlaps
@@ -146,12 +147,15 @@ def _hook_diagnostics(args: argparse.Namespace, *, harness: Harness) -> int:
     if not payload.edits:
         return 0
     repo_root = _hook_repo_root(explicit=args.repo, payload=payload)
-    if disabled_entry(repo_root, load_machine_state(global_state_dir())) is not None:
+    if worktree_disabled_entry(repo_root, load_current_machine_state(config_dir, global_state_dir())) is not None:
         # `byor disable` covers this repo: silent exit, nothing is scanned.
         return 0
-    worktree_line = heal_worktree(repo_root, config_dir)
-    if worktree_line is not None:
-        sys.stderr.write(f"{worktree_line}\n")
+    try:
+        worktree_lines = heal_worktree(repo_root, config_dir)
+    except WorktreeCopyBusyError as error:
+        worktree_lines = [f"byor: {error}"]
+    for line in worktree_lines:
+        sys.stderr.write(f"{line}\n")
     if not _has_any_rules(repo_root) and not global_config.checks:
         return 0
     payload = _resolved_payload(payload, repo_root)

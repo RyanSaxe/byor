@@ -55,8 +55,9 @@ byor wires external linters and type checkers into the same loop as ast-grep
 and feeds their output to AI agents.
 
 - [`config/config.yml`](config/config.yml) — an annotated global config
-  (`~/.config/byor/config.yml`): the `checks` block (ruff + ty) and the `ai`
-  agent list.
+  (`~/.config/byor/config.yml`): the `checks` and `command_checks` blocks
+  and a profile. The agents byor installs are recorded in its state file, not
+  here.
 - [`config/scripts/ruff.sh`](config/scripts/ruff.sh) — a `check` script that
   autofixes what is safe, tells the agent exactly what changed, then reports
   only the issues it could not fix. It accepts explicit file arguments for hook

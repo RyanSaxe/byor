@@ -11,9 +11,12 @@ import sys
 from pathlib import Path
 
 import pytest
-from support import commit_file, git, write_global_command_rule, write_rule
+from support import commit_file, git, install_package, write_global_command_rule, write_global_rule, write_rule
 
 from byor.cli import main
+from byor.io.paths import global_state_dir
+from byor.rules.sync import STALE_EXIT_CODE
+from byor.scaffold import worktree as worktree_copy
 
 PIP_COMMAND = "pip install requests"
 
@@ -31,9 +34,9 @@ def make_main_checkout(home: Path, *, private: bool) -> Path:
     return repo
 
 
-def add_worktree(main_repo: Path) -> Path:
+def add_worktree(main_repo: Path, *start: str) -> Path:
     worktree = main_repo.parent / "worktree"
-    git(main_repo, "worktree", "add", "--quiet", str(worktree))
+    git(main_repo, "worktree", "add", "--quiet", str(worktree), *start)
     return worktree
 
 
@@ -122,3 +125,120 @@ def test_a_worktree_of_a_repo_byor_never_initialized_gets_no_byor_files(
     assert main(["agent-check", "--stdin-hook", "claude-code"]) == 0
 
     assert not (worktree / ".byor").exists()
+
+
+def test_a_worktree_on_a_branch_from_before_byor_gets_nothing_it_could_commit(home: Path) -> None:
+    worktree = add_worktree(make_main_checkout(home, private=False), "-b", "old", "HEAD~1")
+
+    main(["list", "--repo", str(worktree)])
+
+    assert not (worktree / ".byor").exists()
+    assert git(worktree, "status", "--porcelain") == ""
+
+
+def test_byor_init_as_the_first_command_in_a_new_worktree_keeps_the_main_checkouts_files(home: Path) -> None:
+    main_repo = make_main_checkout(home, private=True)
+    write_rule(main_repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
+    worktree = add_worktree(main_repo)
+
+    assert main(["init", "--repo", str(worktree), "--non-interactive", "--private", "--no-git-hooks"]) == 0
+
+    assert (worktree / ".byor" / "rules" / "project" / "no-cast.yml").is_file()
+    assert str(worktree) not in (global_state_dir() / "repos.yml").read_text()
+
+
+def test_doctor_and_sync_check_in_a_new_worktree_copy_nothing_and_point_to_byor_sync(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    worktree = add_worktree(make_main_checkout(home, private=True))
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(worktree), "--quick"]) == 1
+    assert main(["sync", "--check", "--repo", str(worktree)]) == STALE_EXIT_CODE
+
+    out = capsys.readouterr().out
+    assert "this worktree has not copied byor's files from its main checkout" in out
+    assert "run `byor sync` to copy byor's files from the main checkout" in out
+    assert not (worktree / ".byor").exists()
+
+
+def test_a_worktree_of_a_disabled_main_checkout_gets_nothing_and_doctor_stays_clean(home: Path) -> None:
+    main_repo = make_main_checkout(home, private=True)
+    worktree = add_worktree(main_repo)
+    assert main(["disable", str(main_repo)]) == 0
+
+    main(["list", "--repo", str(worktree)])
+
+    assert not (worktree / ".byor").exists()
+    assert main(["doctor", "--repo", str(worktree), "--quick"]) == 0
+    assert main(["sync", "--check", "--repo", str(worktree)]) == 0
+
+
+def test_sync_all_reaches_the_worktrees_of_a_registered_repo(home: Path) -> None:
+    worktree = add_worktree(make_main_checkout(home, private=False))
+    main(["list", "--repo", str(worktree)])
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
+
+    assert main(["sync", "--all"]) == 0
+
+    assert (worktree / ".byor" / "rules" / "personal" / "global" / "no-cast.yml").is_file()
+
+
+def test_a_command_stops_while_another_process_holds_the_copy_lock(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    worktree = add_worktree(make_main_checkout(home, private=True))
+    monkeypatch.setattr(worktree_copy, "LOCK_WAIT_SECONDS", 0.1)
+    git_dir = Path(git(worktree, "rev-parse", "--absolute-git-dir").strip())
+    (git_dir / worktree_copy.LOCK_NAME).touch()
+    capsys.readouterr()
+
+    assert main(["init", "--repo", str(worktree), "--non-interactive", "--private", "--no-git-hooks"]) != 0
+
+    assert "another byor process is copying" in capsys.readouterr().err
+    assert not (worktree / ".byor" / "local.yml").exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="creating symlinks needs extra rights on Windows")
+def test_a_linked_folder_of_rules_is_copied_as_the_same_link(home: Path) -> None:
+    main_repo = make_main_checkout(home, private=True)
+    shared = home / "shared"
+    write_rule(shared / "no-cast.yml", "no-cast")
+    (main_repo / ".byor" / "rules" / "personal" / "local" / "shared").symlink_to(shared)
+    worktree = add_worktree(main_repo)
+
+    assert main(["list", "--repo", str(worktree)]) == 0
+
+    link = worktree / ".byor" / "rules" / "personal" / "local" / "shared"
+    assert link.is_symlink()
+    assert link.resolve() == shared.resolve()
+
+
+def test_the_copy_deletes_partial_files_an_interrupted_copy_left(home: Path) -> None:
+    worktree = add_worktree(make_main_checkout(home, private=True))
+    leftover = worktree / ".byor" / "rules" / "personal" / "local" / ".big.yml.byor-copy-123"
+    leftover.parent.mkdir(parents=True)
+    leftover.write_text("partial")
+
+    main(["list", "--repo", str(worktree)])
+
+    assert not leftover.exists()
+    assert (worktree / ".byor" / "local.yml").is_file()
+
+
+def test_doctor_in_a_worktree_reports_a_missing_package_its_own_local_config_names(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    worktree = add_worktree(make_main_checkout(home, private=True))
+    main(["list", "--repo", str(worktree)])
+    install_package(worktree, "gone")
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(worktree), "--quick"]) == 1
+
+    assert "~/worktree (gone)" in capsys.readouterr().out

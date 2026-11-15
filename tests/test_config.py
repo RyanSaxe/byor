@@ -381,3 +381,17 @@ def test_register_repo_creates_registry_and_is_idempotent(tmp_path: Path) -> Non
     assert register_repo(repo, registry_path) is False
 
     assert load_repo_registry(registry_path) == [repo.resolve()]
+
+
+@pytest.mark.parametrize("content", ["", "# settings come later\n", "init:\n  private: true\n"])
+def test_global_config_without_a_version_means_version_one(tmp_path: Path, content: str) -> None:
+    (tmp_path / "config.yml").write_text(content)
+
+    load_global_config(tmp_path)
+
+
+def test_global_config_rejects_a_different_version(tmp_path: Path) -> None:
+    (tmp_path / "config.yml").write_text("version: 2\n")
+
+    with pytest.raises(ConfigError, match="expected `version: 1`"):
+        load_global_config(tmp_path)

@@ -65,19 +65,29 @@ The exceptions: `byor sync` itself (its body is the sync),
 their own steps, and `byor doctor`, which is read-only — it reports staleness
 and the command that fixes it instead of repairing anything.
 
-The same step, and `byor sync`, also rewrite a byor ignore block that an
+The same step, and `byor sync`, also update a byor ignore block that an
 older byor wrote before it gained a personal path, such as the command-rule
-copies under `.byor/commands/personal/`. Only the lines between byor's
-markers change, and a file without the block is left for `byor init`:
+copies under `.byor/commands/personal/`. byor adds the patterns the block
+lacks just before its end marker. Every line already in the file stays as
+it was, including lines you added inside the markers, and the block keeps
+the setup it was written for, shared or private. A symlinked ignore file is
+updated through the link:
 
 ```text
 byor: updated the byor ignore block in .gitignore
 ```
 
+byor leaves a block alone when the file has no block, when its markers do
+not pair up as one begin and one end, when its lines no longer say whether
+the setup is shared or private, when the file is not UTF-8, or when the
+file is not writable. `byor doctor` names each of these cases, and
+`byor sync` names a file it cannot write. A block that cannot be updated
+never stops the rules from syncing.
+
 ```bash
 byor sync           # mirror this repo
 byor sync --all     # mirror every registered repo
-byor sync --check   # report; exit 3 when stale
+byor sync --check   # report; exit 3 when stale, including an outdated ignore block
 ```
 
 `init` registers each repo in `~/.local/state/byor/repos.yml` (skip with
@@ -101,7 +111,13 @@ byor keeps your settings and its own records in separate directories:
 Older byor versions kept `ai.agents` and `disabled_repos` in `config.yml` and
 wrote `repos.yml` beside it. The first run of this version copies all three
 into the state directory and leaves the old copies alone; `byor doctor` then
-names them so you can delete them.
+names them so you can delete them. Every command makes that one-time copy,
+hooks and `byor doctor` included, and it is the only write doctor ever makes.
+The copy runs only while the state directory does not exist, so a `state.yml`
+you delete later starts empty rather than bringing the old records back.
+If the copy fails, say because `config.yml` is malformed or a file cannot be
+read, a command stops with an error naming the file, while a hook prints it,
+keeps honoring the old `disabled_repos`, and carries on.
 
 ## Turning byor off for a repo
 
@@ -183,16 +199,34 @@ jobs:
 **A new worktree.** `git worktree add` checks out only tracked files, so the
 worktree starts without `.byor/local.yml` and the generated copies, and under
 `--private` without any of `.byor/` or `sgconfig.yml`. The first byor command
-or agent hook in it copies each of those files from the main checkout, which
-byor finds through the worktree's `.git` file. It never overwrites a file the
-worktree already has, then syncs and prints one line:
+or agent hook in it, `byor init` and `byor sync` included, copies those files
+from the main checkout, which byor finds through the worktree's `.git` file,
+then syncs and prints one line:
 
 ```text
 byor: copied 17 byor files from the main checkout /home/me/project
 ```
 
-A separate clone has no link to another checkout, so it still needs
-`byor init`.
+byor copies only files that git ignores in the main checkout and would ignore
+in the worktree too. A copy therefore never shows up in `git status`, and a rule
+the worktree's branch deleted stays deleted. A branch from before the repo
+adopted byor has no ignore block, so it gets nothing. byor never overwrites a
+file the worktree already has, and it writes `.byor/local.yml` last: that file
+marks a finished copy, so a copy that failed partway is retried by the next
+command, which first deletes any partial files the failed copy left. A linked
+folder, such as a symlink to shared rules, is copied as the same link. Hooks
+that fire at the same moment wait for one copy to finish. A command that still
+finds another copy running after a few seconds stops and asks you to run it
+again, rather than run against a half-copied worktree.
+
+`byor doctor` and `byor sync --check` never copy. In a worktree that has not
+copied yet, both say to run `byor sync`. byor treats a worktree of a repo you
+disabled as disabled too, so it copies nothing there and doctor stays quiet.
+Worktrees of a byor repo are never added to the registry. `byor sync --all`
+and global rule changes reach them through their main checkout's entry
+instead, once their copy has finished. A worktree whose main checkout is not a
+byor repo registers like any other repo. A separate clone has no link to
+another checkout, so it still needs `byor init`.
 
 ## The team gate
 

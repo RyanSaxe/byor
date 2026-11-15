@@ -50,6 +50,7 @@ from byor.scaffold.ignore import (
     write_rule_visibility_file,
 )
 from byor.scaffold.sgconfig import ensure_rule_dirs
+from byor.scaffold.worktree import main_checkout_root
 from byor.scan.astgrep import resolve_ast_grep, scan_files
 
 if TYPE_CHECKING:
@@ -134,7 +135,12 @@ def initialize_repo(repo_root: Path, config_dir: Path, *, options: InitOptions) 
         )
     if options.git_hooks:
         messages.extend(install_git_shims(repo_root))
-    if options.register and register_repo(repo_root, repo_registry_path(state_dir, global_config)):
+    # A linked worktree of a byor repo stays out of the registry, so a removed worktree never
+    # becomes a dead entry: the fan-outs reach it through its main checkout's entry. A worktree
+    # whose main checkout is not a byor repo has no such entry, so it registers like any repo.
+    main_root = main_checkout_root(repo_root)
+    registrable = main_root is None or not repo_config_path(main_root).is_file()
+    if options.register and registrable and register_repo(repo_root, repo_registry_path(state_dir, global_config)):
         messages.append("Registered repository for `byor sync --all`")
     messages.extend(_apply_profiles_and_packages(repo_root, config_dir, global_config=global_config, options=options))
     _, sync_result = sync_repo(repo_root, load_canonical_rules(config_dir))

@@ -1,12 +1,14 @@
 # A global byor config (~/.config/byor/config.yml). This is where byor goes
 # beyond plain ast-grep: it wires external linters and type checkers into the
-# same diagnostic loop as your rules, and lists the AI agents to feed.
+# same diagnostic loop as your rules. byor reads this file and never writes it,
+# so it can live in a dotfiles repo; the agents byor installs are recorded in
+# its state file, ~/.local/state/byor/state.yml, not here.
 version: 1
 
 paths:
   rules: rules # global rules live in ~/.config/byor/rules/
   packages: packages # opt-in rule/check bundles; `byor package add <name>`
-  repos: repos.yml # repos byor syncs global rules into
+  repos: repos.yml # registry of repos byor syncs global rules into, in ~/.local/state/byor/
 
 ast_grep:
   command: auto # use the bundled ast-grep; set a path to override
@@ -73,14 +75,3 @@ profiles:
       excluded_tags:
         - strict
       excluded: []
-
-# The agents byor installs hooks for. `byor install --agents ...` writes these;
-# the post-edit hook in each runs `byor agent-check` after edits.
-ai:
-  agents:
-    - claude-code
-    - codex
-    - copilot
-    - opencode
-    - pi
-    - skill

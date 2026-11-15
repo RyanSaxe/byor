@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from byor.agents.harness import HARNESS_CHOICES, Harness
 from byor.agents.hookconfig import has_byor_hook, hook_problem, install_hook, uninstall_hook
@@ -21,6 +21,7 @@ from byor.agents.opencode import (
 from byor.agents.pi import PI_EXTENSION, PI_EXTENSION_RELPATH, PI_MARKER
 from byor.agents.skill import global_skill_dirs, skill_files
 from byor.config import load_machine_state, save_machine_state
+from byor.errors import ConfigError
 from byor.io.fsio import MANAGED_MARKER, marked_text_status, prune_empty_dirs, write_marked_text
 from byor.io.output import write_lines
 from byor.io.paths import global_state_dir
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
 
 __all__ = (
     "PluginAgent",
+    "UnrecordedAgents",
     "agent_file_problems",
     "install_agent",
     "run_hook",
@@ -149,24 +151,50 @@ def agent_file_problems(agents: Sequence[str]) -> list[str]:
     return problems
 
 
-def unrecorded_agents(recorded: Sequence[str]) -> list[str]:
-    """List agents that have byor's hooks or plugin file but are missing from `recorded`.
+class UnrecordedAgents(NamedTuple):
+    found: list[str]
+    problems: list[str]
+    """One line per agent whose config could not be read, so the others are still checked."""
+
+
+def unrecorded_agents(recorded: Sequence[str]) -> UnrecordedAgents:
+    """Find agents that have byor's hooks or plugin file but are missing from `recorded`.
 
     Self-heal refreshes only recorded agents, so an integration installed by
-    hand or by an older byor stays at whatever version wrote it. The skill is
-    left out because `byor install` always records it.
+    hand or by an older byor stays at whatever version wrote it. The skill
+    counts too: `byor install` always records it, but a deleted `state.yml`
+    loses that record like any other. Each agent is checked on
+    its own: an unreadable config, such as a settings file that is not valid
+    UTF-8 or JSON, becomes a problem line for that agent and never stops the
+    scan or the command that runs it.
     """
     found: list[str] = []
+    problems: list[str] = []
     for agent in AGENT_CHOICES:
-        if agent in recorded or agent == "skill":
+        if agent in recorded:
             continue
-        if (plugin := PLUGIN_AGENTS.get(agent)) is not None:
-            status = marked_text_status(_plugin_path(plugin), plugin.content, marker=plugin.marker)
-            if status in ("unchanged", "drifted"):
+        try:
+            if _has_byor_integration(agent):
                 found.append(agent)
-        elif (harness := HARNESS_BY_NAME.get(agent)) is not None and has_byor_hook(harness):
-            found.append(agent)
-    return found
+        except ConfigError as error:
+            problems.append(str(error))
+        except (OSError, UnicodeDecodeError) as error:
+            problems.append(f"cannot read byor's {agent} integration: {error}")
+    return UnrecordedAgents(found=found, problems=problems)
+
+
+def _has_byor_integration(agent: str) -> bool:
+    if agent == "skill":
+        return any(
+            marked_text_status(base / relpath, content, marker=MANAGED_MARKER) in ("unchanged", "drifted")
+            for base in global_skill_dirs()
+            for relpath, content in skill_files()
+        )
+    if (plugin := PLUGIN_AGENTS.get(agent)) is not None:
+        status = marked_text_status(_plugin_path(plugin), plugin.content, marker=plugin.marker)
+        return status in ("unchanged", "drifted")
+    harness = HARNESS_BY_NAME.get(agent)
+    return harness is not None and has_byor_hook(harness)
 
 
 def _install_skill() -> list[str]:

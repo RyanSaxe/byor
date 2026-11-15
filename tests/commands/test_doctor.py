@@ -528,7 +528,10 @@ def test_doctor_flags_byor_hooks_for_an_agent_missing_from_the_global_config(
 
     out = capsys.readouterr().out
     assert "FAIL  agent_files" in out
-    assert "missing from `agents` in byor's state.yml, so self-heal never updates them: claude-code;" in out
+    assert (
+        "missing from `agents` in byor's state.yml: claude-code; "
+        "any self-healing command such as `byor list` records them" in out
+    )
     assert "run `byor hook install --agent NAME` for each" in out
 
 

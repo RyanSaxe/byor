@@ -239,19 +239,22 @@ def hook_installed(harness: Harness) -> bool:
 
 
 def has_byor_hook(harness: Harness) -> bool:
-    """Report whether byor wrote a hook into any of the harness's global configs.
+    """Report whether a hook entry byor owns sits in any of the harness's global configs.
 
-    Unlike `hook_installed`, an out-of-date or partial install counts: doctor
-    uses this to find byor hooks for an agent missing from the global config's
-    `agents`, which self-heal never refreshes. A malformed config raises
-    ConfigError, as `hook_problem` does.
+    Unlike `hook_installed`, an out-of-date or partial install counts, because
+    self-heal uses this to record an agent whose byor hooks are installed. An
+    entry the user mixed their own commands into is theirs, the same rule
+    `uninstall_hook` follows when it leaves such an entry in place, so it never
+    counts; otherwise an uninstall would be undone by the next command. A
+    malformed config raises ConfigError, as `hook_problem` does.
     """
     for spec in _harness_specs(harness):
         path = _config_path(spec)
         if not path.is_file():
             continue
         relpath = _display_relpath(spec)
-        if _spec_has_byor_entry(_load_config(path, relpath), spec, relpath=relpath):
+        entries = _entries(_load_config(path, relpath), spec, relpath=relpath)
+        if any(_is_byor_entry(entry, signature=spec.signature) for entry in entries):
             return True
     return False
 
@@ -331,6 +334,9 @@ def _load_config(path: Path, relpath: str) -> dict[str, JsonValue]:
         return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
+    except UnicodeDecodeError as error:
+        msg = f"{relpath} is not valid UTF-8: {error}"
+        raise ConfigError(msg) from error
     except json.JSONDecodeError as error:
         msg = f"{relpath} is not valid JSON: {error}"
         raise ConfigError(msg) from error

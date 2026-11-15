@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from byor.config import (
@@ -26,6 +27,7 @@ from byor.config import (
     load_machine_state,
     load_repo_config,
     load_repo_registry,
+    local_config_path,
     repo_config_path,
     repo_registry_path,
     save_repo_registry,
@@ -41,12 +43,14 @@ from byor.rules.rules import (
     load_rules,
     require_unique_ids,
 )
-from byor.scaffold.ignore import refresh_ignore_blocks, write_rule_visibility_file
+from byor.scaffold.ignore import outdated_ignore_blocks, refresh_ignore_blocks, write_rule_visibility_file
+from byor.scaffold.worktree import linked_worktrees, pending_copy
 
 if TYPE_CHECKING:
     import argparse
     from collections.abc import Iterable, Iterator
-    from pathlib import Path
+
+    from byor.config import MachineState
 
 __all__ = (
     "CanonicalRules",
@@ -57,7 +61,7 @@ __all__ = (
     "SkippedRule",
     "SyncPlan",
     "compute_packages_plan",
-    "iter_registered_repos",
+    "iter_fan_out_repos",
     "load_canonical_rules",
     "load_installed_command_packages",
     "load_installed_packages",
@@ -432,10 +436,18 @@ def summarize_changes(result: MirrorResult) -> str:
     return f"{', '.join(parts)} global rule{'' if total == 1 else 's'}"
 
 
-def iter_registered_repos(config_dir: Path) -> Iterator[Path]:
+def iter_fan_out_repos(config_dir: Path) -> Iterator[Path]:
+    """Yield each registered repo byor can sync, followed by its linked worktrees.
+
+    Worktrees never join the registry, so this is how `byor sync --all` and global rule changes
+    reach them. A worktree is yielded once it has finished its copy from the main checkout, since
+    before that its first byor command or hook copies and syncs it; one already registered by an
+    older byor is yielded once.
+    """
     config = load_global_config(config_dir)
     state_dir = global_state_dir()
     state = load_machine_state(state_dir)
+    seen: set[Path] = set()
     for repo_root in load_repo_registry(repo_registry_path(state_dir, config)):
         if not repo_root.is_dir():
             sys.stderr.write(f"byor: skipping {repo_root}: path no longer exists\n")
@@ -444,7 +456,17 @@ def iter_registered_repos(config_dir: Path) -> Iterator[Path]:
         elif not repo_config_path(repo_root).is_file():
             sys.stderr.write(f"byor: skipping {repo_root}: no .byor/config.yml\n")
         else:
-            yield repo_root
+            yield from _unseen_checkouts(repo_root, state=state, seen=seen)
+
+
+def _unseen_checkouts(repo_root: Path, *, state: MachineState, seen: set[Path]) -> Iterator[Path]:
+    for checkout in [repo_root, *linked_worktrees(repo_root)]:
+        resolved = checkout.resolve()
+        if resolved in seen or disabled_entry(checkout, state) is not None:
+            continue
+        seen.add(resolved)
+        if checkout == repo_root or local_config_path(checkout).is_file():
+            yield checkout
 
 
 def run_sync(args: argparse.Namespace) -> int:
@@ -486,7 +508,7 @@ def _prune_registry(config_dir: Path) -> None:
 
 def _sync_all(config_dir: Path, canonical: CanonicalRules, *, check: bool) -> int:
     exit_code = 0
-    for repo_root in iter_registered_repos(config_dir):
+    for repo_root in iter_fan_out_repos(config_dir):
         # One broken repo must not abort the fan-out: warn and keep going.
         try:
             if check:
@@ -500,24 +522,46 @@ def _sync_all(config_dir: Path, canonical: CanonicalRules, *, check: bool) -> in
 
 
 def _sync_and_report(repo_root: Path, canonical: CanonicalRules) -> None:
-    for path in refresh_ignore_blocks(repo_root):
-        sys.stdout.write(f"Updated the byor ignore block in {os.path.relpath(path, repo_root)}\n")
+    # sync_repo raises for a repo without .byor/config.yml, so the ignore block of an
+    # uninitialized repo is never touched, and a block that cannot be rewritten never stops
+    # the rules from syncing.
     plan, result = sync_repo(repo_root, canonical)
+    refreshed = refresh_ignore_blocks(repo_root)
     # A steady-state sync (the post-merge/post-checkout shims run one on every
     # pull) must not narrate forever: silence is the unix success signal, so a
     # sync that changed nothing prints nothing; `byor list` keeps skips
     # visible on demand.
-    if not result.changed:
-        return
-    sys.stdout.write(f"Synced {_count(len(plan.desired), 'global rule')} into {repo_root}\n")
-    if plan.skipped:
-        sys.stdout.write(f"Skipped {_count(len(plan.skipped), 'global rule')}:\n")
-        for skipped in plan.skipped:
-            sys.stdout.write(f"  {skipped.id}: {skipped.reason}\n")
+    if result.changed:
+        sys.stdout.write(f"Synced {_count(len(plan.desired), 'global rule')} into {repo_root}\n")
+        if plan.skipped:
+            sys.stdout.write(f"Skipped {_count(len(plan.skipped), 'global rule')}:\n")
+            for skipped in plan.skipped:
+                sys.stdout.write(f"  {skipped.id}: {skipped.reason}\n")
+    # Full paths, because `sync --all` reports many repos in one stream.
+    for path in refreshed.changed:
+        sys.stdout.write(f"Updated the byor ignore block in {path}\n")
+    for path, reason in refreshed.unwritable:
+        sys.stderr.write(
+            f"byor: cannot update the out-of-date byor ignore block in {path}: {reason}; "
+            "make the file writable, then run `byor sync`\n"
+        )
 
 
 def _report_staleness(repo_root: Path, canonical: CanonicalRules) -> int:
-    if repo_is_stale(repo_root, canonical):
+    if pending_copy(repo_root) is not None:
+        sys.stdout.write(
+            f"Sync is stale in {repo_root}; run `byor sync` to copy byor's files from the main checkout.\n"
+        )
+        return STALE_EXIT_CODE
+    outdated = outdated_ignore_blocks(repo_root)
+    if unwritable := [status for status in outdated if not status.writable]:
+        listed = ", ".join(Path(os.path.relpath(status.path, repo_root)).as_posix() for status in unwritable)
+        sys.stdout.write(
+            f"Sync is stale in {repo_root}: the byor ignore block in {listed} is out of date and the file is"
+            " not writable; make it writable, then run `byor sync`.\n"
+        )
+        return STALE_EXIT_CODE
+    if repo_is_stale(repo_root, canonical) or outdated:
         sys.stdout.write(f"Sync is stale in {repo_root}; run `byor sync`.\n")
         return STALE_EXIT_CODE
     sys.stdout.write(f"Sync is fresh in {repo_root}\n")

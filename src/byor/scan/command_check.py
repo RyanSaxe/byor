@@ -16,15 +16,16 @@ from byor.agents.harness import emit_deny, parse_command_payload
 from byor.commands.heal import heal_worktree
 from byor.config import (
     command_rule_dir_relpaths,
-    disabled_entry,
     global_commands_dir,
+    load_current_machine_state,
     load_global_config,
-    load_machine_state,
     load_repo_config,
     repo_config_path,
 )
+from byor.errors import WorktreeCopyBusyError
 from byor.io.paths import global_config_dir, global_state_dir, resolve_repo_root
 from byor.rules.rules import load_rules
+from byor.scaffold.worktree import worktree_disabled_entry
 from byor.scan.agent_check import DIAGNOSTICS_EXIT_CODE, FAIL_OPEN_ERRORS
 from byor.scan.astgrep import resolve_ast_grep, scan_command
 from byor.scan.checks import CheckOutcome, load_effective_command_checks, run_command_checks
@@ -94,11 +95,14 @@ def _hook_gate(args: argparse.Namespace, *, harness: Harness) -> int:
     if payload.command is None:
         return 0
     repo_root = resolve_repo_root(explicit=args.repo, start=payload.cwd)
-    if disabled_entry(repo_root, load_machine_state(global_state_dir())) is not None:
+    if worktree_disabled_entry(repo_root, load_current_machine_state(config_dir, global_state_dir())) is not None:
         return 0
-    worktree_line = heal_worktree(repo_root, config_dir)
-    if worktree_line is not None:
-        sys.stderr.write(f"{worktree_line}\n")
+    try:
+        worktree_lines = heal_worktree(repo_root, config_dir)
+    except WorktreeCopyBusyError as error:
+        worktree_lines = [f"byor: {error}"]
+    for line in worktree_lines:
+        sys.stderr.write(f"{line}\n")
     rendered = _gate(repo_root, payload.command, global_config=global_config, config_dir=config_dir)
     stdout, exit_code = emit_deny(harness, rendered)
     if stdout:

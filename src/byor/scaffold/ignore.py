@@ -7,7 +7,9 @@ balance those constraints.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import os
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal
 
 from byor.errors import ConfigError
 from byor.io.fsio import (
@@ -22,7 +24,9 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 __all__ = (
-    "ignore_block_current",
+    "IgnoreBlockStatus",
+    "RefreshResult",
+    "ignore_block_statuses",
     "ignore_file",
     "outdated_ignore_blocks",
     "refresh_ignore_blocks",
@@ -95,68 +99,179 @@ def rule_visibility_ok(rules_dir: Path) -> bool:
     return all(pattern in lines for pattern in VISIBILITY_PATTERNS)
 
 
-def ignore_block_current(repo_root: Path) -> bool:
-    """Return True when a current byor ignore block keeps personal state uncommittable.
+BlockState = Literal["current", "outdated", "edited", "damaged", "unreadable"]
 
-    A shared setup carries the block in .gitignore; a private setup hides the
-    whole footprint via .git/info/exclude. Either current block keeps personal
-    rules and .byor/local.yml out of commits, so both targets are accepted.
-    The shared target is tried first: it needs no git subprocess.
+
+@dataclass(frozen=True)
+class IgnoreBlockStatus:
+    """The state of the byor block in one ignore file.
+
+    `current` and `outdated` describe a well-formed block that does or does not list every pattern
+    its setup needs; extra lines a user added inside the markers do not matter. `edited` means the
+    block's lines no longer say whether it belongs to a shared or a private setup, so byor cannot
+    safely add to it. `damaged` means the markers do not pair up as one begin and one end, and
+    `unreadable` means byor could not read the file, for the `reason` given. A file with no marker
+    at all gets no status. `writable` says whether byor could rewrite the file.
     """
-    for private in (False, True):
-        try:
-            path = ignore_file(repo_root, private=private)
-        except ConfigError:
-            continue
-        if not path.is_file():
-            continue
-        content = path.read_text(encoding="utf-8")
-        if _with_block(content, _patterns(private=private)) == content:
-            return True
-    return False
+
+    path: Path
+    state: BlockState
+    writable: bool = True
+    reason: str | None = None
 
 
-def outdated_ignore_blocks(repo_root: Path) -> list[Path]:
-    """Return each ignore file whose byor block predates byor's current patterns.
+@dataclass(frozen=True)
+class _Block:
+    begin: int
+    end: int
+    missing: tuple[str, ...] | None
+    """byor's patterns the block lacks for its setup, or None when its setup cannot be told."""
+
+
+def ignore_block_statuses(repo_root: Path) -> list[IgnoreBlockStatus]:
+    """Classify the byor block in `.gitignore` and in `.git/info/exclude`.
+
+    A block counts only when its file has exactly one begin marker and one end marker after it.
+    Any other arrangement is `damaged`, because a rewrite could not tell which lines are byor's.
+    The block's own lines say which setup wrote it, wherever it sits, so a shared block that byor
+    0.2.0 put in `.git/info/exclude` stays shared, and a private block keeps hiding all of `.byor/`.
+    """
+    statuses: list[IgnoreBlockStatus] = []
+    for path in _ignore_files(repo_root):
+        read = _read_lines(path)
+        if isinstance(read, _Unreadable):
+            if read.has_marker:
+                statuses.append(IgnoreBlockStatus(path, "unreadable", reason=read.reason))
+            continue
+        block = _find_block(read)
+        if block is None:
+            continue
+        if block == "damaged":
+            statuses.append(IgnoreBlockStatus(path, "damaged"))
+            continue
+        state: BlockState = "edited" if block.missing is None else "outdated" if block.missing else "current"
+        statuses.append(IgnoreBlockStatus(path, state, writable=state != "outdated" or _writable(path)))
+    return statuses
+
+
+def outdated_ignore_blocks(repo_root: Path) -> list[IgnoreBlockStatus]:
+    """Return the status of each well-formed byor block that lacks some of byor's current patterns.
 
     byor adds a pattern whenever it gains a personal path, as it did for command-rule copies, and
-    a block written before that leaves the new files committable. Only a block with both of byor's
-    markers counts: a file without the block, or with a damaged one, is `byor init`'s to fix,
-    because adding a block means choosing between the shared and the private setup.
+    a block written before that leaves the new files committable. Check `writable` before telling
+    the user that `byor sync` fixes one.
     """
-    return [path for path, _private in _outdated_blocks(repo_root)]
+    return [status for status in ignore_block_statuses(repo_root) if status.state == "outdated"]
 
 
-def refresh_ignore_blocks(repo_root: Path) -> list[Path]:
-    """Rewrite every outdated byor ignore block with the current patterns; return the files changed.
+@dataclass(frozen=True)
+class RefreshResult:
+    changed: list[Path]
+    unwritable: list[tuple[Path, str]]
+    """Outdated blocks byor could not rewrite, with the reason, for the caller to report."""
+
+
+def refresh_ignore_blocks(repo_root: Path) -> RefreshResult:
+    """Add the patterns each outdated byor block lacks, just before its end marker.
 
     Self-heal and `byor sync` call this so a repo initialized by an older byor picks up new
-    patterns without a second `byor init`. Lines outside byor's markers stay as the user wrote
-    them, and a file without a complete block is left alone, so this never adds a block and never
-    turns a repo's setup from shared into private or the reverse. A shared block is rewritten with
-    the shared patterns and a private `.git/info/exclude` block with the private ones. An empty
-    list means every block was already current, which is the steady state on every command.
+    patterns without a second `byor init`. Every line already in the file stays byte-for-byte,
+    including lines a user added inside the markers, and the added lines use the block's own line
+    endings. A damaged, edited, missing or unreadable block is left alone, and a block keeps its own
+    setup, so this never turns a shared repo private or the reverse. A symlinked ignore file is
+    written through to its target. A file byor cannot write is reported in `unwritable` and never
+    replaced.
     """
-    outdated = _outdated_blocks(repo_root)
-    for path, private in outdated:
-        content = path.read_text(encoding="utf-8")
-        write_text_atomic(path, _with_block(content, _patterns(private=private)))
-    return [path for path, _private in outdated]
+    changed: list[Path] = []
+    unwritable: list[tuple[Path, str]] = []
+    for path in _ignore_files(repo_root):
+        lines = _read_lines(path)
+        block = None if isinstance(lines, _Unreadable) else _find_block(lines)
+        if isinstance(lines, _Unreadable) or not isinstance(block, _Block) or not block.missing:
+            continue
+        if not _writable(path):
+            unwritable.append((path, "the file is not writable"))
+            continue
+        newline = "\r\n" if lines[block.begin].endswith("\r\n") else "\n"
+        added = [f"{pattern}{newline}" for pattern in block.missing]
+        try:
+            write_text_atomic(path.resolve(), "".join([*lines[: block.end], *added, *lines[block.end :]]))
+        except OSError as error:
+            unwritable.append((path, error.strerror or str(error)))
+            continue
+        changed.append(path)
+    return RefreshResult(changed=changed, unwritable=unwritable)
 
 
-def _outdated_blocks(repo_root: Path) -> list[tuple[Path, bool]]:
-    outdated: list[tuple[Path, bool]] = []
+def _ignore_files(repo_root: Path) -> list[Path]:
+    paths: list[Path] = []
     for private in (False, True):
         try:
             path = ignore_file(repo_root, private=private)
         except ConfigError:
             continue
-        if not path.is_file():
-            continue
-        content = path.read_text(encoding="utf-8")
-        if _has_complete_block(content) and _with_block(content, _patterns(private=private)) != content:
-            outdated.append((path, private))
-    return outdated
+        if path.is_file():
+            paths.append(path)
+    return paths
+
+
+@dataclass(frozen=True)
+class _Unreadable:
+    reason: str
+    has_marker: bool
+
+
+def _read_lines(path: Path) -> list[str] | _Unreadable:
+    try:
+        raw = path.read_bytes()
+    except OSError as error:
+        # Without the bytes there is no telling whether a block is there, so report it.
+        return _Unreadable(reason=error.strerror or str(error), has_marker=True)
+    try:
+        # Decoding the bytes keeps CRLF intact, which read_text's newline translation would not.
+        return raw.decode("utf-8").splitlines(keepends=True)
+    except UnicodeDecodeError:
+        # The markers are ASCII, so a file without them has no block whatever its encoding.
+        has_marker = BLOCK_BEGIN.encode() in raw or BLOCK_END.encode() in raw
+        return _Unreadable(reason="it does not decode as UTF-8", has_marker=has_marker)
+
+
+def _writable(path: Path) -> bool:
+    # The atomic rewrite replaces the file from a temp file beside it, so both must be writable.
+    target = path.resolve()
+    return os.access(target, os.W_OK) and os.access(target.parent, os.W_OK)
+
+
+def _find_block(lines: list[str]) -> _Block | Literal["damaged"] | None:
+    begins = [index for index, line in enumerate(lines) if line.rstrip("\r\n") == BLOCK_BEGIN]
+    ends = [index for index, line in enumerate(lines) if line.rstrip("\r\n") == BLOCK_END]
+    if not begins and not ends:
+        return None
+    if len(begins) != 1 or len(ends) != 1 or ends[0] < begins[0]:
+        return "damaged"
+    begin, end = begins[0], ends[0]
+    return _Block(begin, end, missing=_missing_patterns(lines[begin + 1 : end]))
+
+
+# A private block hides all of `.byor/`; a user may spell that line any of these ways.
+_PRIVATE_DIRECTORY_LINES = frozenset({".byor", ".byor/", ".byor/**"})
+_PRIVATE_LINES = _PRIVATE_DIRECTORY_LINES | {"sgconfig.yml"}
+
+
+def _missing_patterns(block_lines: list[str]) -> tuple[str, ...] | None:
+    # Comments, blank lines and the user's own patterns say nothing about the setup. A leading
+    # slash only anchors a pattern at the repo root, which is where byor's paths are anyway.
+    lines = {
+        line.strip().removeprefix("/") for line in block_lines if line.strip() and not line.lstrip().startswith("#")
+    }
+    private = bool(lines & _PRIVATE_LINES)
+    shared = bool(lines & set(IGNORED_PATTERNS))
+    if private == shared:
+        return None
+    if private:
+        needed = [] if lines & _PRIVATE_DIRECTORY_LINES else [".byor/"]
+        return tuple(needed + ([] if "sgconfig.yml" in lines else ["sgconfig.yml"]))
+    return tuple(pattern for pattern in IGNORED_PATTERNS if pattern not in lines)
 
 
 def ignore_file(repo_root: Path, *, private: bool) -> Path:
@@ -191,12 +306,6 @@ def write_ignore_block(repo_root: Path, *, private: bool) -> bool:
 
 def _patterns(*, private: bool) -> tuple[str, ...]:
     return PRIVATE_IGNORED_PATTERNS if private else IGNORED_PATTERNS
-
-
-def _has_complete_block(content: str) -> bool:
-    lines = content.splitlines(keepends=True)
-    begin = _marker_index(lines, BLOCK_BEGIN, start=0)
-    return begin is not None and _marker_index(lines, BLOCK_END, start=begin + 1) is not None
 
 
 def _with_block(content: str, patterns: tuple[str, ...]) -> str:

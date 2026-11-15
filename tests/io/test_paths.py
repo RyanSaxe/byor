@@ -6,6 +6,7 @@ Repo-root resolution searches with a fixed precedence — an explicit repo argum
 config beats a nearer .git dir, then the nearest git dir, then the start directory itself.
 """
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -80,3 +81,26 @@ def test_falls_back_to_nearest_git_dir(tmp_path: Path) -> None:
 
 def test_falls_back_to_start_directory(tmp_path: Path) -> None:
     assert resolve_repo_root(start=tmp_path) == tmp_path.resolve()
+
+
+@pytest.mark.parametrize(
+    ("variable", "resolve", "default"),
+    [
+        ("XDG_CONFIG_HOME", global_config_dir, Path(".config")),
+        ("XDG_STATE_HOME", global_state_dir, Path(".local") / "state"),
+    ],
+)
+def test_a_relative_xdg_value_is_ignored(
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    variable: str,
+    resolve: Callable[[], Path],
+    default: Path,
+) -> None:
+    monkeypatch.setenv(variable, "relative/dir")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    assert resolve() == tmp_path / default / "byor"

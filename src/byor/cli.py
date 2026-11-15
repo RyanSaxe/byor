@@ -33,11 +33,12 @@ from byor.commands.rules import (
     run_promote,
     run_remove,
 )
-from byor.config import disabled_entry, load_machine_state, migrate_machine_state
+from byor.config import load_machine_state, migrate_machine_state
 from byor.errors import ByorError
 from byor.io.paths import global_config_dir, global_state_dir, resolve_repo_root
 from byor.rules.sync import run_sync
-from byor.scan.agent_check import run_agent_check
+from byor.scaffold.worktree import worktree_disabled_entry
+from byor.scan.agent_check import FAIL_OPEN_ERRORS, run_agent_check
 from byor.scan.command_check import run_command_check
 
 if TYPE_CHECKING:
@@ -432,8 +433,13 @@ _COMMAND_ARGUMENTS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
 # package perform their own healing (and `sync --check` must never write), while
 # doctor is read-only diagnostics — it reports drift instead of repairing it.
 # disable and enable manage the off switch itself; healing the repo about to be
-# disabled would be backwards.
-NO_SELF_HEAL_COMMANDS = frozenset({"install", "init", "sync", "profile", "package", "doctor", "disable", "enable"})
+# disabled would be backwards. hook installs or removes one agent itself, and
+# recording an installed agent first would announce a change it is about to undo.
+# The worktree copy is separate: `_copies_into_worktree` runs it before these
+# commands too, because their own healing does not include it.
+NO_SELF_HEAL_COMMANDS = frozenset(
+    {"install", "init", "sync", "profile", "package", "doctor", "disable", "enable", "hook"}
+)
 
 # Repo commands that stop with one stderr line in a disabled repo. init runs its
 # own re-enable prompt and doctor is read-only reporting, so both pass through.
@@ -469,16 +475,36 @@ _HANDLERS = {
 
 def run(args: argparse.Namespace) -> int:
     # Before anything reads machine state, so hooks see it on the first run after an upgrade too.
-    migrate_machine_state(global_config_dir(), global_state_dir())
+    try:
+        migrate_machine_state(global_config_dir(), global_state_dir())
+    except FAIL_OPEN_ERRORS as error:
+        if not _is_hook_invocation(args):
+            raise
+        # Hooks fail open: a broken config.yml or an unwritable state directory must
+        # never block an agent, so warn and let the hook run on the old records in memory.
+        sys.stderr.write(f"byor: skipping the state move: {error}\n")
     if _in_disabled_repo(args):
         # A human asked, so say why nothing happens; hook mode stays silent.
         sys.stderr.write(DISABLED_NOTICE)
         return 0
+    if _copies_into_worktree(args):
+        # Even init, sync, package and profile, which skip the preamble: run before them, they keep
+        # the main checkout's settings instead of writing a fresh .byor/local.yml over the gap.
+        for line in heal_worktree(resolve_repo_root(explicit=getattr(args, "repo", None)), global_config_dir()):
+            sys.stderr.write(f"{line}\n")
     if args.command not in NO_SELF_HEAL_COMMANDS and not _is_hook_invocation(args):
         for message in _self_heal_preamble(args):
             # stderr keeps stdout clean for JSON-emitting commands.
             sys.stderr.write(f"{message}\n")
     return _HANDLERS[args.command](args)
+
+
+# Hooks copy into a worktree themselves. Doctor and `sync --check` never write, and `sync --all`
+# is about the registered repos rather than the one it runs in.
+def _copies_into_worktree(args: argparse.Namespace) -> bool:
+    if _is_hook_invocation(args) or args.command == "doctor":
+        return False
+    return not (args.command == "sync" and (args.check or args.all))
 
 
 def _in_disabled_repo(args: argparse.Namespace) -> bool:
@@ -490,19 +516,16 @@ def _in_disabled_repo(args: argparse.Namespace) -> bool:
     state = load_machine_state(global_state_dir())
     if not state.disabled_repos:
         return False
-    return disabled_entry(resolve_repo_root(explicit=args.repo), state) is not None
+    return worktree_disabled_entry(resolve_repo_root(explicit=args.repo), state) is not None
 
 
 def _self_heal_preamble(args: argparse.Namespace) -> list[str]:
     config_dir = global_config_dir()
     messages = heal_global(config_dir, global_state_dir())
     repo_root = resolve_repo_root(explicit=args.repo)
-    if disabled_entry(repo_root, load_machine_state(global_state_dir())) is not None:
+    if worktree_disabled_entry(repo_root, load_machine_state(global_state_dir())) is not None:
         # Machine-level healing above still ran; a disabled repo is left alone.
         return messages
-    worktree_line = heal_worktree(repo_root, config_dir)
-    if worktree_line is not None:
-        messages.append(worktree_line)
     mirror_line = heal_repo(repo_root, config_dir)
     if mirror_line is not None:
         messages.append(mirror_line)

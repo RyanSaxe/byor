@@ -31,18 +31,21 @@ def resolve_within(root: Path, candidate: Path) -> Path:
 
 
 def global_config_dir() -> Path:
-    xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
-    if xdg_config_home:
-        return Path(xdg_config_home) / "byor"
-    return Path.home() / ".config" / "byor"
+    return _xdg_base("XDG_CONFIG_HOME", default=Path(".config")) / "byor"
 
 
 # What byor records about this computer, kept apart from the user's config directory.
 def global_state_dir() -> Path:
-    xdg_state_home = os.environ.get("XDG_STATE_HOME")
-    if xdg_state_home:
-        return Path(xdg_state_home) / "byor"
-    return Path.home() / ".local" / "state" / "byor"
+    return _xdg_base("XDG_STATE_HOME", default=Path(".local") / "state") / "byor"
+
+
+# The XDG Base Directory spec says to ignore a relative value. Honoring one would
+# resolve it against the cwd and scatter byor's files into whatever repo a hook runs in.
+def _xdg_base(variable: str, *, default: Path) -> Path:
+    value = os.environ.get(variable)
+    if value and Path(value).is_absolute():
+        return Path(value)
+    return Path.home() / default
 
 
 def home_sgconfig_path(home: Path | None = None) -> Path:
