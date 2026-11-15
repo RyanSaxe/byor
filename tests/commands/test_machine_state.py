@@ -319,3 +319,16 @@ def test_a_hook_honors_old_disabled_paths_when_the_move_fails(
     captured = capsys.readouterr()
     assert "byor: skipping the state move" in captured.err
     assert captured.out == ""
+
+
+def test_a_duplicate_or_unsupported_agent_in_state_does_not_survive(home: Path) -> None:
+    repo = make_repo(home)
+    assert main(["install", "--agents", "claude-code", "--non-interactive"]) == 0
+    machine_state_path(global_state_dir()).write_text(
+        "version: 1\nagents:\n  - claude-code\n  - claude-code\n  - cursor\n  - skill\ndisabled_repos: []\n"
+    )
+
+    assert main(["hook", "uninstall", "--agent", "claude-code"]) == 0
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    assert recorded_agents() == ["skill"]

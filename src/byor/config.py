@@ -489,8 +489,9 @@ def load_machine_state(state_dir: Path) -> MachineState:
         return MachineState()
     data = load_yaml_mapping(path)
     _check_version(data, path)
+    # A hand edit or an old config can list an agent twice; once is what it means.
     return MachineState(
-        agents=_string_list(data, "agents", path=path),
+        agents=list(dict.fromkeys(_string_list(data, "agents", path=path))),
         disabled_repos=[Path(entry) for entry in _string_list(data, "disabled_repos", path=path)],
     )
 
