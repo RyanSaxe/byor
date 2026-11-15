@@ -7,6 +7,8 @@ flagging a recorded harness whose hook was removed or drifted.
 """
 
 import json
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -14,6 +16,7 @@ from support import commands_in, global_agents, install_agents, make_repo
 
 from byor.agents.hookconfig import BYOR_COMMAND_SIGNATURE
 from byor.cli import main
+from byor.io.paths import global_state_dir
 
 SETTINGS_RELPATH = Path(".claude") / "settings.json"
 
@@ -64,15 +67,17 @@ def test_install_merges_into_existing_global_settings(home: Path) -> None:
 def test_outdated_claude_settings_hook_is_updated(home: Path) -> None:
     settings = claude_settings(home)
     settings.parent.mkdir(parents=True)
+    # The matcher byor wrote before it stopped firing on notebook edits.
     stale = {
-        "matcher": "Write",
-        "hooks": [{"type": "command", "command": "byor agent-check --stdin-hook x"}],
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [{"type": "command", "command": f"{BYOR_COMMAND_SIGNATURE} claude-code >&2"}],
     }
     settings.write_text(json.dumps({"hooks": {"PostToolUse": [stale]}}))
 
     install_agents("claude-code")
 
-    assert f"{BYOR_COMMAND_SIGNATURE} claude-code" in claude_command(home)
+    entries = json.loads(settings.read_text())["hooks"]["PostToolUse"]
+    assert [entry["matcher"] for entry in entries] == ["Write|Edit|MultiEdit"]
 
 
 def test_invalid_claude_settings_fail_cleanly(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -85,6 +90,16 @@ def test_invalid_claude_settings_fail_cleanly(home: Path, capsys: pytest.Capture
     err = capsys.readouterr().err
     assert ".claude/settings.json is not valid JSON" in err
     assert "Traceback" not in err
+
+
+def test_install_records_the_agents_it_could_install_past_a_broken_one(home: Path) -> None:
+    settings = claude_settings(home)
+    settings.parent.mkdir(parents=True)
+    settings.write_text("{not json")
+
+    assert main(["install", "--agents", "claude-code,codex", "--non-interactive"]) == 1
+
+    assert global_agents() == ["codex", "skill"]
 
 
 def test_hook_install_is_global_and_records_the_agent(home: Path) -> None:
@@ -163,3 +178,17 @@ def test_hook_uninstall_claude_code_removes_only_the_byor_settings_group(
     data = json.loads(settings.read_text())
     assert data["hooks"]["PostToolUse"] == [user_group]
     assert BYOR_COMMAND_SIGNATURE not in settings.read_text()
+
+
+@pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user")
+def test_hook_uninstall_changes_nothing_when_it_cannot_record_the_removal(home: Path) -> None:
+    main(["hook", "install", "--agent", "codex"])
+    state_dir = global_state_dir()
+    state_dir.chmod(0o500)
+    try:
+        assert main(["hook", "uninstall", "--agent", "codex"]) != 0
+    finally:
+        state_dir.chmod(0o700)
+
+    assert (home / ".codex" / "hooks.json").exists()
+    assert "codex" in global_agents()

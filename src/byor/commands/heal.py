@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from byor.agents.install import install_agent, unrecorded_agents
+from byor.agents.install import AGENT_CHOICES, install_agent, unrecorded_agents
 from byor.config import (
     global_rules_dir,
     load_current_machine_state,
@@ -55,6 +55,7 @@ def heal_global(config_dir: Path, state_dir: Path) -> list[str]:
             ensure_home_sgconfig(rules_dir)
         except ConfigError as error:
             messages.append(f"byor: skipping ~/sgconfig.yml self-heal: {error} (run 'byor doctor')")
+    messages.extend(_drop_unsupported_agents(state_dir))
     messages.extend(_record_unrecorded_agents(state_dir))
     for agent in load_machine_state(state_dir).agents:
         try:
@@ -62,6 +63,21 @@ def heal_global(config_dir: Path, state_dir: Path) -> list[str]:
         except ConfigError as error:
             messages.append(f"byor: skipping {agent} self-heal: {error} (run 'byor doctor')")
     return messages
+
+
+# A name byor does not support, such as one an old byor or a hand edit left in
+# the list, can never be installed, so keeping it would only show it as healthy.
+def _drop_unsupported_agents(state_dir: Path) -> list[str]:
+    state = load_machine_state(state_dir)
+    unsupported = [agent for agent in state.agents if agent not in AGENT_CHOICES]
+    if not unsupported:
+        return []
+    state.agents = [agent for agent in state.agents if agent in AGENT_CHOICES]
+    try:
+        save_machine_state(state_dir, state)
+    except ConfigError as error:
+        return [f"byor: skipping agent cleanup: {error}"]
+    return [f"byor: dropped agents byor does not support from state.yml: {', '.join(unsupported)}"]
 
 
 def _record_unrecorded_agents(state_dir: Path) -> list[str]:

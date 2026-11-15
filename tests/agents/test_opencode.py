@@ -56,9 +56,14 @@ def test_doctor_flags_a_missing_or_drifted_plugin_and_install_repairs_it(
     repo = repo_with_agents(home, "opencode")
     plugin = home / OPENCODE_PLUGIN_RELPATH
 
-    for breakage in (plugin.unlink, lambda: plugin.write_text(OPENCODE_MARKER + "\n")):
+    corrupt = OPENCODE_MARKER.encode() + b"\ncaf\xe9\n"
+    for breakage in (
+        plugin.unlink,
+        lambda: plugin.write_text(OPENCODE_MARKER + "\n"),
+        lambda: plugin.write_bytes(corrupt),
+    ):
         breakage()
-        broken = plugin.read_text() if plugin.is_file() else None
+        broken = plugin.read_bytes() if plugin.is_file() else None
         capsys.readouterr()
 
         assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
@@ -67,7 +72,7 @@ def test_doctor_flags_a_missing_or_drifted_plugin_and_install_repairs_it(
         assert OPENCODE_PLUGIN_RELPATH in out
         assert "run `byor install`" in out
         # Doctor is read-only: the broken plugin stays exactly as it was.
-        assert (plugin.read_text() if plugin.is_file() else None) == broken
+        assert (plugin.read_bytes() if plugin.is_file() else None) == broken
 
         assert main(["hook", "install", "--agent", "opencode"]) == 0
         assert plugin.read_text() == OPENCODE_PLUGIN

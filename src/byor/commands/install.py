@@ -7,6 +7,7 @@ setup and project setup change different state.
 
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING
 
 from byor.agents.install import AGENT_CHOICES, install_agent
@@ -43,13 +44,23 @@ def run_install(args: argparse.Namespace) -> int:
     sgconfig_path = ensure_home_sgconfig(global_rules_dir(config_dir, config))
     if sgconfig_path is not None:
         messages.append(f"Wrote ~/{sgconfig_path.name}")
+    # One broken agent config must not stop the others or leave the ones already
+    # written unrecorded, so each agent installs on its own and failures come last.
+    failures: list[str] = []
     for agent in agents:
-        messages.extend(install_agent(agent))
+        try:
+            messages.extend(install_agent(agent))
+        except ConfigError as error:
+            failures.append(f"byor: skipped {agent}: {error}")
+            continue
         if agent not in state.agents:
             state.agents.append(agent)
     save_machine_state(state_dir, state)
 
     write_lines(messages)
+    if failures:
+        sys.stderr.write("".join(f"{failure}\n" for failure in failures))
+        return 1
     write_line("byor is installed. Run `byor init` in a repo to add project rules.")
     write_line('In your agent, say "set up byor" to import preferences from your existing CLAUDE.md / AGENTS.md.')
     return 0

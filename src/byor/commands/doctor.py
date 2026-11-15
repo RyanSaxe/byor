@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from byor.agents.install import agent_file_problems, unrecorded_agents
+from byor.agents.install import AGENT_CHOICES, agent_file_problems, unrecorded_agents
 from byor.commands.gate import (
     directly_invoked_vendored_scripts,
     precommit_hook_installed,
@@ -725,12 +725,18 @@ def _extra_checks_check(
 
 
 def _agent_files_check(state: MachineState) -> Check:
-    problems = _recorded_agent_problems(state.agents) + _unrecorded_agent_problems(state.agents)
+    supported = [agent for agent in state.agents if agent in AGENT_CHOICES]
+    unsupported = [agent for agent in state.agents if agent not in AGENT_CHOICES]
+    problems = _recorded_agent_problems(supported) + _unrecorded_agent_problems(supported)
+    if unsupported:
+        problems.append(
+            f"state.yml lists agents byor does not support: {', '.join(unsupported)}; the next byor command drops them"
+        )
     if problems:
         return Check(id="agent_files", ok=False, message="; ".join(problems))
-    if not state.agents:
+    if not supported:
         return Check(id="agent_files", ok=True, message="no AI agents configured")
-    agents = ", ".join(state.agents)
+    agents = ", ".join(supported)
     return Check(
         id="agent_files",
         ok=True,

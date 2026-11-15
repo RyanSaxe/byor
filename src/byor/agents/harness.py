@@ -117,13 +117,26 @@ def _claude_edit_contents(tool_input: dict[str, JsonValue]) -> list[str]:
 
 def _parse_copilot(payload: dict[str, JsonValue]) -> EditPayload:
     tool_args = _copilot_tool_args(payload.get("toolArgs"))
-    if tool_args is None:
+    if tool_args is None or _is_copilot_read(_string(payload.get("toolName")), tool_args):
         return EditPayload()
     file_path = next(iter(_strings(tool_args, ("path", "filePath", "file_path"))), None)
     if file_path is None:
         return EditPayload()
     contents = _strings(tool_args, ("new_str", "file_text", "new_string", "content"))
     return EditPayload(edits={Path(file_path): contents})
+
+
+# Copilot's postToolUse hook has no matcher, so it fires after every tool. These
+# Copilot CLI tools only read files, and str_replace_editor reads when its
+# command is "view"; an unknown tool still counts as an edit, so a new editing
+# tool is checked rather than missed.
+COPILOT_READ_TOOLS = frozenset({"view", "glob", "grep", "rg"})
+
+
+def _is_copilot_read(tool_name: str | None, tool_args: dict[str, JsonValue]) -> bool:
+    if tool_name in COPILOT_READ_TOOLS:
+        return True
+    return tool_name == "str_replace_editor" and tool_args.get("command") == "view"
 
 
 def _copilot_tool_args(value: JsonValue) -> dict[str, JsonValue] | None:
@@ -143,7 +156,13 @@ def _parse_codex(payload: dict[str, JsonValue]) -> EditPayload:
     if command is None:
         return EditPayload()
     added = parse_apply_patch(command)
-    return EditPayload(edits={Path(raw_path): contents for raw_path, contents in added.items()})
+    # apply_patch paths are relative to the session's cwd, which need not be the
+    # repo root. Without a cwd they stay relative and resolve against the repo.
+    cwd = _directory(payload.get("cwd"))
+    base = cwd if cwd is not None and cwd.is_absolute() else None
+    return EditPayload(
+        edits={(base / raw_path if base else Path(raw_path)): contents for raw_path, contents in added.items()}
+    )
 
 
 def parse_apply_patch(text: str) -> dict[str, list[str]]:

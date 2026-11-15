@@ -110,7 +110,9 @@ def test_stale_bare_byor_entry_is_not_current(isolated_home: Path) -> None:
     path.write_text(json.dumps(_config_with_entry(spec.key_path, stale)))
 
     assert hook_installed("codex") is False
-    assert hook_problem("codex") == "the codex post-edit hook is out of date"
+    assert (
+        hook_problem("codex") == "the codex post-edit hook is out of date; the codex pre-command hook is not installed"
+    )
 
     install_hook("codex")
 
@@ -296,3 +298,43 @@ def test_uninstall_keeps_a_symlinked_settings_file_it_empties(isolated_home: Pat
 
     assert link.is_symlink()
     assert json.loads(target.read_text()) == {}
+
+
+USER_EDITS = {
+    "chained command": lambda entry: entry["hooks"][0].update(command=entry["hooks"][0]["command"] + "; afplay ping"),
+    "timeout": lambda entry: entry["hooks"][0].update(timeout=5),
+    "narrowed matcher": lambda entry: entry.update(matcher="Write"),
+}
+
+
+@pytest.mark.parametrize("edit", USER_EDITS)
+def test_install_keeps_a_user_edit_to_byors_own_entry(edit: str, isolated_home: Path) -> None:
+    install_hook("claude-code")
+    path = config_path(isolated_home, "claude-code")
+    data = json.loads(path.read_text())
+    USER_EDITS[edit](data["hooks"]["PostToolUse"][0])
+    path.write_text(json.dumps(data))
+    before = path.read_text()
+
+    assert install_hook("claude-code") == []
+
+    assert path.read_text() == before
+    assert hook_problem("claude-code") is None
+
+
+def test_install_removes_an_old_byor_entry_beside_the_current_one(isolated_home: Path) -> None:
+    install_hook("claude-code")
+    spec = HOOK_SPECS[("claude-code", "post-edit")]
+    path = config_path(isolated_home, "claude-code")
+    data = json.loads(path.read_text())
+    old = {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [{"type": "command", "command": hook_command(spec)}],
+    }
+    data["hooks"]["PostToolUse"].append(old)
+    path.write_text(json.dumps(data))
+
+    assert hook_problem("claude-code") == "the claude-code post-edit hook has an out-of-date second entry"
+    install_hook("claude-code")
+
+    assert [entry["matcher"] for entry in json.loads(path.read_text())["hooks"]["PostToolUse"]] == [spec.matcher]
