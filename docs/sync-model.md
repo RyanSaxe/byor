@@ -95,6 +95,11 @@ file is not writable. `byor doctor` names each of these cases, and
 `byor sync` names a file it cannot write. A block that cannot be updated
 never stops the rules from syncing.
 
+When git itself runs byor, as the post-checkout and post-merge shims do,
+byor leaves a tracked `.gitignore` alone, so checking out a branch with an
+older block never leaves the work tree dirty. The next byor command you run
+updates it.
+
 ```bash
 byor sync           # mirror this repo
 byor sync --all     # mirror every registered repo

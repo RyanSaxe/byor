@@ -183,14 +183,20 @@ def refresh_ignore_blocks(repo_root: Path) -> RefreshResult:
     endings. A damaged, edited, missing or unreadable block is left alone, and a block keeps its own
     setup, so this never turns a shared repo private or the reverse. A symlinked ignore file is
     written through to its target. A file byor cannot write is reported in `unwritable` and never
-    replaced.
+    replaced. While git runs byor, as the post-checkout shim does, a tracked `.gitignore` is left
+    alone: changing it there leaves the work tree dirty, which blocks the next checkout or rebase,
+    and `git checkout -- .gitignore` would fire the shim and dirty it again. The next byor command
+    the user runs updates it.
     """
     changed: list[Path] = []
     unwritable: list[tuple[Path, str]] = []
+    under_git = _run_by_git()
     for path in _ignore_files(repo_root):
         lines = _read_lines(path)
         block = None if isinstance(lines, _Unreadable) else _find_block(lines)
         if isinstance(lines, _Unreadable) or not isinstance(block, _Block) or not block.missing:
+            continue
+        if under_git and _tracked(repo_root, path):
             continue
         if not _writable(path):
             unwritable.append((path, "the file is not writable"))
@@ -204,6 +210,17 @@ def refresh_ignore_blocks(repo_root: Path) -> RefreshResult:
             continue
         changed.append(path)
     return RefreshResult(changed=changed, unwritable=unwritable)
+
+
+# git exports GIT_PREFIX to every process it starts after finding the repository, such as a hook,
+# an alias or `git rebase -x`, and a shell the user opened does not have it.
+def _run_by_git() -> bool:
+    return "GIT_PREFIX" in os.environ
+
+
+def _tracked(repo_root: Path, path: Path) -> bool:
+    relpath = os.path.relpath(path, repo_root)
+    return git_output(repo_root, "ls-files", "--", relpath) is not None
 
 
 def _ignore_files(repo_root: Path) -> list[Path]:
