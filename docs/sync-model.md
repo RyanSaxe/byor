@@ -193,16 +193,26 @@ jobs:
 **A new worktree.** `git worktree add` checks out only tracked files, so the
 worktree starts without `.byor/local.yml` and the generated copies, and under
 `--private` without any of `.byor/` or `sgconfig.yml`. The first byor command
-or agent hook in it copies each of those files from the main checkout, which
-byor finds through the worktree's `.git` file. It never overwrites a file the
-worktree already has, then syncs and prints one line:
+or agent hook in it, `byor init` and `byor sync` included, copies those files
+from the main checkout, which byor finds through the worktree's `.git` file,
+then syncs and prints one line:
 
 ```text
 byor: copied 17 byor files from the main checkout /home/me/project
 ```
 
-A separate clone has no link to another checkout, so it still needs
-`byor init`.
+byor copies only files that git ignores in the main checkout and would ignore
+in the worktree too. A copy therefore never shows up in `git status`, and a rule
+the worktree's branch deleted stays deleted. A branch from before the repo
+adopted byor has no ignore block, so it gets nothing. byor never overwrites a
+file the worktree already has, and it writes `.byor/local.yml` last: that file
+marks a finished copy, so a copy that failed partway is retried by the next
+command. Hooks that fire at the same moment wait for one copy to finish.
+
+`byor doctor` and `byor sync --check` never copy. In a worktree that has not
+copied yet, both say to run `byor sync`. A worktree of a repo you disabled gets
+nothing, and worktrees are never added to the registry. A separate clone has no
+link to another checkout, so it still needs `byor init`.
 
 ## The team gate
 

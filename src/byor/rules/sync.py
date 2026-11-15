@@ -42,6 +42,7 @@ from byor.rules.rules import (
     require_unique_ids,
 )
 from byor.scaffold.ignore import outdated_ignore_blocks, refresh_ignore_blocks, write_rule_visibility_file
+from byor.scaffold.worktree import pending_copy
 
 if TYPE_CHECKING:
     import argparse
@@ -529,6 +530,11 @@ def _refresh_and_report_ignore_blocks(repo_root: Path) -> None:
 
 
 def _report_staleness(repo_root: Path, canonical: CanonicalRules) -> int:
+    if pending_copy(repo_root) is not None:
+        sys.stdout.write(
+            f"Sync is stale in {repo_root}; run `byor sync` to copy byor's files from the main checkout.\n"
+        )
+        return STALE_EXIT_CODE
     if repo_is_stale(repo_root, canonical) or outdated_ignore_blocks(repo_root):
         sys.stdout.write(f"Sync is stale in {repo_root}; run `byor sync`.\n")
         return STALE_EXIT_CODE

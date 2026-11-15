@@ -14,6 +14,8 @@ import pytest
 from support import commit_file, git, write_global_command_rule, write_rule
 
 from byor.cli import main
+from byor.io.paths import global_state_dir
+from byor.rules.sync import STALE_EXIT_CODE
 
 PIP_COMMAND = "pip install requests"
 
@@ -31,9 +33,9 @@ def make_main_checkout(home: Path, *, private: bool) -> Path:
     return repo
 
 
-def add_worktree(main_repo: Path) -> Path:
+def add_worktree(main_repo: Path, *start: str) -> Path:
     worktree = main_repo.parent / "worktree"
-    git(main_repo, "worktree", "add", "--quiet", str(worktree))
+    git(main_repo, "worktree", "add", "--quiet", str(worktree), *start)
     return worktree
 
 
@@ -120,5 +122,50 @@ def test_a_worktree_of_a_repo_byor_never_initialized_gets_no_byor_files(
     monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({"tool_input": {"file_path": str(source)}})))
 
     assert main(["agent-check", "--stdin-hook", "claude-code"]) == 0
+
+    assert not (worktree / ".byor").exists()
+
+
+def test_a_worktree_on_a_branch_from_before_byor_gets_nothing_it_could_commit(home: Path) -> None:
+    worktree = add_worktree(make_main_checkout(home, private=False), "-b", "old", "HEAD~1")
+
+    main(["list", "--repo", str(worktree)])
+
+    assert not (worktree / ".byor").exists()
+    assert git(worktree, "status", "--porcelain") == ""
+
+
+def test_byor_init_as_the_first_command_in_a_new_worktree_keeps_the_main_checkouts_files(home: Path) -> None:
+    main_repo = make_main_checkout(home, private=True)
+    write_rule(main_repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
+    worktree = add_worktree(main_repo)
+
+    assert main(["init", "--repo", str(worktree), "--non-interactive", "--private", "--no-git-hooks"]) == 0
+
+    assert (worktree / ".byor" / "rules" / "project" / "no-cast.yml").is_file()
+    assert str(worktree) not in (global_state_dir() / "repos.yml").read_text()
+
+
+def test_doctor_and_sync_check_in_a_new_worktree_copy_nothing_and_point_to_byor_sync(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    worktree = add_worktree(make_main_checkout(home, private=True))
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(worktree), "--quick"]) == 1
+    assert main(["sync", "--check", "--repo", str(worktree)]) == STALE_EXIT_CODE
+
+    out = capsys.readouterr().out
+    assert "this worktree has not copied byor's files from its main checkout" in out
+    assert "run `byor sync` to copy byor's files from the main checkout" in out
+    assert not (worktree / ".byor").exists()
+
+
+def test_a_worktree_of_a_disabled_main_checkout_gets_nothing(home: Path) -> None:
+    main_repo = make_main_checkout(home, private=True)
+    worktree = add_worktree(main_repo)
+    assert main(["disable", str(main_repo)]) == 0
+
+    main(["list", "--repo", str(worktree)])
 
     assert not (worktree / ".byor").exists()

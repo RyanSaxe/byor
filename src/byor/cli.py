@@ -434,6 +434,8 @@ _COMMAND_ARGUMENTS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
 # disable and enable manage the off switch itself; healing the repo about to be
 # disabled would be backwards. hook installs or removes one agent itself, and
 # recording an installed agent first would announce a change it is about to undo.
+# The worktree copy is separate: `_copies_into_worktree` runs it before these
+# commands too, because their own healing does not include it.
 NO_SELF_HEAL_COMMANDS = frozenset(
     {"install", "init", "sync", "profile", "package", "doctor", "disable", "enable", "hook"}
 )
@@ -484,11 +486,25 @@ def run(args: argparse.Namespace) -> int:
         # A human asked, so say why nothing happens; hook mode stays silent.
         sys.stderr.write(DISABLED_NOTICE)
         return 0
+    if _copies_into_worktree(args):
+        # Even init, sync, package and profile, which skip the preamble: run before them, they keep
+        # the main checkout's settings instead of writing a fresh .byor/local.yml over the gap.
+        worktree_line = heal_worktree(resolve_repo_root(explicit=getattr(args, "repo", None)), global_config_dir())
+        if worktree_line is not None:
+            sys.stderr.write(f"{worktree_line}\n")
     if args.command not in NO_SELF_HEAL_COMMANDS and not _is_hook_invocation(args):
         for message in _self_heal_preamble(args):
             # stderr keeps stdout clean for JSON-emitting commands.
             sys.stderr.write(f"{message}\n")
     return _HANDLERS[args.command](args)
+
+
+# Hooks copy into a worktree themselves. Doctor and `sync --check` never write, and `sync --all`
+# is about the registered repos rather than the one it runs in.
+def _copies_into_worktree(args: argparse.Namespace) -> bool:
+    if _is_hook_invocation(args) or args.command == "doctor":
+        return False
+    return not (args.command == "sync" and (args.check or args.all))
 
 
 def _in_disabled_repo(args: argparse.Namespace) -> bool:
@@ -510,9 +526,6 @@ def _self_heal_preamble(args: argparse.Namespace) -> list[str]:
     if disabled_entry(repo_root, load_machine_state(global_state_dir())) is not None:
         # Machine-level healing above still ran; a disabled repo is left alone.
         return messages
-    worktree_line = heal_worktree(repo_root, config_dir)
-    if worktree_line is not None:
-        messages.append(worktree_line)
     mirror_line = heal_repo(repo_root, config_dir)
     if mirror_line is not None:
         messages.append(mirror_line)

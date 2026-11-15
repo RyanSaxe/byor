@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from byor.agents.install import install_agent, unrecorded_agents
 from byor.config import (
+    disabled_entry,
     global_rules_dir,
     load_global_config,
     load_machine_state,
@@ -19,10 +20,11 @@ from byor.config import (
     save_machine_state,
 )
 from byor.errors import ByorError, ConfigError
+from byor.io.paths import global_state_dir
 from byor.rules.sync import load_canonical_rules, summarize_changes, sync_repo
 from byor.scaffold.ignore import refresh_ignore_blocks
 from byor.scaffold.sgconfig import ensure_home_sgconfig
-from byor.scaffold.worktree import adopt_main_checkout
+from byor.scaffold.worktree import copy_from_main_checkout, pending_copy
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -118,13 +120,26 @@ def heal_ignore_blocks(repo_root: Path) -> list[str]:
 
 
 def heal_worktree(repo_root: Path, config_dir: Path) -> str | None:
-    """Give a new linked worktree its main checkout's byor files, quietly.
+    """Give a new linked worktree its main checkout's byor files, then sync its mirrors.
 
-    Runs before `heal_repo` and at the start of both agent hooks, so the first command or edit in
-    a fresh worktree already sees the repo's rules. A failed copy degrades to a warning, like the
-    other heals, and the command or hook goes on with whatever the worktree has.
+    The CLI runs this before every command except doctor and `byor sync --check`, and both agent
+    hooks run it first, so the first command or edit in a fresh worktree already sees the repo's
+    rules. A worktree or main checkout that `byor disable` covers is left alone. A failed copy
+    degrades to a warning, like the other heals, and leaves no `.byor/local.yml`, so the next
+    command or hook retries it. Returns one line when it copied files.
     """
     try:
-        return adopt_main_checkout(repo_root, config_dir)
+        pending = pending_copy(repo_root)
+        if pending is None:
+            return None
+        state = load_machine_state(global_state_dir())
+        if disabled_entry(repo_root, state) is not None or disabled_entry(pending.main_root, state) is not None:
+            return None
+        copied = copy_from_main_checkout(repo_root)
+        if copied is None:
+            return None
+        sync_repo(repo_root, load_canonical_rules(config_dir))
     except (ByorError, OSError) as error:
-        return f"byor: skipping worktree self-heal: {error} (run 'byor init' in this worktree)"
+        return f"byor: skipping worktree self-heal: {error} (run 'byor sync' to retry)"
+    noun = "file" if len(copied.relpaths) == 1 else "files"
+    return f"byor: copied {len(copied.relpaths)} byor {noun} from the main checkout {copied.main_root}"

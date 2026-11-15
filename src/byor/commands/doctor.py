@@ -63,6 +63,7 @@ from byor.rules.sync import (
 from byor.scaffold.githooks import shim_findings
 from byor.scaffold.ignore import ignore_block_statuses, rule_visibility_ok
 from byor.scaffold.precommit import CONFIG_RELPATH
+from byor.scaffold.worktree import pending_copy
 from byor.scan.astgrep import ast_grep_version, resolve_ast_grep, scan_command
 from byor.scan.checks import effective_checks
 
@@ -141,6 +142,9 @@ def _repo_checks(
     global_config: GlobalConfig,
     quick: bool,
 ) -> list[Check]:
+    copy_check = _worktree_copy_check(repo_root)
+    if copy_check is not None:
+        return [copy_check]
     if not repo_config_path(repo_root).is_file():
         return [
             Check(
@@ -312,6 +316,25 @@ def _command_rules_check(repo_root: Path, paths: RepoPaths, *, global_config: Gl
         id="command_rules",
         ok=True,
         message=f"{subject} shell commands",
+    )
+
+
+# Doctor never copies, so a fresh worktree gets the one command that does instead of `byor init`,
+# which would write a fresh local.yml and lose the main checkout's settings for good.
+def _worktree_copy_check(repo_root: Path) -> Check | None:
+    try:
+        pending = pending_copy(repo_root)
+    except ConfigError:
+        return None
+    if pending is None:
+        return None
+    return Check(
+        id="repo",
+        ok=False,
+        message=(
+            f"this worktree has not copied byor's files from its main checkout "
+            f"{_home_display(pending.main_root)} yet; run `byor sync`"
+        ),
     )
 
 
