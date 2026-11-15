@@ -76,6 +76,9 @@ The exceptions: `byor sync` itself (its body is the sync),
 their own steps, and `byor doctor`, which is read-only — it reports staleness
 and the command that fixes it instead of repairing anything.
 
+In a repo with `gate: true`, `byor sync` also regenerates the gate files
+byor owns, and `byor sync --check` counts a stale one.
+
 The same step, and `byor sync`, also update a byor ignore block that an
 older byor wrote before it gained a personal path, such as the command-rule
 copies under `.byor/commands/personal/`. byor adds the patterns the block
@@ -103,7 +106,7 @@ updates it.
 ```bash
 byor sync           # mirror this repo
 byor sync --all     # mirror every registered repo
-byor sync --check   # report; exit 3 when stale, including an outdated ignore block
+byor sync --check   # report; exit 3 when stale, including an outdated ignore block or gate file
 ```
 
 `init` registers each repo in `~/.local/state/byor/repos.yml` (skip with
@@ -298,8 +301,9 @@ setting, and doctor's staleness check respects it.
 
 The artifacts are byor-owned build products, like the rule mirror. A committed
 `gate: true` in `.byor/config.yml` marks the repo, and any self-healing byor
-command regenerates the CI workflow and the pre-commit config it owns from the
-current committed rules and checks (`byor doctor` only reports them stale). So the maintainer adds a rule or check with byor as
+command, and `byor sync`, regenerates the CI workflow and the pre-commit
+config it owns from the current committed rules and checks (`byor doctor`
+only reports them stale). So the maintainer adds a rule or check with byor as
 usual and the gate refreshes itself; teammates only ever run it, and need
 nothing byor. byor owns each file by its marker header (the whole file, not a
 block within it): a pre-existing, unmarked `.pre-commit-config.yaml` is never

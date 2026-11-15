@@ -12,8 +12,10 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from byor.commands.gate import regenerate_gate, stale_gate_files
 from byor.config import (
     load_global_config,
+    load_repo_config,
     load_repo_registry,
     locked_state_file,
     repo_registry_path,
@@ -117,6 +119,9 @@ def _sync_and_report(repo_root: Path, canonical: CanonicalRules) -> None:
             f"byor: cannot update the out-of-date byor ignore block in {path}: {reason}; "
             "make the file writable, then run `byor sync`\n"
         )
+    if load_repo_config(repo_root).gate:
+        for message in regenerate_gate(repo_root):
+            sys.stdout.write(f"{message}\n")
 
 
 def _report_staleness(repo_root: Path, canonical: CanonicalRules) -> int:
@@ -133,7 +138,9 @@ def _report_staleness(repo_root: Path, canonical: CanonicalRules) -> int:
             " not writable; make it writable, then run `byor sync`.\n"
         )
         return STALE_EXIT_CODE
-    if repo_is_stale(repo_root, canonical) or outdated:
+    repo_config = load_repo_config(repo_root)
+    stale_gate = repo_config.gate and bool(stale_gate_files(repo_root, repo_config))
+    if repo_is_stale(repo_root, canonical) or outdated or stale_gate:
         sys.stdout.write(f"Sync is stale in {repo_root}; run `byor sync`.\n")
         return STALE_EXIT_CODE
     sys.stdout.write(f"Sync is fresh in {repo_root}\n")

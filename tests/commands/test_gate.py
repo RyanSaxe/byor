@@ -14,6 +14,7 @@ from ruamel.yaml import YAML
 from support import git, install_package, write_global_check, write_global_rule, write_package_rule, write_rule
 
 from byor.cli import main
+from byor.commands.sync import STALE_EXIT_CODE
 from byor.config import CheckDef, load_local_config, load_repo_config, save_local_config, save_repo_config
 from byor.scaffold.precommit import AST_GREP_CLI_VERSION
 
@@ -177,18 +178,29 @@ def test_gate_fail_on_error_drops_the_error_flag_from_both_files(home: Path) -> 
     assert main(["doctor", "--repo", str(repo)]) == 0
 
 
-def test_gate_self_heals_when_a_check_is_added_later(home: Path) -> None:
+def test_promoting_a_check_refreshes_the_gate_files(home: Path) -> None:
     write_global_rule(home, "python/no-cast.yml", rule_id="no-cast")
     repo = gate_repo(home)
     assert "later-check" not in (repo / ".pre-commit-config.yaml").read_text()
 
     write_global_check("later", "later-check")
     assert main(["promote", "--repo", str(repo), "--check", "later"]) == 0
-    # Any subsequent repo command regenerates the byor-owned artifacts.
-    assert main(["list", "--repo", str(repo)]) == 0
 
     assert "later-check" in (repo / ".pre-commit-config.yaml").read_text()
     assert "later-check" in (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
+
+
+def test_sync_refreshes_stale_gate_files_and_sync_check_reports_them(home: Path) -> None:
+    repo = gate_repo(home)
+    config = load_repo_config(repo)
+    config.fail_on = "error"
+    save_repo_config(repo, config)
+
+    assert main(["sync", "--repo", str(repo), "--check"]) == STALE_EXIT_CODE
+    assert main(["sync", "--repo", str(repo)]) == 0
+    assert "--error" not in (repo / ".pre-commit-config.yaml").read_text()
+    assert "--error" not in (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
+    assert main(["sync", "--repo", str(repo), "--check"]) == 0
 
 
 # monkeypatch isolates process state (env, cwd, stdio): an external boundary

@@ -616,7 +616,7 @@ def _gate_check(repo_root: Path, repo_config: RepoConfig) -> Check | None:
         return Check(
             id="gate_files",
             ok=False,
-            message=f"gate files are stale: {', '.join(stale)}; run `byor init --gate`",
+            message=f"gate files are stale: {', '.join(stale)}; run `byor sync`",
         )
     gaps = user_owned_gate_gaps(repo_root, repo_config)
     if gaps:

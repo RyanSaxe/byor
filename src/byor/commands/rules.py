@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Literal
 from ruamel.yaml.comments import CommentedMap
 
 from byor.commands.doctor import quick_doctor_problems
-from byor.commands.gate import vendor_promoted_check
+from byor.commands.gate import regenerate_gate, vendor_promoted_check
 from byor.commands.heal import heal_ignore_blocks
 from byor.config import (
     CommandRuleScope,
@@ -307,6 +307,8 @@ def _promote_check(context: RepoContext, name: str) -> int:
     repo_config.checks.append(definition)
     save_repo_config(context.repo_root, repo_config)
     write_line(f"Promoted check '{name}' into .byor/config.yml")
+    if repo_config.gate:
+        write_lines(regenerate_gate(context.repo_root))
     return 0
 
 

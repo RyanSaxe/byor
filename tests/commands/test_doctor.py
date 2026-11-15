@@ -640,7 +640,7 @@ def test_doctor_flags_stale_gate_files(home: Path, capsys: pytest.CaptureFixture
 
     out = capsys.readouterr().out
     assert "FAIL  gate_files" in out
-    assert "run `byor init --gate`" in out
+    assert "run `byor sync`" in out
     # Doctor is read-only: the gate artifacts still lack the new check.
     assert "ruff" not in (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
     assert "ruff" not in (repo / ".pre-commit-config.yaml").read_text()
