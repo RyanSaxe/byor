@@ -14,7 +14,8 @@ import pytest
 from support import commit_file, git, install_package, write_global_command_rule, write_global_rule, write_rule
 
 from byor.cli import main
-from byor.io.paths import global_state_dir
+from byor.config import GlobalConfig, save_global_config
+from byor.io.paths import global_config_dir, global_state_dir
 from byor.rules.sync import STALE_EXIT_CODE
 from byor.scaffold import worktree as worktree_copy
 
@@ -242,3 +243,18 @@ def test_doctor_in_a_worktree_reports_a_missing_package_its_own_local_config_nam
     assert main(["doctor", "--repo", str(worktree), "--quick"]) == 1
 
     assert "~/worktree (gone)" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("copy_ignored", [False, True])
+def test_copy_ignored_brings_other_ignored_files_into_a_new_worktree_only_when_set(
+    home: Path, *, copy_ignored: bool
+) -> None:
+    save_global_config(global_config_dir(), GlobalConfig(worktrees_copy_ignored=copy_ignored))
+    main_repo = make_main_checkout(home, private=False)
+    commit_file(main_repo, ".gitignore", content=(main_repo / ".gitignore").read_text() + ".env\n")
+    (main_repo / ".env").write_text("TOKEN=1\n")
+    worktree = add_worktree(main_repo)
+
+    main(["list", "--repo", str(worktree)])
+
+    assert (worktree / ".env").exists() is copy_ignored

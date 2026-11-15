@@ -4,7 +4,8 @@
 all of `.byor/` and `sgconfig.yml` under a private init, `.byor/local.yml` and the rule mirrors under
 a committed one. Without them a new worktree runs only the global rules, or no rules at all, until
 someone runs `byor init` there again. Only files git ignores in both checkouts are copied, so a copy
-can never be committed and never brings back a tracked rule the worktree's branch deleted.
+can never be committed and never brings back a tracked rule the worktree's branch deleted. With
+`worktrees.copy_ignored` set in config.yml, every such ignored file comes along, not only byor's.
 """
 
 from __future__ import annotations
@@ -15,10 +16,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from byor.config import disabled_entry, load_repo_config, local_config_path, repo_config_path
+from byor.config import disabled_entry, load_global_config, load_repo_config, local_config_path, repo_config_path
 from byor.errors import WorktreeCopyBusyError
 from byor.io.gitio import git_stdout
 from byor.io.lock import file_lock
+from byor.io.paths import global_config_dir
 
 if TYPE_CHECKING:
     from byor.config import MachineState
@@ -116,7 +118,9 @@ def pending_copy(repo_root: Path) -> PendingCopy | None:
     it, and the copy writes it last; checking it costs one stat in every initialized checkout. Past
     that, a file qualifies only when git ignores it in the main checkout and would ignore it in the
     worktree too. A worktree whose branch predates byor's ignore block therefore gets nothing, since
-    a copy there could be committed. Raises ConfigError for a malformed main `.byor/config.yml`.
+    a copy there could be committed. With `worktrees.copy_ignored` set in config.yml, every ignored
+    file in the main checkout qualifies, not only byor's, under the same two-sided rule. Raises
+    ConfigError for a malformed main `.byor/config.yml` or config.yml.
     """
     if local_config_path(repo_root).is_file():
         return None
@@ -124,8 +128,10 @@ def pending_copy(repo_root: Path) -> PendingCopy | None:
     if main_root is None or not repo_config_path(main_root).is_file():
         return None
     sgconfig = load_repo_config(main_root).paths.sgconfig
+    copy_ignored = load_global_config(global_config_dir()).worktrees_copy_ignored
+    pathspec = () if copy_ignored else ("--", ".byor", sgconfig)
     ignored_in_main = _nul_split(
-        git_stdout(main_root, "ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--", ".byor", sgconfig)
+        git_stdout(main_root, "ls-files", "--others", "--ignored", "--exclude-standard", "-z", *pathspec)
     )
     # git lists a nested repository as one `dir/` entry, which is not a file to copy, and a
     # symlink as itself; lexists keeps a copied dangling symlink from counting as missing.

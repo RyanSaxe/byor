@@ -205,6 +205,8 @@ class GlobalConfig:
     """Trim text diagnostics to one line plus the fix; `--concise` forces it on."""
     output_max_diagnostics: int | None = None
     """Cap rendered diagnostics, noting how many more were found; None is unlimited."""
+    worktrees_copy_ignored: bool = False
+    """Copy every git-ignored file, not only byor's, from a main checkout into its new worktrees."""
     checks: list[CheckDef] = field(default_factory=list)
     command_checks: list[CommandCheckDef] = field(default_factory=list)
     init: InitDefaults = field(default_factory=InitDefaults)
@@ -451,6 +453,7 @@ def load_global_config(config_dir: Path) -> GlobalConfig:
     paths = _section(data, "paths", path=path)
     ast_grep = _section(data, "ast_grep", path=path)
     output = _section(data, "output", path=path)
+    worktrees = _section(data, "worktrees", path=path)
     init = _section(data, "init", path=path)
     defaults = GlobalConfig()
     return GlobalConfig(
@@ -461,6 +464,7 @@ def load_global_config(config_dir: Path) -> GlobalConfig:
         ast_grep_command=_string(ast_grep, "command", default=defaults.ast_grep_command, path=path),
         output_concise=_bool(output, "concise", path=path, default=defaults.output_concise),
         output_max_diagnostics=_optional_positive_int(output, "max_diagnostics", path=path),
+        worktrees_copy_ignored=_bool(worktrees, "copy_ignored", path=path, default=defaults.worktrees_copy_ignored),
         checks=_check_defs(data, path),
         command_checks=_command_check_defs(data, path),
         init=InitDefaults(
@@ -501,6 +505,7 @@ def save_global_config(config_dir: Path, config: GlobalConfig) -> None:
     if config.output_max_diagnostics is not None:
         output_values["max_diagnostics"] = config.output_max_diagnostics
     _update_section(data, "output", values=output_values)
+    _update_section(data, "worktrees", values={"copy_ignored": config.worktrees_copy_ignored})
     _write_checks(data, config.checks)
     _write_command_checks(data, config.command_checks)
     _write_init_defaults(data, config.init)

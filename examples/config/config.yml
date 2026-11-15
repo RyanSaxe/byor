@@ -17,6 +17,12 @@ output:
   concise: true # one line per diagnostic, easiest for agents to parse
   # max_diagnostics: 10 # cap rendered diagnostics, noting "... and N more"; default unlimited
 
+worktrees:
+  # Copy every git-ignored file, such as .env, from the main checkout into a new
+  # worktree, not only byor's. Default false. A large ignored folder makes the
+  # first copy slow, including inside an agent hook.
+  copy_ignored: false
+
 # `checks` run alongside ast-grep rules. Each runs on files matching its
 # extensions; byor appends the in-scope paths as arguments and feeds any
 # nonzero-exit output back to the agent. When no paths are passed, the command
