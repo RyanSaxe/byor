@@ -609,3 +609,29 @@ def test_promoting_a_home_script_check_into_a_gated_repo_vendors_it(
 
     assert next(c.run for c in load_repo_config(repo).checks if c.name == "later") == ".byor/scripts/later.sh"
     assert (repo / ".byor" / "scripts" / "later.sh").is_file()
+
+
+def test_promoting_a_check_never_replaces_a_script_a_repo_check_runs(
+    home: Path,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    for folder in ("a", "b"):
+        (home / folder).mkdir()
+        (home / folder / "lint.sh").write_text(f"#!/bin/sh\necho {folder}\n")
+    write_global_check("lint-a", "~/a/lint.sh")
+    repo = gate_repo(home)
+    script = repo / ".byor" / "scripts" / "lint.sh"
+    before = script.read_text()
+    write_global_check("lint-b", "~/b/lint.sh")
+    capsys.readouterr()
+
+    assert main(["promote", "--repo", str(repo), "--check", "lint-b"]) != 0
+
+    assert "rename one of the scripts" in capsys.readouterr().err
+    assert script.read_text() == before

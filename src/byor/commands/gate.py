@@ -49,6 +49,7 @@ __all__ = (
     "stale_gate_files",
     "transitive_vendored_scripts",
     "vendor_check",
+    "vendor_promoted_check",
     "vendored_script_problems",
 )
 
@@ -384,6 +385,23 @@ def vendor_check(repo_root: Path, check: CheckDef, *, vendored: dict[str, Path] 
         else:
             rewritten.append(token)
     return replace(check, run=shlex.join(rewritten)) if changed else check
+
+
+def vendor_promoted_check(repo_root: Path, check: CheckDef, *, repo_checks: list[CheckDef]) -> CheckDef:
+    """Vendor one check for `byor promote --check`, never changing a script the repo's checks run.
+
+    A committed copy may come from another machine, such as a teammate's script of the same name,
+    so promoting a check whose script would land on it from a different source is an error, and a
+    copy from the same source is reused as it is.
+    """
+    in_use = transitive_vendored_scripts(repo_root, referenced_vendored_scripts(repo_checks))
+    vendored: dict[str, Path] = {}
+    for relpath in in_use:
+        copy = repo_root / relpath
+        if copy.is_file():
+            # A copy without a provenance marker is user-owned and matches no source.
+            vendored[relpath.casefold()] = (_vendored_source(copy) or copy).resolve()
+    return vendor_check(repo_root, check, vendored=vendored)
 
 
 def _vendor_script(repo_root: Path, source: Path, *, vendored: dict[str, Path]) -> str:
