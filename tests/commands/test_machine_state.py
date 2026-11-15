@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from support import make_repo
+from support import make_repo, write_command_rule
 
 from byor.cli import main
 from byor.config import (
@@ -264,3 +264,58 @@ def test_disable_reports_an_unwritable_state_folder_as_an_error(home: Path, caps
     err = capsys.readouterr().err
     assert "cannot write byor's state to" in err
     assert "Traceback" not in err
+
+
+def test_a_state_file_lost_after_the_move_starts_empty(home: Path) -> None:
+    write_old_layout(home)
+    main(["doctor", "--quick"])
+    machine_state_path(global_state_dir()).unlink()
+
+    main(["doctor", "--quick"])
+
+    assert load_machine_state(global_state_dir()) == MachineState()
+
+
+def test_an_undecodable_old_registry_is_named_and_hooks_carry_on(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_old_layout(home)
+    (global_config_dir() / "repos.yml").write_bytes(b"version: 1\nrepos:\n  - /tmp/caf\xe9\n")
+    capsys.readouterr()
+
+    assert main(["doctor", "--quick"]) != 0
+    assert "repos.yml: not valid UTF-8" in capsys.readouterr().err
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({"tool_input": {"command": "ls"}, "cwd": str(home)})))
+    assert main(["command-check", "--stdin-hook", "claude-code"]) == 0
+    assert "byor: skipping the state move" in capsys.readouterr().err
+
+
+def test_a_hook_honors_old_disabled_paths_when_the_move_fails(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = make_repo(home)
+    write_command_rule(repo / ".byor" / "commands" / "project" / "no-pip.yml", "no-pip")
+    (global_config_dir() / "config.yml").write_text(f"version: 1\ndisabled_repos:\n  - {repo}\n")
+    unwritable = home / "not-a-directory"
+    unwritable.write_text("")
+    monkeypatch.setenv("XDG_STATE_HOME", str(unwritable))
+    payload = {"tool_input": {"command": "pip install requests"}, "cwd": str(repo)}
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(payload)))
+    capsys.readouterr()
+
+    assert main(["command-check", "--stdin-hook", "claude-code"]) == 0
+
+    captured = capsys.readouterr()
+    assert "byor: skipping the state move" in captured.err
+    assert captured.out == ""

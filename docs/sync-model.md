@@ -110,8 +110,11 @@ wrote `repos.yml` beside it. The first run of this version copies all three
 into the state directory and leaves the old copies alone; `byor doctor` then
 names them so you can delete them. Every command makes that one-time copy,
 hooks and `byor doctor` included, and it is the only write doctor ever makes.
-If the copy fails, say because `config.yml` is malformed, a command stops with
-the error while a hook prints it and carries on.
+The copy runs only while the state directory does not exist, so a `state.yml`
+you delete later starts empty rather than bringing the old records back.
+If the copy fails, say because `config.yml` is malformed or a file cannot be
+read, a command stops with an error naming the file, while a hook prints it,
+keeps honoring the old `disabled_repos`, and carries on.
 
 ## Turning byor off for a repo
 

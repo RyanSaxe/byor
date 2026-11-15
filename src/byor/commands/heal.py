@@ -14,6 +14,7 @@ from byor.agents.install import install_agent, unrecorded_agents
 from byor.config import (
     disabled_entry,
     global_rules_dir,
+    load_current_machine_state,
     load_global_config,
     load_machine_state,
     repo_config_path,
@@ -132,7 +133,7 @@ def heal_worktree(repo_root: Path, config_dir: Path) -> str | None:
         pending = pending_copy(repo_root)
         if pending is None:
             return None
-        state = load_machine_state(global_state_dir())
+        state = load_current_machine_state(config_dir, global_state_dir())
         if disabled_entry(repo_root, state) is not None or disabled_entry(pending.main_root, state) is not None:
             return None
         copied = copy_from_main_checkout(repo_root)

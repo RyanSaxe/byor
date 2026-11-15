@@ -37,7 +37,7 @@ from byor.config import disabled_entry, load_machine_state, migrate_machine_stat
 from byor.errors import ByorError
 from byor.io.paths import global_config_dir, global_state_dir, resolve_repo_root
 from byor.rules.sync import run_sync
-from byor.scan.agent_check import run_agent_check
+from byor.scan.agent_check import FAIL_OPEN_ERRORS, run_agent_check
 from byor.scan.command_check import run_command_check
 
 if TYPE_CHECKING:
@@ -476,11 +476,11 @@ def run(args: argparse.Namespace) -> int:
     # Before anything reads machine state, so hooks see it on the first run after an upgrade too.
     try:
         migrate_machine_state(global_config_dir(), global_state_dir())
-    except ByorError as error:
+    except FAIL_OPEN_ERRORS as error:
         if not _is_hook_invocation(args):
             raise
         # Hooks fail open: a broken config.yml or an unwritable state directory must
-        # never block an agent, so warn and let the hook run without the move.
+        # never block an agent, so warn and let the hook run on the old records in memory.
         sys.stderr.write(f"byor: skipping the state move: {error}\n")
     if _in_disabled_repo(args):
         # A human asked, so say why nothing happens; hook mode stays silent.

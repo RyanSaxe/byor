@@ -18,8 +18,8 @@ from byor.config import (
     command_rule_dir_relpaths,
     disabled_entry,
     global_commands_dir,
+    load_current_machine_state,
     load_global_config,
-    load_machine_state,
     load_repo_config,
     repo_config_path,
 )
@@ -94,7 +94,7 @@ def _hook_gate(args: argparse.Namespace, *, harness: Harness) -> int:
     if payload.command is None:
         return 0
     repo_root = resolve_repo_root(explicit=args.repo, start=payload.cwd)
-    if disabled_entry(repo_root, load_machine_state(global_state_dir())) is not None:
+    if disabled_entry(repo_root, load_current_machine_state(config_dir, global_state_dir())) is not None:
         return 0
     worktree_line = heal_worktree(repo_root, config_dir)
     if worktree_line is not None:
