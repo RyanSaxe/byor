@@ -22,7 +22,7 @@ from byor.agents.pi import PI_EXTENSION, PI_EXTENSION_RELPATH, PI_MARKER
 from byor.agents.skill import global_skill_dirs, skill_files
 from byor.config import load_machine_state, save_machine_state
 from byor.errors import ConfigError
-from byor.io.fsio import MANAGED_MARKER, marked_text_status, prune_empty_dirs, write_marked_text
+from byor.io.fsio import MANAGED_MARKER, has_marker, marked_text_status, prune_empty_dirs, write_marked_text
 from byor.io.output import write_lines
 from byor.io.paths import global_state_dir
 
@@ -81,16 +81,17 @@ def run_hook(args: argparse.Namespace) -> int:
     state = load_machine_state(state_dir)
     if args.hook_action == "install":
         messages = install_agent(args.agent)
-        recorded = args.agent not in state.agents
-        if recorded:
+        if args.agent not in state.agents:
             state.agents.append(args.agent)
+            save_machine_state(state_dir, state)
     else:
-        messages = uninstall_agent(args.agent)
-        recorded = args.agent in state.agents
-        if recorded:
+        # Forget the agent before touching its files: if state.yml cannot be
+        # written, nothing is removed, instead of hooks that self-heal would
+        # silently reinstall from the stale record.
+        if args.agent in state.agents:
             state.agents.remove(args.agent)
-    if recorded:
-        save_machine_state(state_dir, state)
+            save_machine_state(state_dir, state)
+        messages = uninstall_agent(args.agent)
     write_lines(messages)
     return 0
 
@@ -218,7 +219,7 @@ def _remove_stale_skill_files(base: Path, *, keep: set[str]) -> list[str]:
     messages: list[str] = []
     for path in sorted(base.rglob("*.md")):
         relpath = path.relative_to(base).as_posix()
-        if relpath in keep or MANAGED_MARKER not in path.read_text(encoding="utf-8"):
+        if relpath in keep or not has_marker(path, MANAGED_MARKER):
             continue
         path.unlink()
         messages.append(f"Removed stale {_home_display(path)}")
@@ -281,7 +282,7 @@ def _write_managed_path(
 def _remove_managed_path(path: Path, display: str, *, marker: str = MANAGED_MARKER) -> list[str]:
     if not path.is_file():
         return []
-    if marker not in path.read_text(encoding="utf-8"):
+    if not has_marker(path, marker):
         return [f"{display} exists without the BYOR marker; left untouched."]
     path.unlink()
     return [f"Removed {display}"]

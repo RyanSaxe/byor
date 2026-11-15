@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Literal
 
 __all__ = (
+    "has_marker",
     "marked_text_status",
     "prune_empty_dirs",
     "write_marked_text",
@@ -37,16 +38,27 @@ MarkedTextStatus = Literal["missing", "unmarked", "unchanged", "drifted"]
 def marked_text_status(path: Path, content: str, *, marker: str) -> MarkedTextStatus:
     if not path.is_file():
         return "missing"
-    existing = path.read_text(encoding="utf-8")
-    if not existing:
+    raw = path.read_bytes()
+    if not raw:
         # A zero-byte file has no user content to protect: treat it as missing
         # so a truncated managed file self-heals instead of festering.
         return "missing"
-    if marker not in existing:
+    if marker.encode("utf-8") not in raw:
         return "unmarked"
-    if existing == content:
+    try:
+        existing = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        # The marker makes the file byor's to rewrite, so bytes that are not
+        # UTF-8 are a corrupted render, not user content to protect.
+        return "drifted"
+    if existing.replace("\r\n", "\n").replace("\r", "\n") == content:
         return "unchanged"
     return "drifted"
+
+
+def has_marker(path: Path, marker: str) -> bool:
+    # Bytes, not text: a user's own file need not be UTF-8, and only the marker matters.
+    return marker.encode("utf-8") in path.read_bytes()
 
 
 def write_marked_text(path: Path, content: str, *, marker: str) -> MarkedWriteResult:

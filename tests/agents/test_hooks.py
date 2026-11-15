@@ -7,6 +7,8 @@ flagging a recorded harness whose hook was removed or drifted.
 """
 
 import json
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -14,6 +16,7 @@ from support import commands_in, global_agents, install_agents, make_repo
 
 from byor.agents.hookconfig import BYOR_COMMAND_SIGNATURE
 from byor.cli import main
+from byor.io.paths import global_state_dir
 
 SETTINGS_RELPATH = Path(".claude") / "settings.json"
 
@@ -175,3 +178,17 @@ def test_hook_uninstall_claude_code_removes_only_the_byor_settings_group(
     data = json.loads(settings.read_text())
     assert data["hooks"]["PostToolUse"] == [user_group]
     assert BYOR_COMMAND_SIGNATURE not in settings.read_text()
+
+
+@pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user")
+def test_hook_uninstall_changes_nothing_when_it_cannot_record_the_removal(home: Path) -> None:
+    main(["hook", "install", "--agent", "codex"])
+    state_dir = global_state_dir()
+    state_dir.chmod(0o500)
+    try:
+        assert main(["hook", "uninstall", "--agent", "codex"]) != 0
+    finally:
+        state_dir.chmod(0o700)
+
+    assert (home / ".codex" / "hooks.json").exists()
+    assert "codex" in global_agents()

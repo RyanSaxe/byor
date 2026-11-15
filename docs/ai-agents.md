@@ -345,6 +345,9 @@ not last. `byor hook uninstall` removes both. A hook entry you edited in any
 way is yours: a command mixed in or chained after byor's, an added field such
 as `timeout`, or a different matcher. byor never rewrites or removes it, doctor
 treats it as healthy, and self-heal never records an agent because of it.
+Copilot is the exception: `~/.copilot/hooks/byor.json` is byor's alone, so
+install and self-heal rewrite it whole and uninstall deletes it. Keep your own
+Copilot hooks in a different file in `~/.copilot/hooks/`.
 
 Generated files carry the marker
 `<!-- Managed by BYOR. Manual edits may be overwritten. -->` (a `//` comment

@@ -211,8 +211,16 @@ def _uninstall_spec(spec: HookSpec) -> list[str]:
     config = _load_config(path, relpath)
     entries = _entries(config, spec, relpath=relpath)
     kept = [entry for entry in entries if not _is_byor_entry(entry, spec=spec)]
+    # An entry the user edited stays, but if it still runs byor the user must
+    # hear that byor keeps running, or uninstall looks like it worked.
+    still_running = [
+        f"The {spec.harness} {spec.event} hook in {relpath} runs byor inside an entry you edited, "
+        "so it stays and byor still runs there; remove byor's command from it by hand to stop that"
+        for entry in kept
+        if _contains_byor_command(entry, signature=spec.signature)
+    ]
     if len(kept) == len(entries):
-        return []
+        return still_running
     _set_entries(config, spec, entries=kept)
     # An emptied settings file byor would otherwise delete, but a symlinked one
     # belongs to the user's dotfiles: keep the link and write `{}` through it.
@@ -220,7 +228,7 @@ def _uninstall_spec(spec: HookSpec) -> list[str]:
         _save_config(path, config)
     else:
         path.unlink()
-    return [f"Removed the {spec.harness} {spec.event} hook from {relpath}"]
+    return [f"Removed the {spec.harness} {spec.event} hook from {relpath}", *still_running]
 
 
 def _uninstall_owned_hooks(harness: Harness, specs: list[HookSpec]) -> list[str]:
