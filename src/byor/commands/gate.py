@@ -17,8 +17,10 @@ from pathlib import Path
 from byor.config import (
     CheckDef,
     RepoConfig,
+    load_local_config,
     load_repo_config,
     repo_config_path,
+    save_local_config,
     save_repo_config,
 )
 from byor.errors import ByorError, ConfigError
@@ -177,9 +179,9 @@ def vendored_script_problems(repo_root: Path, relpath: str, *, executable_requir
     A missing copy breaks the committed gate for every contributor. The exec
     bit is required only when the script is invoked directly (`executable_
     required`): interpreter arguments and scripts called from other scripts
-    run fine without it. Drift against the recorded source is only reported
-    when that source exists on this machine; a copy without the provenance
-    marker is user-owned and never compared.
+    run fine without it. Drift is only reported for a copy this checkout
+    vendored (see `LocalConfig.vendored_scripts`) whose source exists here; a
+    copy without the provenance marker is user-owned and never compared.
     """
     path = repo_root / relpath
     if not path.is_file():
@@ -191,24 +193,28 @@ def vendored_script_problems(repo_root: Path, relpath: str, *, executable_requir
             f"{relpath} is not executable; run `chmod +x {relpath}` and `git update-index --chmod=+x {relpath}`"
         )
     source = _vendored_source(path)
-    if source is not None and source.is_file():
+    if source is not None and source.is_file() and relpath in _recorded_vendored_scripts(repo_root):
         expected = _expected_vendored_text(path.name, source, repo_root=repo_root)
         if expected is not None and path.read_text(encoding="utf-8") != expected:
-            problems.append(f"{relpath} drifted from {_source_display(source.resolve())}; run `byor init --gate`")
+            problems.append(f"{relpath} drifted from {_source_display(source)}; run `byor init --gate`")
     return problems
 
 
 def _revendor_scripts(repo_root: Path, checks: list[CheckDef]) -> list[str]:
     """Refresh vendored scripts whose recorded source changed on this machine.
 
-    Every script a repo check references is compared against the source its
-    provenance marker records. A copy without a marker is user-owned, and a
-    recorded source that does not exist belongs to a teammate's machine: both
-    are left alone. Returns one "Re-vendored ..." message per updated script.
+    Only copies this checkout vendored are refreshed, from the source their
+    provenance marker records. A same-named script in a teammate's home is a
+    different file, a copy without a marker is user-owned, and a recorded source
+    that does not exist here belongs to another machine: all are left alone.
+    Returns one "Re-vendored ..." message per updated script.
     """
     vendored: dict[str, Path] = {}
     messages: list[str] = []
+    recorded = _recorded_vendored_scripts(repo_root)
     for relpath in referenced_vendored_scripts(checks):
+        if relpath not in recorded:
+            continue
         destination = repo_root / relpath
         if not destination.is_file():
             continue
@@ -292,10 +298,31 @@ def promote_everything(repo_root: Path, config_dir: Path) -> list[str]:
         names.add(effective.name)
         promoted_checks.append(effective.name)
     save_repo_config(repo_root, repo_config)
+    _record_vendored_scripts(repo_root, repo_config.checks)
     sync_repo(repo_root, load_canonical_rules(config_dir))
     rules_part = _promoted_part("rule", rules)
     checks_part = _promoted_part("check", promoted_checks)
     return [f"Promoted {rules_part} and {checks_part} into tracked config"]
+
+
+# `byor init --gate` is the maintainer's explicit step, so the vendored copies
+# its checks reference become this checkout's to keep current from here on.
+def _record_vendored_scripts(repo_root: Path, checks: list[CheckDef]) -> None:
+    relpaths = transitive_vendored_scripts(repo_root, referenced_vendored_scripts(checks))
+    local = load_local_config(repo_root)
+    merged = sorted({*local.vendored_scripts, *relpaths})
+    if merged != local.vendored_scripts:
+        local.vendored_scripts = merged
+        save_local_config(repo_root, local)
+
+
+# A malformed local.yml is reported by doctor's own row; here it only means
+# nothing counts as vendored by this checkout.
+def _recorded_vendored_scripts(repo_root: Path) -> set[str]:
+    try:
+        return set(load_local_config(repo_root).vendored_scripts)
+    except ConfigError:
+        return set()
 
 
 # "2 rules (a, b)": the count keeps the shape scannable, the ids say exactly
@@ -361,7 +388,7 @@ def _vendor_script(repo_root: Path, source: Path, *, vendored: dict[str, Path]) 
     is user-owned and never rewritten.
     """
     resolved = source.resolve()
-    relpath = f"{VENDORED_SCRIPTS_DIR}/{_vendored_name(resolved)}"
+    relpath = f"{VENDORED_SCRIPTS_DIR}/{_vendored_name(source)}"
     already = vendored.get(relpath.casefold())
     if already == resolved:
         return relpath
@@ -381,7 +408,7 @@ def _vendor_script(repo_root: Path, source: Path, *, vendored: dict[str, Path]) 
         text = _marked_vendored_text(
             _rewrite_home_script_refs(content, repo_root=repo_root),
             name=destination.name,
-            source_display=_source_display(resolved),
+            source_display=_source_display(source),
         )
         _write_unless_user_owned(destination, text)
     destination.chmod(destination.stat().st_mode | 0o111)
@@ -429,26 +456,29 @@ def _expected_vendored_text(name: str, source: Path, *, repo_root: Path) -> str 
     return _marked_vendored_text(
         _rewrite_home_script_refs(content, repo_root=repo_root),
         name=name,
-        source_display=_source_display(source.resolve()),
+        source_display=_source_display(source),
     )
 
 
-def _source_display(resolved: Path) -> str:
-    # Recorded `~/`-relative so the marker is meaningful on teammate machines.
-    try:
-        return f"~/{resolved.relative_to(Path.home().resolve()).as_posix()}"
-    except ValueError:
-        return str(resolved)
+# The marker and the vendored name use the source path as the check names it,
+# symlinks unresolved, so a ~/.config/byor/scripts linked into a store keeps
+# naming ~/.config/byor/scripts/... when the store path behind it moves. The
+# marker is `~/`-relative so it is meaningful on teammate machines.
+def _source_display(located: Path) -> str:
+    for home in (Path.home(), Path.home().resolve()):
+        if located.is_relative_to(home):
+            return f"~/{located.relative_to(home).as_posix()}"
+    return str(located)
 
 
-def _vendored_name(resolved: Path) -> str:
+def _vendored_name(located: Path) -> str:
     # A script under ~/.config/byor/scripts/ keeps its subpath so nested
     # references stay portable; anything else flattens to its basename.
-    scripts_home = Path(HOME_SCRIPTS_SOURCE_DIR).expanduser().resolve()
-    try:
-        return resolved.relative_to(scripts_home).as_posix()
-    except ValueError:
-        return resolved.name
+    scripts_home = Path(HOME_SCRIPTS_SOURCE_DIR).expanduser()
+    for base in (scripts_home, scripts_home.resolve()):
+        if located.is_relative_to(base):
+            return located.relative_to(base).as_posix()
+    return located.name
 
 
 # Vendor every existing home script `content` references, recursively.
@@ -465,7 +495,7 @@ def _rewrite_home_script_refs(content: str, *, repo_root: Path) -> str:
     def replace_match(match: re.Match[str]) -> str:
         source = _referenced_script(match)
         if source is not None:
-            return f"{VENDORED_SCRIPTS_DIR}/{_vendored_name(source.resolve())}"
+            return f"{VENDORED_SCRIPTS_DIR}/{_vendored_name(source)}"
         # The home source is gone but the vendored copy is committed: keep the
         # rewrite keyed on that stable destination, so drift detection and
         # re-vendoring never resurrect a `~/...` path no teammate machine has.

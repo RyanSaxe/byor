@@ -13,7 +13,7 @@ import pytest
 from support import git, install_package, write_global_check, write_global_rule, write_package_rule, write_rule
 
 from byor.cli import main
-from byor.config import CheckDef, load_repo_config, save_repo_config
+from byor.config import CheckDef, load_local_config, load_repo_config, save_local_config, save_repo_config
 from byor.scaffold.precommit import AST_GREP_CLI_VERSION
 
 
@@ -388,6 +388,44 @@ def test_gate_leaves_a_vendored_script_alone_when_its_source_is_missing(
     assert main(["list", "--repo", str(repo)]) == 0
 
     assert "echo one" in vendored.read_text()
+
+
+def test_gate_leaves_a_vendored_script_alone_in_a_checkout_that_did_not_vendor_it(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = script_check_repo(home, monkeypatch)
+    vendored = repo / ".byor" / "scripts" / "fix.sh"
+    # A teammate's clone: no record of vendoring, and a same-named home script.
+    local = load_local_config(repo)
+    local.vendored_scripts = []
+    save_local_config(repo, local)
+    (home / "fix.sh").write_text("#!/bin/sh\necho mine\n")
+
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    assert "echo one" in vendored.read_text()
+
+
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
+def test_gate_names_a_linked_scripts_folder_by_its_home_path(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    store = home / "store" / "generation-1"
+    store.mkdir(parents=True)
+    (store / "lint.sh").write_text("#!/bin/sh\necho one\n")
+    (home / ".config" / "byor").mkdir(parents=True)
+    (home / ".config" / "byor" / "scripts").symlink_to(store)
+    write_global_check("lint", "~/.config/byor/scripts/lint.sh")
+
+    repo = gate_repo(home)
+
+    assert (
+        "Vendored by BYOR from ~/.config/byor/scripts/lint.sh" in (repo / ".byor" / "scripts" / "lint.sh").read_text()
+    )
 
 
 def test_gate_never_rewrites_a_vendored_script_whose_marker_was_removed(

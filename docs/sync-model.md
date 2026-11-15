@@ -20,6 +20,14 @@ accept globs, so copies are also the only approach that works reliably with
 plain `ast-grep scan` and `ast-grep lsp`. The cost is duplication; the benefits
 are the override model and compatibility.
 
+The same limit applies to your global rules folder: in a repo without
+`byor init`, the edit hook scans through `~/sgconfig.yml`, so a rule file in
+`~/.config/byor/rules` that is itself a symlink never fires there. `byor doctor`
+reports such files. Link the whole folder instead, or copy the files. When byor
+writes a file you linked, such as `~/.claude/settings.json`, it writes through
+the link into the file it points at, and a read-only target is an error that
+names the file.
+
 Copies can go stale. The UX principle:
 
 **Staleness is self-healing, not prevented by user discipline.**
@@ -237,9 +245,14 @@ everything**: every effective global and package rule into
 and any check that runs a `~/` script into a committed copy under
 `.byor/scripts/` with the command repointed.
 
-Each vendored copy carries a provenance marker recording its source. Self-heal
-re-vendors the copy when that source changes on your machine; removing the
-marker makes the copy user-owned, never rewritten.
+Each vendored copy carries a provenance marker recording its source as the
+check names it, such as `~/.config/byor/scripts/lint.sh`, even when that folder
+is a symlink. `byor init --gate` also lists the copies in `.byor/local.yml`, and
+self-heal re-vendors only those, when their source changes. A teammate's clone
+has no such list, so a same-named script in their home never replaces the
+committed copy. A gate set up by an older byor has no list either: run
+`byor init --gate` once on the machine that maintains it. Removing the marker
+makes the copy user-owned, never rewritten.
 
 The emitted artifacts run `ast-grep scan` through uvx with a pinned
 `ast-grep-cli` version, so the gate never drifts with upstream releases, and run

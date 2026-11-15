@@ -257,6 +257,19 @@ def _global_rules_check(config_dir: Path, global_config: GlobalConfig) -> Check:
             ok=False,
             message=f"duplicate global rule IDs: {', '.join(duplicates)}",
         )
+    # ast-grep does not load a symlinked file inside a ruleDirs folder, so these
+    # rules never fire through ~/sgconfig.yml in a repo without byor init. byor's
+    # own loader follows the links, which is why they still parse here.
+    linked = sorted(rule.path.name for rule in rules if rule.path.is_symlink())
+    if linked:
+        return Check(
+            id="global_rules",
+            ok=False,
+            message=(
+                f"global rule files are symlinks, which ast-grep skips in repos without byor init: "
+                f"{', '.join(linked)}; link the whole rules folder or copy the files instead"
+            ),
+        )
     noun = "rule" if len(rules) == 1 else "rules"
     return Check(
         id="global_rules",

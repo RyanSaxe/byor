@@ -69,10 +69,20 @@ def ensure_home_sgconfig(rules_dir: Path, home: Path | None = None) -> Path | No
     changed, or None when nothing changed.
     """
     home = home or Path.home()
-    rules_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        rules_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # A read-only config dir supplied without a rules folder has no global
+        # rules, so ~/sgconfig.yml has nothing to list.
+        return None
     relpath = Path(os.path.relpath(rules_dir, home)).as_posix()
     path = home_sgconfig_path(home)
-    return path if ensure_rule_dirs(path, [relpath]) is not None else None
+    try:
+        changed = ensure_rule_dirs(path, [relpath])
+    except OSError as error:
+        msg = f"cannot write {path}: {error.strerror or error}"
+        raise ConfigError(msg) from error
+    return path if changed is not None else None
 
 
 def _minimal_sgconfig(rule_dirs: list[str]) -> CommentedMap:
