@@ -89,6 +89,16 @@ def test_invalid_claude_settings_fail_cleanly(home: Path, capsys: pytest.Capture
     assert "Traceback" not in err
 
 
+def test_install_records_the_agents_it_could_install_past_a_broken_one(home: Path) -> None:
+    settings = claude_settings(home)
+    settings.parent.mkdir(parents=True)
+    settings.write_text("{not json")
+
+    assert main(["install", "--agents", "claude-code,codex", "--non-interactive"]) == 1
+
+    assert global_agents() == ["codex", "skill"]
+
+
 def test_hook_install_is_global_and_records_the_agent(home: Path) -> None:
     assert main(["hook", "install", "--agent", "codex"]) == 0
 
