@@ -59,6 +59,7 @@ from byor.rules.sync import (
     SyncPlan,
     iter_fan_out_repos,
     load_canonical_rules,
+    load_installed_command_packages,
     load_installed_packages,
     summarize_changes,
     sync_repo,
@@ -311,6 +312,13 @@ def run_exclusion(args: argparse.Namespace) -> int:
         if selector.value in values:
             write_line(f"{_selector_subject(selector)} is already excluded")
         else:
+            if selector.kind == "rule-id" and selector.value not in _excludable_rule_ids(context.canonical, local):
+                msg = (
+                    f"no global or installed-package rule has ID '{selector.value}', so excluding it would "
+                    "change nothing; project and local rules are repo files, which `byor edit` and "
+                    "`byor remove` change"
+                )
+                raise ByorError(msg)
             values.append(selector.value)
             save_local_config(context.repo_root, local)
             write_line(f"Excluded {_selector_subject(selector)} in .byor/local.yml")
@@ -327,6 +335,19 @@ def run_exclusion(args: argparse.Namespace) -> int:
             if skipped.id == selector.value:
                 write_line(f"'{skipped.id}' is still skipped: {skipped.reason}")
     return 0
+
+
+# Exclusions apply only to global and installed-package rules, file and command alike.
+def _excludable_rule_ids(canonical: CanonicalRules, local: LocalConfig) -> set[str]:
+    packages = [
+        *load_installed_packages(canonical, local.packages),
+        *load_installed_command_packages(canonical, local.packages),
+    ]
+    return {
+        *(rule.id for rule in canonical.rules),
+        *(rule.id for rule in canonical.command_rules),
+        *(rule.id for package in packages for rule in package.rules),
+    }
 
 
 @dataclass(frozen=True)
@@ -412,9 +433,21 @@ def _find_rule(
         for rule in _scope_rules(context, scope):
             if rule.id == rule_id:
                 return scope, rule
+    package = _package_owning(context, rule_id) if requested == "auto" else None
+    if package is not None:
+        msg = (
+            f"'{rule_id}' comes from package '{package}', whose rules byor does not edit or remove; "
+            f"run `byor exclude {rule_id}` to skip it in this repo, or `byor package remove {package}`"
+        )
+        raise ByorError(msg)
     where = "any scope" if requested == "auto" else f"{requested} rules"
     msg = f"No rule with ID '{rule_id}' found in {where}."
     raise ByorError(msg)
+
+
+def _package_owning(context: RepoContext, rule_id: str) -> str | None:
+    packages = load_installed_packages(context.canonical, load_local_config(context.repo_root).packages)
+    return next((package.name for package in packages if any(rule.id == rule_id for rule in package.rules)), None)
 
 
 def _require_loadable_by_ast_grep(context: RepoContext, rule: Rule) -> None:

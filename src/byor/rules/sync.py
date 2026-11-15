@@ -22,6 +22,7 @@ from byor.config import (
     global_commands_dir,
     global_packages_dir,
     global_rules_dir,
+    installed_package_dir,
     load_global_config,
     load_local_config,
     load_machine_state,
@@ -55,10 +56,12 @@ if TYPE_CHECKING:
 __all__ = (
     "CanonicalRules",
     "InstalledPackage",
+    "MirrorKind",
     "MirrorResult",
     "RepoPlans",
     "ScopePlans",
     "SkippedRule",
+    "SyncChanges",
     "SyncPlan",
     "compute_packages_plan",
     "iter_fan_out_repos",
@@ -104,6 +107,30 @@ class MirrorResult:
 
 
 @dataclass
+class MirrorKind:
+    noun: str
+    """What one copy in this mirror is, such as "package rule"; sync messages count by it."""
+    desired: int
+    result: MirrorResult
+
+
+@dataclass
+class SyncChanges:
+    """One repo sync's mirror writes and removals, kept apart by the kind of rule copied.
+
+    A repo has four mirrors (global and package copies of file rules and of command rules);
+    messages name each kind that changed, so a package rule edit is never reported as a
+    change to global rules.
+    """
+
+    kinds: list[MirrorKind]
+
+    @property
+    def changed(self) -> bool:
+        return any(kind.result.changed for kind in self.kinds)
+
+
+@dataclass
 class CanonicalRules:
     root: Path
     rules: list[Rule]
@@ -133,13 +160,11 @@ def load_canonical_rules(config_dir: Path) -> CanonicalRules:
 
 
 def load_installed_packages(canonical: CanonicalRules, names: Iterable[str]) -> list[InstalledPackage]:
+    # A name with no exactly matching package directory loads nothing, as doctor reports it.
     return [
-        InstalledPackage(
-            name=name,
-            root=canonical.packages_root / name,
-            rules=_load_package_rules(canonical.packages_root / name),
-        )
+        InstalledPackage(name=name, root=root, rules=_load_package_rules(root))
         for name in names
+        if (root := installed_package_dir(canonical.packages_root, name)) is not None
     ]
 
 
@@ -153,11 +178,10 @@ def load_installed_command_packages(canonical: CanonicalRules, names: Iterable[s
     """
     return [
         InstalledPackage(
-            name=name,
-            root=canonical.packages_root / name / PACKAGE_COMMANDS_DIR,
-            rules=load_rules(canonical.packages_root / name / PACKAGE_COMMANDS_DIR),
+            name=name, root=package / PACKAGE_COMMANDS_DIR, rules=load_rules(package / PACKAGE_COMMANDS_DIR)
         )
         for name in names
+        if (package := installed_package_dir(canonical.packages_root, name)) is not None
     ]
 
 
@@ -231,7 +255,8 @@ def compute_packages_plan(
     over a same-ID global rule, so the second returned value — the surviving
     IDs — is what the global plan skips. Two installed packages defining the
     same surviving ID is a hard error: ast-grep rejects duplicate IDs, so byor
-    names both and points at `byor exclude`.
+    names both and points at `byor package remove`, since `byor exclude` would
+    drop the ID from both packages.
     """
     project_ids = {rule.id for rule in project}
     local_ids = {rule.id for rule in local}
@@ -259,7 +284,7 @@ def compute_packages_plan(
     require_unique_ids(
         kept,
         "installed package rules",
-        hint="Two installed packages define this ID; exclude one with `byor exclude`.",
+        hint="Two installed packages define this ID; drop one of them with `byor package remove NAME`.",
     )
     return SyncPlan(desired=desired, skipped=skipped), {rule.id for rule in kept}
 
@@ -400,25 +425,25 @@ def _scope_plans(
     return _global_plan(kept, skipped, root=canonical_root), packages_plan
 
 
-def sync_repo(repo_root: Path, canonical: CanonicalRules) -> tuple[SyncPlan, MirrorResult]:
+def sync_repo(repo_root: Path, canonical: CanonicalRules) -> tuple[SyncPlan, SyncChanges]:
     plans = repo_plans(repo_root, canonical)
-    results = [
-        mirror_global_rules(scope.global_dir, scope.global_plan.desired) for scope in (plans.rules, plans.commands)
-    ] + [
-        mirror_global_rules(scope.packages_dir, scope.packages_plan.desired) for scope in (plans.rules, plans.commands)
-    ]
-    # `desired` stays the file-rule global mirror alone: it feeds the "N global
-    # rules" sync count. Command and package changes still register through the
-    # mirror result.
+    mirrors = (
+        ("global rule", plans.rules.global_dir, plans.rules.global_plan.desired),
+        ("global command rule", plans.commands.global_dir, plans.commands.global_plan.desired),
+        ("package rule", plans.rules.packages_dir, plans.rules.packages_plan.desired),
+        ("package command rule", plans.commands.packages_dir, plans.commands.packages_plan.desired),
+    )
+    changes = SyncChanges(
+        kinds=[
+            MirrorKind(noun, len(desired), mirror_global_rules(directory, desired))
+            for noun, directory, desired in mirrors
+        ]
+    )
     plan = SyncPlan(
         desired=plans.rules.global_plan.desired,
         skipped=plans.rules.skipped() + plans.commands.skipped(),
     )
-    result = MirrorResult(
-        written=sum(mirrored.written for mirrored in results),
-        removed=sum(mirrored.removed for mirrored in results),
-    )
-    return plan, result
+    return plan, changes
 
 
 def repo_is_stale(repo_root: Path, canonical: CanonicalRules) -> bool:
@@ -426,14 +451,18 @@ def repo_is_stale(repo_root: Path, canonical: CanonicalRules) -> bool:
     return plans.rules.is_stale() or plans.commands.is_stale()
 
 
-def summarize_changes(result: MirrorResult) -> str:
+def summarize_changes(changes: SyncChanges) -> str:
+    return "; ".join(_summarize_kind(kind) for kind in changes.kinds if kind.result.changed)
+
+
+def _summarize_kind(kind: MirrorKind) -> str:
     parts: list[str] = []
-    if result.written:
-        parts.append(f"{result.written} updated")
-    if result.removed:
-        parts.append(f"{result.removed} removed")
-    total = result.written + result.removed
-    return f"{', '.join(parts)} global rule{'' if total == 1 else 's'}"
+    if kind.result.written:
+        parts.append(f"{kind.result.written} updated")
+    if kind.result.removed:
+        parts.append(f"{kind.result.removed} removed")
+    total = kind.result.written + kind.result.removed
+    return f"{', '.join(parts)} {kind.noun}{'' if total == 1 else 's'}"
 
 
 def iter_fan_out_repos(config_dir: Path) -> Iterator[Path]:
@@ -532,9 +561,14 @@ def _sync_and_report(repo_root: Path, canonical: CanonicalRules) -> None:
     # sync that changed nothing prints nothing; `byor list` keeps skips
     # visible on demand.
     if result.changed:
-        sys.stdout.write(f"Synced {_count(len(plan.desired), 'global rule')} into {repo_root}\n")
+        # Count each kind of copy the repo now has, so a sync driven by a package rule never reads
+        # as "Synced 0 global rules"; a repo with no copies at all keeps the plain zero count.
+        synced = [_count(kind.desired, kind.noun) for kind in result.kinds if kind.desired] or [
+            _count(0, "global rule")
+        ]
+        sys.stdout.write(f"Synced {', '.join(synced)} into {repo_root}\n")
         if plan.skipped:
-            sys.stdout.write(f"Skipped {_count(len(plan.skipped), 'global rule')}:\n")
+            sys.stdout.write(f"Skipped {_count(len(plan.skipped), 'rule')}:\n")
             for skipped in plan.skipped:
                 sys.stdout.write(f"  {skipped.id}: {skipped.reason}\n")
     # Full paths, because `sync --all` reports many repos in one stream.

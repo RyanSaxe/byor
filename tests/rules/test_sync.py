@@ -119,7 +119,7 @@ def test_excluded_rule_is_skipped_and_its_copy_removed(home: Path, capsys: pytes
     assert not (mirror(repo) / "no-cast.yml").exists()
     out = capsys.readouterr().out
     assert f"Synced 0 global rules into {repo}" in out
-    assert "Skipped 1 global rule:" in out
+    assert "Skipped 1 rule:" in out
     assert "  no-cast: excluded in .byor/local.yml" in out
 
 

@@ -120,3 +120,40 @@ def test_add_unknown_package_errors_and_lists_available(home: Path, capsys: pyte
     err = capsys.readouterr().err
     assert "unknown package 'ghost'" in err
     assert "python-strict" in err
+
+
+def test_add_of_a_package_whose_rule_id_collides_leaves_local_config_as_it_was(home: Path) -> None:
+    write_package_rule(home, "a", relpath="no-cast.yml", rule_id="no-cast")
+    write_package_rule(home, "b", relpath="no-cast.yml", rule_id="no-cast")
+    repo = make_repo(home)
+    assert main(["package", "add", "a", "--repo", str(repo)]) == 0
+
+    assert main(["package", "add", "b", "--repo", str(repo)]) != 0
+
+    assert load_local_config(repo).packages == ["a"]
+    assert main(["sync", "--repo", str(repo)]) == 0
+
+
+def test_add_in_a_disabled_repo_prints_the_notice_and_changes_nothing(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_package_rule(home, "a", relpath="no-cast.yml", rule_id="no-cast")
+    repo = make_repo(home)
+    assert main(["disable", str(repo)]) == 0
+    capsys.readouterr()
+
+    assert main(["package", "add", "a", "--repo", str(repo)]) == 0
+
+    assert "this repository is disabled for byor" in capsys.readouterr().err
+    assert load_local_config(repo).packages == []
+
+
+def test_a_package_named_with_different_case_than_its_folder_is_not_installed(home: Path) -> None:
+    write_package_rule(home, "PyStrict", relpath="no-cast.yml", rule_id="no-cast")
+    repo = make_repo(home)
+    install_package(repo, "pystrict")
+
+    assert main(["sync", "--repo", str(repo)]) == 0
+
+    assert not (package_mirror(repo) / "pystrict").exists()
+    assert main(["doctor", "--repo", str(repo), "--quick"]) == 1

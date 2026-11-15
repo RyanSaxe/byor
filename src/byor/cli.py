@@ -445,6 +445,9 @@ NO_SELF_HEAL_COMMANDS = frozenset(
 # own re-enable prompt and doctor is read-only reporting, so both pass through.
 DISABLED_NOTICE_COMMANDS = REPO_COMMANDS - {"init", "doctor"}
 DISABLED_NOTICE = "byor: this repository is disabled for byor; run `byor enable` to re-enable\n"
+# package and profile are not REPO_COMMANDS because their list actions need no repo;
+# the actions that write into one get the same notice.
+DISABLED_NOTICE_ACTIONS = {"package": {"add", "remove"}, "profile": {"add"}}
 
 
 def _is_hook_invocation(args: argparse.Namespace) -> bool:
@@ -508,7 +511,13 @@ def _copies_into_worktree(args: argparse.Namespace) -> bool:
 
 
 def _in_disabled_repo(args: argparse.Namespace) -> bool:
-    if args.command not in DISABLED_NOTICE_COMMANDS or _is_hook_invocation(args):
+    if _is_hook_invocation(args):
+        return False
+    actions = DISABLED_NOTICE_ACTIONS.get(args.command)
+    if actions is not None:
+        if getattr(args, f"{args.command}_action") not in actions:
+            return False
+    elif args.command not in DISABLED_NOTICE_COMMANDS:
         return False
     if args.command == "sync" and args.all:
         # A fan-out is not about the cwd repo; disabled repos are skipped inside.
