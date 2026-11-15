@@ -26,6 +26,7 @@ from byor.config import (
     load_machine_state,
     load_repo_config,
     load_repo_registry,
+    local_config_path,
     repo_config_path,
     repo_registry_path,
     save_repo_registry,
@@ -42,12 +43,14 @@ from byor.rules.rules import (
     require_unique_ids,
 )
 from byor.scaffold.ignore import outdated_ignore_blocks, refresh_ignore_blocks, write_rule_visibility_file
-from byor.scaffold.worktree import pending_copy
+from byor.scaffold.worktree import linked_worktrees, pending_copy
 
 if TYPE_CHECKING:
     import argparse
     from collections.abc import Iterable, Iterator
     from pathlib import Path
+
+    from byor.config import MachineState
 
 __all__ = (
     "CanonicalRules",
@@ -58,7 +61,7 @@ __all__ = (
     "SkippedRule",
     "SyncPlan",
     "compute_packages_plan",
-    "iter_registered_repos",
+    "iter_fan_out_repos",
     "load_canonical_rules",
     "load_installed_command_packages",
     "load_installed_packages",
@@ -433,10 +436,18 @@ def summarize_changes(result: MirrorResult) -> str:
     return f"{', '.join(parts)} global rule{'' if total == 1 else 's'}"
 
 
-def iter_registered_repos(config_dir: Path) -> Iterator[Path]:
+def iter_fan_out_repos(config_dir: Path) -> Iterator[Path]:
+    """Yield each registered repo byor can sync, followed by its linked worktrees.
+
+    Worktrees never join the registry, so this is how `byor sync --all` and global rule changes
+    reach them. A worktree is yielded once it has finished its copy from the main checkout, since
+    before that its first byor command or hook copies and syncs it; one already registered by an
+    older byor is yielded once.
+    """
     config = load_global_config(config_dir)
     state_dir = global_state_dir()
     state = load_machine_state(state_dir)
+    seen: set[Path] = set()
     for repo_root in load_repo_registry(repo_registry_path(state_dir, config)):
         if not repo_root.is_dir():
             sys.stderr.write(f"byor: skipping {repo_root}: path no longer exists\n")
@@ -445,7 +456,17 @@ def iter_registered_repos(config_dir: Path) -> Iterator[Path]:
         elif not repo_config_path(repo_root).is_file():
             sys.stderr.write(f"byor: skipping {repo_root}: no .byor/config.yml\n")
         else:
-            yield repo_root
+            yield from _unseen_checkouts(repo_root, state=state, seen=seen)
+
+
+def _unseen_checkouts(repo_root: Path, *, state: MachineState, seen: set[Path]) -> Iterator[Path]:
+    for checkout in [repo_root, *linked_worktrees(repo_root)]:
+        resolved = checkout.resolve()
+        if resolved in seen or disabled_entry(checkout, state) is not None:
+            continue
+        seen.add(resolved)
+        if checkout == repo_root or local_config_path(checkout).is_file():
+            yield checkout
 
 
 def run_sync(args: argparse.Namespace) -> int:
@@ -487,7 +508,7 @@ def _prune_registry(config_dir: Path) -> None:
 
 def _sync_all(config_dir: Path, canonical: CanonicalRules, *, check: bool) -> int:
     exit_code = 0
-    for repo_root in iter_registered_repos(config_dir):
+    for repo_root in iter_fan_out_repos(config_dir):
         # One broken repo must not abort the fan-out: warn and keep going.
         try:
             if check:

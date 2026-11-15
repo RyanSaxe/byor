@@ -135,9 +135,11 @@ def initialize_repo(repo_root: Path, config_dir: Path, *, options: InitOptions) 
         )
     if options.git_hooks:
         messages.extend(install_git_shims(repo_root))
-    # A linked worktree stays out of the registry, like its copy from the main checkout, so a
-    # removed worktree never becomes a dead entry; the main checkout's entry covers its rules.
-    registrable = main_checkout_root(repo_root) is None
+    # A linked worktree of a byor repo stays out of the registry, so a removed worktree never
+    # becomes a dead entry: the fan-outs reach it through its main checkout's entry. A worktree
+    # whose main checkout is not a byor repo has no such entry, so it registers like any repo.
+    main_root = main_checkout_root(repo_root)
+    registrable = main_root is None or not repo_config_path(main_root).is_file()
     if options.register and registrable and register_repo(repo_root, repo_registry_path(state_dir, global_config)):
         messages.append("Registered repository for `byor sync --all`")
     messages.extend(_apply_profiles_and_packages(repo_root, config_dir, global_config=global_config, options=options))

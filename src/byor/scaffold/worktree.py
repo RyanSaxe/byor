@@ -14,24 +14,31 @@ import shutil
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-from byor.config import load_repo_config, local_config_path, repo_config_path
+from byor.config import disabled_entry, load_repo_config, local_config_path, repo_config_path
+from byor.errors import WorktreeCopyBusyError
 from byor.io.gitio import git_stdout
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-    from pathlib import Path
+
+    from byor.config import MachineState
 
 __all__ = (
     "PendingCopy",
     "copy_from_main_checkout",
+    "linked_worktrees",
     "main_checkout_root",
     "pending_copy",
+    "worktree_disabled_entry",
 )
 
 GITDIR_PREFIX = "gitdir: "
 LOCK_NAME = "byor-copy.lock"
+PARTIAL_MARK = ".byor-copy-"
+WORKTREE_PREFIX = "worktree "
 LOCK_WAIT_SECONDS = 5.0
 LOCK_POLL_SECONDS = 0.05
 # A copy takes milliseconds, so a lock this old was left by a process that died mid-copy.
@@ -73,6 +80,39 @@ def main_checkout_root(worktree_root: Path) -> Path | None:
     return common_dir.parent
 
 
+def linked_worktrees(main_root: Path) -> list[Path]:
+    """Return the existing linked worktrees of a main checkout, as `git worktree list` names them.
+
+    Worktrees stay out of the registry, so a removed one never becomes a dead entry; the fan-outs
+    that keep registered repos current reach a registered main checkout's worktrees through this
+    instead. The main checkout itself, and worktrees whose folders are gone, are left out.
+    """
+    output = git_stdout(main_root, "worktree", "list", "--porcelain")
+    paths = [
+        Path(line.removeprefix(WORKTREE_PREFIX))
+        for line in (output or "").splitlines()
+        if line.startswith(WORKTREE_PREFIX)
+    ]
+    resolved_main = main_root.resolve()
+    return [path for path in paths if path.is_dir() and path.resolve() != resolved_main]
+
+
+def worktree_disabled_entry(repo_root: Path, state: MachineState) -> Path | None:
+    """Return the `disabled_repos` entry covering a checkout or, for a worktree, its main checkout.
+
+    `byor disable` names a path, but a worktree of a disabled repo lives elsewhere; checking the
+    main checkout too keeps the copy, doctor and `sync --check` from treating such a worktree as
+    one byor still manages.
+    """
+    if not state.disabled_repos:
+        return None
+    entry = disabled_entry(repo_root, state)
+    if entry is not None:
+        return entry
+    main_root = main_checkout_root(repo_root)
+    return None if main_root is None else disabled_entry(main_root, state)
+
+
 def pending_copy(repo_root: Path) -> PendingCopy | None:
     """Return the byor files a linked worktree still needs from its main checkout, or None.
 
@@ -91,7 +131,11 @@ def pending_copy(repo_root: Path) -> PendingCopy | None:
     ignored_in_main = _nul_split(
         git_stdout(main_root, "ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--", ".byor", sgconfig)
     )
-    missing = [relpath for relpath in ignored_in_main if not (repo_root / relpath).exists()]
+    # git lists a nested repository as one `dir/` entry, which is not a file to copy, and a
+    # symlink as itself; lexists keeps a copied dangling symlink from counting as missing.
+    missing = [
+        relpath for relpath in ignored_in_main if not relpath.endswith("/") and not os.path.lexists(repo_root / relpath)
+    ]
     if not missing:
         return None
     ignored_here = set(
@@ -113,16 +157,23 @@ def copy_from_main_checkout(repo_root: Path) -> PendingCopy | None:
 
     Hooks fire in parallel, so the copy holds a lock file in the worktree's own git dir, writes each
     file whole through a rename, and writes the local.yml marker last. A process that finds the lock
-    held waits for the copy to finish and then finds nothing pending; after a few seconds it gives
-    up and returns None, leaving the worktree to the holder. A copy that fails partway leaves no
-    marker, so the next command or hook retries it.
+    held waits for the copy to finish and then finds nothing pending. If the lock is still held
+    after a few seconds it raises WorktreeCopyBusyError, because the copy is still pending and a
+    command that went on would see the worktree half-copied. A copy that fails partway leaves no
+    marker, so the next command or hook retries it, and that retry first deletes the partial files
+    an interrupted copy left, which git would otherwise show.
     """
     git_dir = _linked_git_dir(repo_root)
     if git_dir is None or pending_copy(repo_root) is None:
         return None
     with _copy_lock(git_dir) as held:
         if not held:
-            return None
+            msg = (
+                f"another byor process is copying byor's files into {repo_root} from its main checkout; "
+                "run the command again in a moment"
+            )
+            raise WorktreeCopyBusyError(msg)
+        _remove_partials(repo_root)
         pending = pending_copy(repo_root)
         if pending is None:
             return None
@@ -147,9 +198,26 @@ def _nul_split(output: str | None) -> list[str]:
 
 def _copy_whole(source: Path, target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
-    partial = target.with_name(f".{target.name}.byor-copy-{os.getpid()}")
-    shutil.copy2(source, partial)
-    partial.replace(target)
+    partial = target.with_name(f".{target.name}{PARTIAL_MARK}{os.getpid()}")
+    try:
+        # A symlink, such as a linked folder of shared rules, is recreated as the same link: copying
+        # its content would fail for a directory or a dangling target.
+        if source.is_symlink():
+            partial.symlink_to(source.readlink())
+        else:
+            shutil.copy2(source, partial)
+        partial.replace(target)
+    finally:
+        if os.path.lexists(partial):
+            partial.unlink()
+
+
+# The copy writes partial files only under .byor/ and, for sgconfig.yml, at the worktree root.
+def _remove_partials(repo_root: Path) -> None:
+    candidates = [*repo_root.glob(f".*{PARTIAL_MARK}*"), *(repo_root / ".byor").rglob(f".*{PARTIAL_MARK}*")]
+    for partial in candidates:
+        if partial.is_file() or partial.is_symlink():
+            partial.unlink()
 
 
 @contextmanager

@@ -56,7 +56,7 @@ from byor.rules.rules import (
 from byor.rules.sync import (
     CanonicalRules,
     SyncPlan,
-    iter_registered_repos,
+    iter_fan_out_repos,
     load_canonical_rules,
     load_installed_packages,
     summarize_changes,
@@ -525,7 +525,7 @@ def _finish(context: RepoContext, *, fan_out: bool) -> None:
     canonical = load_canonical_rules(context.config_dir) if fan_out else context.canonical
     repos = [context.repo_root] if repo_config_path(context.repo_root).is_file() else []
     if fan_out:
-        repos.extend(repo for repo in iter_registered_repos(context.config_dir) if repo != context.repo_root)
+        repos.extend(repo for repo in iter_fan_out_repos(context.config_dir) if repo != context.repo_root)
     for repo in repos:
         _sync_and_report(repo, canonical)
     for problem in quick_doctor_problems(context.repo_root, context.config_dir):

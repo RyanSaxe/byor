@@ -39,6 +39,7 @@ from byor.config import (
     load_package_checks,
     load_repo_config,
     load_repo_registry,
+    local_config_path,
     repo_config_path,
     repo_registry_path,
     rule_dir_relpaths,
@@ -63,7 +64,7 @@ from byor.rules.sync import (
 from byor.scaffold.githooks import shim_findings
 from byor.scaffold.ignore import IgnoreBlockStatus, ignore_block_statuses, rule_visibility_ok
 from byor.scaffold.precommit import CONFIG_RELPATH
-from byor.scaffold.worktree import pending_copy
+from byor.scaffold.worktree import pending_copy, worktree_disabled_entry
 from byor.scan.astgrep import ast_grep_version, resolve_ast_grep, scan_command
 from byor.scan.checks import effective_checks
 
@@ -107,7 +108,9 @@ def collect_checks(repo_root: Path, config_dir: Path, *, quick: bool) -> list[Ch
     staleness) but keeps the cheap checks.
     """
     global_config = load_global_config(config_dir)
-    checks = _global_checks(config_dir, global_state_dir(), global_config=global_config, quick=quick)
+    checks = _global_checks(
+        config_dir, global_state_dir(), global_config=global_config, current_repo=repo_root, quick=quick
+    )
     checks.extend(
         _repo_checks(
             repo_root,
@@ -119,13 +122,15 @@ def collect_checks(repo_root: Path, config_dir: Path, *, quick: bool) -> list[Ch
     return checks
 
 
-def _global_checks(config_dir: Path, state_dir: Path, *, global_config: GlobalConfig, quick: bool) -> list[Check]:
+def _global_checks(
+    config_dir: Path, state_dir: Path, *, global_config: GlobalConfig, current_repo: Path, quick: bool
+) -> list[Check]:
     state = load_machine_state(state_dir)
     checks = [
         _ast_grep_check(global_config),
         _home_sgconfig_check(config_dir, global_config),
         _agent_files_check(state),
-        _registry_check(config_dir, state_dir, global_config=global_config),
+        _registry_check(config_dir, state_dir, global_config=global_config, current_repo=current_repo),
     ]
     optional = (_disabled_paths_check(state), _legacy_state_check(config_dir, state_dir))
     checks.extend(check for check in optional if check is not None)
@@ -328,6 +333,14 @@ def _worktree_copy_check(repo_root: Path) -> Check | None:
         return None
     if pending is None:
         return None
+    entry = worktree_disabled_entry(repo_root, load_machine_state(global_state_dir()))
+    if entry is not None:
+        # byor copies nothing into a disabled checkout's worktree, so `byor sync` would never clear this.
+        return Check(
+            id="repo",
+            ok=True,
+            message=f"byor is disabled here by {_home_display(entry)}, so it copies nothing into this worktree",
+        )
     return Check(
         id="repo",
         ok=False,
@@ -582,8 +595,12 @@ def _vendored_scripts_check(repo_root: Path, repo_config: RepoConfig) -> Check |
     )
 
 
-def _registry_check(config_dir: Path, state_dir: Path, *, global_config: GlobalConfig) -> Check:
+def _registry_check(config_dir: Path, state_dir: Path, *, global_config: GlobalConfig, current_repo: Path) -> Check:
     repos = load_repo_registry(repo_registry_path(state_dir, global_config))
+    # The repo doctor runs in may be unregistered, as every worktree is, so check its packages too.
+    registered = {repo.resolve() for repo in repos}
+    is_unregistered = local_config_path(current_repo).is_file() and current_repo.resolve() not in registered
+    unregistered = [current_repo] if is_unregistered else []
     missing = [f"{repo} no longer exists" for repo in repos if not repo.is_dir()]
     tallies = Counter(repo.resolve() for repo in repos)
     problems = missing + [
@@ -591,7 +608,8 @@ def _registry_check(config_dir: Path, state_dir: Path, *, global_config: GlobalC
     ]
     if missing:
         problems.append("run `byor sync --all --prune`")
-    problems.extend(_missing_package_problems(repos, set(available_packages(config_dir, global_config))))
+    available = set(available_packages(config_dir, global_config))
+    problems.extend(_missing_package_problems([*repos, *unregistered], available))
     if problems:
         return Check(
             id="registered_repos",

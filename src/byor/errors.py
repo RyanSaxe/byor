@@ -13,6 +13,7 @@ __all__ = (
     "RepoNotInitializedError",
     "RuleValidationError",
     "UnsafeOverwriteError",
+    "WorktreeCopyBusyError",
 )
 
 
@@ -42,3 +43,12 @@ class DuplicateRuleIdError(ByorError):
 
 class UnsafeOverwriteError(ByorError):
     pass
+
+
+class WorktreeCopyBusyError(ByorError):
+    """Another byor process holds the worktree copy lock past the wait.
+
+    Commands stop on it rather than run against a half-copied worktree, because one that writes
+    `.byor/local.yml` would mark the copy finished and lose the main checkout's settings; hooks
+    report it and carry on, since a hook must never block an agent.
+    """

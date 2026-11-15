@@ -33,10 +33,11 @@ from byor.commands.rules import (
     run_promote,
     run_remove,
 )
-from byor.config import disabled_entry, load_machine_state, migrate_machine_state
+from byor.config import load_machine_state, migrate_machine_state
 from byor.errors import ByorError
 from byor.io.paths import global_config_dir, global_state_dir, resolve_repo_root
 from byor.rules.sync import run_sync
+from byor.scaffold.worktree import worktree_disabled_entry
 from byor.scan.agent_check import FAIL_OPEN_ERRORS, run_agent_check
 from byor.scan.command_check import run_command_check
 
@@ -489,9 +490,8 @@ def run(args: argparse.Namespace) -> int:
     if _copies_into_worktree(args):
         # Even init, sync, package and profile, which skip the preamble: run before them, they keep
         # the main checkout's settings instead of writing a fresh .byor/local.yml over the gap.
-        worktree_line = heal_worktree(resolve_repo_root(explicit=getattr(args, "repo", None)), global_config_dir())
-        if worktree_line is not None:
-            sys.stderr.write(f"{worktree_line}\n")
+        for line in heal_worktree(resolve_repo_root(explicit=getattr(args, "repo", None)), global_config_dir()):
+            sys.stderr.write(f"{line}\n")
     if args.command not in NO_SELF_HEAL_COMMANDS and not _is_hook_invocation(args):
         for message in _self_heal_preamble(args):
             # stderr keeps stdout clean for JSON-emitting commands.
@@ -516,14 +516,14 @@ def _in_disabled_repo(args: argparse.Namespace) -> bool:
     state = load_machine_state(global_state_dir())
     if not state.disabled_repos:
         return False
-    return disabled_entry(resolve_repo_root(explicit=args.repo), state) is not None
+    return worktree_disabled_entry(resolve_repo_root(explicit=args.repo), state) is not None
 
 
 def _self_heal_preamble(args: argparse.Namespace) -> list[str]:
     config_dir = global_config_dir()
     messages = heal_global(config_dir, global_state_dir())
     repo_root = resolve_repo_root(explicit=args.repo)
-    if disabled_entry(repo_root, load_machine_state(global_state_dir())) is not None:
+    if worktree_disabled_entry(repo_root, load_machine_state(global_state_dir())) is not None:
         # Machine-level healing above still ran; a disabled repo is left alone.
         return messages
     mirror_line = heal_repo(repo_root, config_dir)

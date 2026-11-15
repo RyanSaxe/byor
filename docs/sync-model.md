@@ -213,12 +213,20 @@ the worktree's branch deleted stays deleted. A branch from before the repo
 adopted byor has no ignore block, so it gets nothing. byor never overwrites a
 file the worktree already has, and it writes `.byor/local.yml` last: that file
 marks a finished copy, so a copy that failed partway is retried by the next
-command. Hooks that fire at the same moment wait for one copy to finish.
+command, which first deletes any partial files the failed copy left. A linked
+folder, such as a symlink to shared rules, is copied as the same link. Hooks
+that fire at the same moment wait for one copy to finish. A command that still
+finds another copy running after a few seconds stops and asks you to run it
+again, rather than run against a half-copied worktree.
 
 `byor doctor` and `byor sync --check` never copy. In a worktree that has not
-copied yet, both say to run `byor sync`. A worktree of a repo you disabled gets
-nothing, and worktrees are never added to the registry. A separate clone has no
-link to another checkout, so it still needs `byor init`.
+copied yet, both say to run `byor sync`. byor treats a worktree of a repo you
+disabled as disabled too, so it copies nothing there and doctor stays quiet.
+Worktrees of a byor repo are never added to the registry. `byor sync --all`
+and global rule changes reach them through their main checkout's entry
+instead, once their copy has finished. A worktree whose main checkout is not a
+byor repo registers like any other repo. A separate clone has no link to
+another checkout, so it still needs `byor init`.
 
 ## The team gate
 
