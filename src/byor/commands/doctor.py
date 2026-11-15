@@ -668,10 +668,13 @@ def _registry_check(config_dir: Path, state_dir: Path, *, global_config: GlobalC
     is_unregistered = local_config_path(current_repo).is_file() and current_repo.resolve() not in registered
     unregistered = [current_repo] if is_unregistered else []
     missing = [f"{repo} no longer exists" for repo in repos if not repo.is_dir()]
-    tallies = Counter(repo.resolve() for repo in repos)
-    problems = missing + [
-        f"duplicate registry entries for {repo}" for repo, count in sorted(tallies.items()) if count > 1
-    ]
+    # Keyed on the directory itself, so `~/clients/c1` and `~/CLIENTS/C1` on a case-insensitive
+    # volume count as one repo registered twice.
+    entries: dict[object, list[Path]] = {}
+    for repo in repos:
+        entries.setdefault(_directory_identity(repo), []).append(repo.resolve())
+    duplicates = sorted(spellings[0] for spellings in entries.values() if len(spellings) > 1)
+    problems = missing + [f"duplicate registry entries for {repo}" for repo in duplicates]
     if missing:
         problems.append("run `byor sync --all --prune`")
     available = set(available_packages(config_dir, global_config))
@@ -687,6 +690,14 @@ def _registry_check(config_dir: Path, state_dir: Path, *, global_config: GlobalC
         ok=True,
         message="all registered repository paths exist and their packages are installed",
     )
+
+
+def _directory_identity(repo: Path) -> object:
+    try:
+        stat = repo.stat()
+    except OSError:
+        return repo.resolve()
+    return (stat.st_dev, stat.st_ino)
 
 
 # sync loads a missing package as zero rules, so without this a repo silently

@@ -113,7 +113,10 @@ ones included, exits 0 without scanning.
 
 Hook mode resolves the repository from the edited file, not the session's
 working directory, so an agent editing a file in another repo gets that repo's
-rules (`--repo` still overrides). In a repo with no `.byor/config.yml`, it scans
+rules (`--repo` still overrides). The repository is the nearest directory above
+the file that holds `.git` or `.byor/config.yml`, so a nested repo, a submodule
+or a worktree placed inside its main checkout is its own repository and never
+gets the outer one's rules. In a repo with no `.byor/config.yml`, it scans
 the edit against your synced global rules and global checks instead, and stays
 silent only when you have neither: no `~/sgconfig.yml` from `byor install` and
 no global `checks:`.

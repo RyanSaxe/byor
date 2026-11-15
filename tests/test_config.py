@@ -6,6 +6,7 @@ the contract's teeth: unsupported versions, wrongly typed fields, and malformed 
 raise instead of degrading, and repo registration is idempotent.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -36,6 +37,7 @@ from byor.config import (
     save_local_config,
     save_machine_state,
     save_repo_config,
+    updating_machine_state,
 )
 from byor.errors import ConfigError, RepoNotInitializedError
 
@@ -395,3 +397,20 @@ def test_global_config_rejects_a_different_version(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError, match="expected `version: 1`"):
         load_global_config(tmp_path)
+
+
+# byor runs from agent hooks and commands at the same time; each write must keep the others'.
+def test_concurrent_state_and_registry_writes_all_survive(tmp_path: Path) -> None:
+    state_dir = tmp_path / "state"
+    registry = state_dir / "repos.yml"
+
+    def disable_and_register(index: int) -> None:
+        with updating_machine_state(state_dir) as state:
+            state.disabled_repos.append(tmp_path / f"disabled-{index}")
+        register_repo(tmp_path / f"repo-{index}", registry)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(disable_and_register, range(24)))
+
+    assert len(load_machine_state(state_dir).disabled_repos) == 24
+    assert len(load_repo_registry(registry)) == 24

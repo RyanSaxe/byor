@@ -31,24 +31,26 @@ from byor.config import (
     load_machine_state,
     load_repo_config,
     local_config_path,
+    locked_state_file,
     register_repo,
     repo_config_path,
     repo_registry_path,
     rule_dir_relpaths,
     save_local_config,
-    save_machine_state,
     save_repo_config,
     save_repo_registry,
+    updating_machine_state,
 )
 from byor.errors import ByorError, RepoNotInitializedError
 from byor.io.gitio import git_output
 from byor.io.output import write_line, write_lines
-from byor.io.paths import display_path, global_config_dir, global_state_dir, resolve_repo_root
+from byor.io.paths import display_path, global_config_dir, global_state_dir, resolve_init_root, same_path
 from byor.rules.rules import discover_rule_files
 from byor.rules.sync import summarize_changes
 from byor.scaffold.githooks import install_git_shims
 from byor.scaffold.ignore import (
     ignore_file,
+    remove_private_block,
     write_ignore_block,
     write_rule_visibility_file,
 )
@@ -78,7 +80,7 @@ class InitOptions:
 
 
 def run_init(args: argparse.Namespace) -> int:
-    repo_root = resolve_repo_root(explicit=args.repo)
+    repo_root = resolve_init_root(explicit=args.repo)
     _refuse_home(repo_root)
     config_dir = global_config_dir()
     _require_enabled(repo_root, global_state_dir(), interactive=not args.non_interactive)
@@ -112,7 +114,7 @@ def _require_enabled(repo_root: Path, state_dir: Path, *, interactive: bool) -> 
     entry = disabled_entry(repo_root, state)
     if entry is None:
         return
-    if entry != repo_root.resolve():
+    if not same_path(entry, repo_root.resolve()):
         msg = f"{repo_root} is disabled for byor by the entry {entry}; run `byor enable {entry}` to lift it"
         raise ByorError(msg)
     if not interactive:
@@ -122,8 +124,9 @@ def _require_enabled(repo_root: Path, state_dir: Path, *, interactive: bool) -> 
     if prompt_choice(question, ("no", "yes"), default=0) != 1:
         msg = f"aborted: the repository stays disabled; run `byor enable {repo_root}` to re-enable it"
         raise ByorError(msg)
-    state.disabled_repos.remove(entry)
-    save_machine_state(state_dir, state)
+    with updating_machine_state(state_dir) as current:
+        if entry in current.disabled_repos:
+            current.disabled_repos.remove(entry)
     write_line(f"Enabled byor in {repo_root}")
 
 
@@ -146,6 +149,8 @@ def initialize_repo(repo_root: Path, config_dir: Path, *, options: InitOptions) 
     if wrote_block:
         target = display_path(ignore_file(repo_root, private=options.private), repo_root)
         messages.append(f"Wrote ignore block to {target}")
+    if not options.private:
+        messages.extend(_drop_private_block(repo_root))
     sgconfig = repo_config.paths.sgconfig
     if options.private and git_output(repo_root, "ls-files", "--", sgconfig):
         messages.append(
@@ -225,8 +230,26 @@ def _bootstrap_global_dir(config_dir: Path, state_dir: Path, *, config: GlobalCo
         with contextlib.suppress(OSError):
             directory.mkdir(parents=True, exist_ok=True)
     registry_path = repo_registry_path(state_dir, config)
-    if not registry_path.is_file():
-        save_repo_registry(registry_path, [])
+    if registry_path.is_file():
+        return
+    # Checked again under the lock, so a repo a concurrent init just registered is not wiped.
+    with locked_state_file(registry_path):
+        if not registry_path.is_file():
+            save_repo_registry(registry_path, [])
+
+
+# A shared init after a private one: the private block in `.git/info/exclude` would keep `.byor/`
+# and sgconfig.yml ignored, so the shared setup's tracked config could never be committed.
+def _drop_private_block(repo_root: Path) -> list[str]:
+    result = remove_private_block(repo_root)
+    if result == "removed":
+        return ["Removed the private byor block from .git/info/exclude, so .byor/ and sgconfig.yml can be committed"]
+    if result == "damaged":
+        return [
+            "warning: .git/info/exclude has a damaged byor block; remove it by hand so .byor/ and "
+            "sgconfig.yml can be committed"
+        ]
+    return []
 
 
 def _ensure_repo_layout(repo_root: Path, *, private: bool) -> RepoConfig:

@@ -303,3 +303,16 @@ def test_doctor_lists_disabled_paths_and_stays_silent_without_any(
     assert "2 paths disabled:" in out
     assert "legacy" in out
     assert "clients" in out
+
+
+def test_a_disable_entry_covers_a_repo_spelled_in_another_case(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (home / "clients" / "c1").mkdir(parents=True)
+    if not (home / "CLIENTS").is_dir():
+        pytest.skip("needs a case-insensitive volume, the macOS and Windows default")
+    assert main(["disable", str(home / "Clients")]) == 0
+    capsys.readouterr()
+
+    assert main(["disable", str(home / "clients" / "c1")]) == 0
+
+    assert "is already disabled by" in capsys.readouterr().out
+    assert len(load_machine_state(global_state_dir()).disabled_repos) == 1

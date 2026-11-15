@@ -17,7 +17,7 @@ from byor.config import (
     load_global_config,
     load_machine_state,
     repo_config_path,
-    save_machine_state,
+    updating_machine_state,
 )
 from byor.errors import ByorError, ConfigError, WorktreeCopyBusyError
 from byor.io.paths import global_state_dir
@@ -68,13 +68,12 @@ def heal_global(config_dir: Path, state_dir: Path) -> list[str]:
 # A name byor does not support, such as one an old byor or a hand edit left in
 # the list, can never be installed, so keeping it would only show it as healthy.
 def _drop_unsupported_agents(state_dir: Path) -> list[str]:
-    state = load_machine_state(state_dir)
-    unsupported = [agent for agent in state.agents if agent not in AGENT_CHOICES]
+    unsupported = [agent for agent in load_machine_state(state_dir).agents if agent not in AGENT_CHOICES]
     if not unsupported:
         return []
-    state.agents = [agent for agent in state.agents if agent in AGENT_CHOICES]
     try:
-        save_machine_state(state_dir, state)
+        with updating_machine_state(state_dir) as state:
+            state.agents = [agent for agent in state.agents if agent in AGENT_CHOICES]
     except ConfigError as error:
         return [f"byor: skipping agent cleanup: {error}"]
     return [f"byor: dropped agents byor does not support from state.yml: {', '.join(unsupported)}"]
@@ -85,12 +84,10 @@ def _record_unrecorded_agents(state_dir: Path) -> list[str]:
     messages = [f"byor: skipping agent detection: {problem} (run 'byor doctor')" for problem in scan.problems]
     if not scan.found:
         return messages
-    # Re-read just before writing, so a disable or enable that another byor
-    # command saved while detection ran is kept rather than overwritten.
-    state = load_machine_state(state_dir)
-    state.agents.extend(agent for agent in scan.found if agent not in state.agents)
+    # The state lock keeps a disable or enable that another byor command saves meanwhile.
     try:
-        save_machine_state(state_dir, state)
+        with updating_machine_state(state_dir) as state:
+            state.agents.extend(agent for agent in scan.found if agent not in state.agents)
     except ConfigError as error:
         return [*messages, f"byor: skipping agent recording: {error}"]
     return [*messages, f"byor: recorded {', '.join(scan.found)}, whose byor integration was already installed"]

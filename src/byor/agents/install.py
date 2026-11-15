@@ -20,7 +20,7 @@ from byor.agents.opencode import (
 )
 from byor.agents.pi import PI_EXTENSION, PI_EXTENSION_RELPATH, PI_MARKER
 from byor.agents.skill import global_skill_dirs, skill_files
-from byor.config import load_machine_state, save_machine_state
+from byor.config import updating_machine_state
 from byor.errors import ConfigError
 from byor.io.fsio import MANAGED_MARKER, has_marker, marked_text_status, prune_empty_dirs, write_marked_text
 from byor.io.output import write_lines
@@ -77,20 +77,18 @@ HARNESS_MANUAL_STEPS: dict[Harness, str] = {
 
 
 def run_hook(args: argparse.Namespace) -> int:
-    state_dir = global_state_dir()
-    state = load_machine_state(state_dir)
     if args.hook_action == "install":
         messages = install_agent(args.agent)
-        if args.agent not in state.agents:
-            state.agents.append(args.agent)
-            save_machine_state(state_dir, state)
+        with updating_machine_state(global_state_dir()) as state:
+            if args.agent not in state.agents:
+                state.agents.append(args.agent)
     else:
         # Forget the agent before touching its files: if state.yml cannot be
         # written, nothing is removed, instead of hooks that self-heal would
         # silently reinstall from the stale record.
-        if args.agent in state.agents:
-            state.agents.remove(args.agent)
-            save_machine_state(state_dir, state)
+        with updating_machine_state(global_state_dir()) as state:
+            if args.agent in state.agents:
+                state.agents.remove(args.agent)
         messages = uninstall_agent(args.agent)
     write_lines(messages)
     return 0

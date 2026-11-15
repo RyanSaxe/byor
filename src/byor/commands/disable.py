@@ -10,10 +10,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from byor.config import disabled_entry, load_machine_state, save_machine_state
+from byor.config import disabled_entry, updating_machine_state
 from byor.errors import ByorError
 from byor.io.output import write_line
-from byor.io.paths import global_state_dir, resolve_repo_root
+from byor.io.paths import global_state_dir, resolve_repo_root, same_path
 
 if TYPE_CHECKING:
     import argparse
@@ -27,36 +27,39 @@ __all__ = (
 
 def run_disable(args: argparse.Namespace) -> int:
     target = _resolve_target(args.path, must_exist=True)
-    state_dir = global_state_dir()
-    state = load_machine_state(state_dir)
-    entry = disabled_entry(target, state)
-    if entry == target:
+    with updating_machine_state(global_state_dir()) as state:
+        entry = disabled_entry(target, state)
+        if entry is None:
+            state.disabled_repos.append(target)
+    if entry is None:
+        write_line(f"Disabled byor under {target}; run `byor enable {target}` to undo")
+    elif same_path(entry, target):
         write_line(f"{target} is already disabled")
-        return 0
-    if entry is not None:
+    else:
         write_line(f"{target} is already disabled by {entry}")
-        return 0
-    state.disabled_repos.append(target)
-    save_machine_state(state_dir, state)
-    write_line(f"Disabled byor under {target}; run `byor enable {target}` to undo")
     return 0
 
 
 def run_enable(args: argparse.Namespace) -> int:
     # A disabled path may have been deleted since, so existence is not required.
     target = _resolve_target(args.path, must_exist=False)
-    state_dir = global_state_dir()
-    state = load_machine_state(state_dir)
-    if target in state.disabled_repos:
-        state.disabled_repos.remove(target)
-        save_machine_state(state_dir, state)
+    with updating_machine_state(global_state_dir()) as state:
+        named = [entry for entry in state.disabled_repos if same_path(entry, target)]
+        for entry in named:
+            state.disabled_repos.remove(entry)
+        covering = disabled_entry(target, state)
+    # A prefix entry covers other paths too, so enable names it rather than lifting it here.
+    if named and covering is not None:
+        write_line(
+            f"Removed the entry for {target}, but the entry {covering} still disables it; "
+            f"run `byor enable {covering}` to lift it"
+        )
+    elif named:
         write_line(f"Enabled byor in {target}")
-        return 0
-    entry = disabled_entry(target, state)
-    if entry is not None:
-        write_line(f"{target} is disabled by the entry {entry}; run `byor enable {entry}` to lift it")
-        return 0
-    write_line(f"{target} is not disabled")
+    elif covering is not None:
+        write_line(f"{target} is disabled by the entry {covering}; run `byor enable {covering}` to lift it")
+    else:
+        write_line(f"{target} is not disabled")
     return 0
 
 

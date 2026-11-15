@@ -397,3 +397,25 @@ def test_init_refuses_an_ignore_file_it_cannot_decode_and_creates_nothing(
 
     assert "cannot read" in capsys.readouterr().err
     assert not (repo / ".byor").exists()
+
+
+def test_init_refuses_a_repo_path_that_is_missing_or_a_file(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (repo / "afile").write_text("")
+
+    assert main(["init", "--repo", str(repo / "nothere" / "sub"), "--non-interactive"]) != 0
+    assert main(["init", "--repo", str(repo / "afile"), "--non-interactive"]) != 0
+
+    err = capsys.readouterr().err
+    assert "does not exist" in err
+    assert "is not a directory" in err
+    assert not (repo / "nothere").exists()
+
+
+def test_a_shared_init_after_a_private_one_lets_byors_config_be_committed(repo: Path) -> None:
+    git(repo, "init", "--quiet")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--private"]) == 0
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--no-private"]) == 0
+
+    assert ".byor/" not in (repo / ".git" / "info" / "exclude").read_text()
+    assert "?? .byor/config.yml" in git(repo, "status", "--porcelain", "--untracked-files=all")

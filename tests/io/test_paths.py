@@ -58,16 +58,23 @@ def test_explicit_repo_wins_over_search(tmp_path: Path) -> None:
     assert resolve_repo_root(explicit=elsewhere, start=tmp_path) == elsewhere.resolve()
 
 
-def test_prefers_byor_config_over_nearer_git_dir(tmp_path: Path) -> None:
+# A nested repo, a submodule, or a worktree placed in its main checkout (`.git` is then a file) is
+# its own repo, so its init and its worktree copy act on it rather than on the enclosing byor repo.
+@pytest.mark.parametrize("make_git", [Path.mkdir, lambda path: path.write_text("gitdir: elsewhere\n")])
+def test_a_nearer_git_dir_is_its_own_root_inside_a_byor_repo(
+    tmp_path: Path, make_git: Callable[[Path], object]
+) -> None:
     outer = tmp_path / "outer"
     (outer / ".byor").mkdir(parents=True)
     (outer / ".byor" / "config.yml").write_text("version: 1\n")
     inner = outer / "inner"
-    (inner / ".git").mkdir(parents=True)
+    inner.mkdir()
+    make_git(inner / ".git")
     start = inner / "src"
     start.mkdir()
 
-    assert resolve_repo_root(start=start) == outer.resolve()
+    assert resolve_repo_root(start=start) == inner.resolve()
+    assert resolve_repo_root(start=outer) == outer.resolve()
 
 
 def test_falls_back_to_nearest_git_dir(tmp_path: Path) -> None:
