@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 
 from byor.agents.install import install_agent, unrecorded_agents
 from byor.config import (
-    MachineState,
     global_rules_dir,
     load_global_config,
     load_machine_state,
@@ -57,9 +56,8 @@ def heal_global(config_dir: Path, state_dir: Path) -> list[str]:
             ensure_home_sgconfig(rules_dir)
         except ConfigError as error:
             messages.append(f"byor: skipping ~/sgconfig.yml self-heal: {error} (run 'byor doctor')")
-    state = load_machine_state(state_dir)
-    messages.extend(_record_unrecorded_agents(state, state_dir))
-    for agent in state.agents:
+    messages.extend(_record_unrecorded_agents(state_dir))
+    for agent in load_machine_state(state_dir).agents:
         try:
             install_agent(agent)
         except ConfigError as error:
@@ -67,16 +65,20 @@ def heal_global(config_dir: Path, state_dir: Path) -> list[str]:
     return messages
 
 
-def _record_unrecorded_agents(state: MachineState, state_dir: Path) -> list[str]:
+def _record_unrecorded_agents(state_dir: Path) -> list[str]:
+    scan = unrecorded_agents(load_machine_state(state_dir).agents)
+    messages = [f"byor: skipping agent detection: {problem} (run 'byor doctor')" for problem in scan.problems]
+    if not scan.found:
+        return messages
+    # Re-read just before writing, so a disable or enable that another byor
+    # command saved while detection ran is kept rather than overwritten.
+    state = load_machine_state(state_dir)
+    state.agents.extend(agent for agent in scan.found if agent not in state.agents)
     try:
-        unrecorded = unrecorded_agents(state.agents)
-    except ConfigError as error:
-        return [f"byor: skipping agent detection: {error} (run 'byor doctor')"]
-    if not unrecorded:
-        return []
-    state.agents.extend(unrecorded)
-    save_machine_state(state_dir, state)
-    return [f"byor: recorded {', '.join(unrecorded)}, whose byor integration was already installed"]
+        save_machine_state(state_dir, state)
+    except OSError as error:
+        return [*messages, f"byor: skipping agent recording: cannot write byor's state: {error}"]
+    return [*messages, f"byor: recorded {', '.join(scan.found)}, whose byor integration was already installed"]
 
 
 def heal_repo(repo_root: Path, config_dir: Path) -> str | None:

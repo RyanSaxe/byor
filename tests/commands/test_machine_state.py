@@ -6,6 +6,9 @@ byor gets those three copied over on the first run, its old copies left in place
 the leftovers so the user can delete them.
 """
 
+import json
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -116,17 +119,84 @@ def test_an_absolute_registry_path_is_live_not_a_leftover(home: Path, capsys: py
     assert "legacy_state" not in capsys.readouterr().out
 
 
+# Install agents, then drop them from state.yml so their integrations are installed but unrecorded.
+def install_unrecorded(*agents: str) -> None:
+    assert main(["install", "--agents", ",".join(agents), "--non-interactive"]) == 0
+    state = load_machine_state(global_state_dir())
+    state.agents = [agent for agent in state.agents if agent not in agents]
+    save_machine_state(global_state_dir(), state)
+
+
+def recorded_agents() -> list[str]:
+    return load_machine_state(global_state_dir()).agents
+
+
 def test_any_byor_command_records_an_agent_whose_byor_hooks_are_installed(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = make_repo(home)
-    assert main(["install", "--agents", "claude-code", "--non-interactive"]) == 0
-    state = load_machine_state(global_state_dir())
-    state.agents.remove("claude-code")
-    save_machine_state(global_state_dir(), state)
+    install_unrecorded("claude-code")
     capsys.readouterr()
 
     assert main(["list", "--repo", str(repo)]) == 0
 
-    assert "claude-code" in load_machine_state(global_state_dir()).agents
+    assert "claude-code" in recorded_agents()
     assert "byor: recorded claude-code, whose byor integration was already installed" in capsys.readouterr().err
+
+
+def test_an_unreadable_agent_config_is_a_warning_and_other_agents_are_still_recorded(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    install_unrecorded("codex", "opencode")
+    (home / ".claude").mkdir(exist_ok=True)
+    (home / ".claude" / "settings.json").write_bytes(b'{"theme": "caf\xe9"}')
+    capsys.readouterr()
+
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    assert {"codex", "opencode"} <= set(recorded_agents())
+    assert "~/.claude/settings.json is not valid UTF-8" in capsys.readouterr().err
+
+
+def test_hook_uninstall_lasts_when_a_user_command_shares_byors_hook_entry(home: Path) -> None:
+    repo = make_repo(home)
+    assert main(["install", "--agents", "claude-code", "--non-interactive"]) == 0
+    settings_path = home / ".claude" / "settings.json"
+    settings = json.loads(settings_path.read_text())
+    settings["hooks"]["PostToolUse"][0]["hooks"].append({"type": "command", "command": "my-formatter"})
+    settings_path.write_text(json.dumps(settings))
+
+    assert main(["hook", "uninstall", "--agent", "claude-code"]) == 0
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    assert "claude-code" not in recorded_agents()
+    assert "PreToolUse" not in json.loads(settings_path.read_text())["hooks"]
+
+
+@pytest.mark.usefixtures("home")
+def test_uninstalling_an_unrecorded_agent_does_not_record_it_first(capsys: pytest.CaptureFixture[str]) -> None:
+    install_unrecorded("codex")
+    capsys.readouterr()
+
+    assert main(["hook", "uninstall", "--agent", "codex"]) == 0
+
+    assert "recorded" not in capsys.readouterr().err
+    assert "codex" not in recorded_agents()
+
+
+@pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user")
+def test_self_heal_warns_instead_of_failing_when_it_cannot_write_state(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    install_unrecorded("claude-code")
+    state_dir = global_state_dir()
+    state_dir.chmod(0o500)
+    capsys.readouterr()
+    try:
+        assert main(["list", "--repo", str(repo)]) == 0
+    finally:
+        state_dir.chmod(0o700)
+
+    assert "byor: skipping agent recording: cannot write byor's state" in capsys.readouterr().err

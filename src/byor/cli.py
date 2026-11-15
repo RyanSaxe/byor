@@ -432,8 +432,11 @@ _COMMAND_ARGUMENTS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
 # package perform their own healing (and `sync --check` must never write), while
 # doctor is read-only diagnostics — it reports drift instead of repairing it.
 # disable and enable manage the off switch itself; healing the repo about to be
-# disabled would be backwards.
-NO_SELF_HEAL_COMMANDS = frozenset({"install", "init", "sync", "profile", "package", "doctor", "disable", "enable"})
+# disabled would be backwards. hook installs or removes one agent itself, and
+# recording an installed agent first would announce a change it is about to undo.
+NO_SELF_HEAL_COMMANDS = frozenset(
+    {"install", "init", "sync", "profile", "package", "doctor", "disable", "enable", "hook"}
+)
 
 # Repo commands that stop with one stderr line in a disabled repo. init runs its
 # own re-enable prompt and doctor is read-only reporting, so both pass through.

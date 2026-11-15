@@ -676,14 +676,12 @@ def _recorded_agent_problems(agents: list[str]) -> list[str]:
 
 
 def _unrecorded_agent_problems(recorded: list[str]) -> list[str]:
-    try:
-        unrecorded = unrecorded_agents(recorded)
-    except ConfigError as error:
-        return [f"{error}; fix the JSON by hand"]
-    if not unrecorded:
-        return []
-    listed = ", ".join(unrecorded)
-    return [
-        f"byor integrations are installed for agents missing from `agents` in byor's state.yml, "
-        f"so self-heal never updates them: {listed}; run `byor hook install --agent NAME` for each"
-    ]
+    scan = unrecorded_agents(recorded)
+    problems = [f"{problem}; fix the file by hand" for problem in scan.problems]
+    if scan.found:
+        listed = ", ".join(scan.found)
+        problems.append(
+            f"byor integrations are installed for agents missing from `agents` in byor's state.yml: {listed}; "
+            "the next byor command records them, or run `byor hook install --agent NAME` for each"
+        )
+    return problems

@@ -341,7 +341,9 @@ byor keeps an agent in `agents` exactly when its byor integration is
 installed. Self-heal restores whichever side is missing: it reinstalls the
 hooks or plugin file of a recorded agent, and it records an agent whose byor
 hooks or plugin file it finds. Removing only one side by hand therefore does
-not last. `byor hook uninstall` removes both.
+not last. `byor hook uninstall` removes both. A hook entry you mixed your own
+commands into is yours: uninstall leaves it in place, and self-heal never
+records an agent because of it.
 
 Generated files carry the marker
 `<!-- Managed by BYOR. Manual edits may be overwritten. -->` (a `//` comment
