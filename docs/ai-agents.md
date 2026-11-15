@@ -376,7 +376,7 @@ init:
 | `claude-code` | Real `PostToolUse` + `PreToolUse` hooks (`~/.claude/settings.json`) |
 | `codex` | Real `PostToolUse` + `PreToolUse` hooks (`~/.codex/hooks.json`); trust them via `/hooks` |
 | `copilot` | Real `postToolUse` + `preToolUse` hooks (`~/.copilot/hooks/byor.json`) |
-| `opencode` | Real `tool.execute.after` plugin (`~/.config/opencode/plugin/byor.ts`) |
+| `opencode` | Real post-edit plugin for OpenCode 2 and 1 (`~/.config/opencode/plugin/byor.ts`) |
 | `pi` | Real `tool_result` extension (`~/.pi/agent/extensions/byor.ts`) |
 | `skill` | The `byor` skill (hub `SKILL.md` + `references/`) rendered into `~/.agents/skills/byor/` and `~/.claude/skills/byor/`; installed by `byor install` by default |
 
@@ -464,18 +464,26 @@ marker-bearing renders.
 ### opencode
 
 OpenCode supports real post-edit hooks through TypeScript plugins. Install
-writes `~/.config/opencode/plugin/byor.ts`, which hooks `tool.execute.after`:
-when the tool is `edit`, `write`, or `apply_patch`, it runs
-`byor agent-check --scope diff --files <file>` on the touched file and, on
-exit 2, appends the diagnostics to the tool output the model sees. Any other
-exit code appends nothing, so a byor configuration error never breaks the
-agent loop.
+writes `~/.config/opencode/plugin/byor.ts`. After each call to a file-editing
+tool, the plugin runs `byor agent-check --scope diff --files <file>` in the
+session's directory and, on exit 2, appends the diagnostics to the tool result
+the model sees. Any other exit code appends nothing, so a byor configuration
+error never breaks the agent loop.
 
-`edit` and `write` name the touched file in `filePath`; `apply_patch`, the
-only edit tool some models (e.g. GPT-5) use, instead carries a `patchText`,
-so the plugin reads the changed paths from its `*** Add File:` / `*** Update
-File:` markers and checks each. A file changed another way (for example via a
-shell command) is not auto-checked.
+The file's default export serves both OpenCode majors, which name the plugin
+entry, the hook and the tools differently:
+
+| | OpenCode 2 | OpenCode 1 (1.3.4 or later) |
+| --- | --- | --- |
+| Plugin entry | `setup` | `server` |
+| Hook | `ctx.tool.hook("execute.after")` | `tool.execute.after` |
+| Edit tools | `edit` and `write`, with the file in `path` | `edit` and `write`, with the file in `filePath` |
+| Patch tool | `patch` | `apply_patch` |
+
+The patch tool, the only edit tool some models (e.g. GPT-5) use, carries a
+`patchText` instead of a path, so the plugin reads the changed paths from its
+`*** Add File:` / `*** Update File:` markers and checks each. A file changed
+another way (for example via a shell command) is not auto-checked.
 
 ### pi
 

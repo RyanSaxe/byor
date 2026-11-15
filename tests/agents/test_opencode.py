@@ -28,12 +28,24 @@ def test_install_writes_the_plugin(home: Path) -> None:
     # The plugin cannot run against a real OpenCode here; assert its shape.
     plugin = (home / OPENCODE_PLUGIN_RELPATH).read_text()
     assert plugin.startswith(OPENCODE_MARKER)
+    # opencode 2 refuses a plugin without a default export carrying an id and
+    # a setup function; opencode 1 reads `server` from the same object.
+    assert "export default {" in plugin
+    assert 'id: "byor"' in plugin
+    assert "setup(ctx)" in plugin
+    assert 'ctx.tool.hook("execute.after"' in plugin
+    assert "server: async ({ directory })" in plugin
     assert '"tool.execute.after"' in plugin
-    assert '["edit", "write", "apply_patch"]' in plugin
-    assert "patchText" in plugin  # apply_patch paths come from the patch text
-    assert "byor agent-check --scope diff --files" in plugin
-    assert ".nothrow()" in plugin  # exit codes other than 2 never break the loop
-    assert "output.output" in plugin
+    # edit/write carry `path` (opencode 2) or `filePath` (opencode 1); the patch
+    # tool is `patch` (opencode 2) or `apply_patch` (opencode 1).
+    assert '["edit", "write"]' in plugin
+    assert '["apply_patch", "patch"]' in plugin
+    assert '"path"' in plugin
+    assert '"filePath"' in plugin
+    assert "patchText" in plugin  # patch-tool paths come from the patch text
+    assert '"agent-check", "--scope", "diff", "--files"' in plugin
+    # Only exit 2 appends anything, so a byor error never breaks the loop.
+    assert "error?.code === DIAGNOSTICS_EXIT_CODE" in plugin
 
     assert "opencode" in global_agents()
 
