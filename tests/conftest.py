@@ -19,10 +19,14 @@ def home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
     XDG_CONFIG_HOME points the global config at the sandbox, and Path.home() is
     redirected there too so global state byor keeps under `~` — `~/sgconfig.yml`,
-    the skill/hook/plugin dirs — never touches (or reads) the real home.
+    the skill/hook/plugin dirs — never touches (or reads) the real home. The
+    working directory moves into the sandbox as well: a command run without
+    --repo self-heals the repo it starts in, which would otherwise be the
+    checkout running the tests.
     """
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.chdir(tmp_path)
     return tmp_path
 
 

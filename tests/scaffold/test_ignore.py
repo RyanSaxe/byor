@@ -9,8 +9,9 @@ ignored personal rule copies.
 from pathlib import Path
 
 import pytest
-from support import git
+from support import git, write_global_command_rule
 
+from byor.cli import main
 from byor.errors import ConfigError
 from byor.scaffold.ignore import (
     IGNORED_PATTERNS,
@@ -125,3 +126,76 @@ def test_force_preserves_a_user_owned_visibility_file_that_works(tmp_path: Path)
     assert write_rule_visibility_file(tmp_path, force=True) == "unmarked"
 
     assert (tmp_path / ".ignore").read_text() == content
+
+
+# The block byor wrote before command rules existed, as an older init left it.
+BLOCK_BEFORE_COMMAND_RULES = """\
+# >>> Managed by BYOR. Manual edits may be overwritten. >>>
+.byor/local.yml
+.byor/rules/personal/local/**/*.yml
+.byor/rules/personal/local/**/*.yaml
+.byor/rules/personal/global/**/*.yml
+.byor/rules/personal/global/**/*.yaml
+.byor/rules/personal/packages/**/*.yml
+.byor/rules/personal/packages/**/*.yaml
+# <<< Managed by BYOR <<<
+"""
+
+
+def shared_repo_with_an_old_block(home: Path) -> Path:
+    repo = home / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--no-private", "--no-git-hooks"]) == 0
+    (repo / ".gitignore").write_text("node_modules/\n\n" + BLOCK_BEFORE_COMMAND_RULES)
+    return repo
+
+
+def test_a_self_healing_command_rewrites_an_ignore_block_that_predates_command_rules(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_global_command_rule(home, "no-pip.yml", rule_id="no-pip")
+    repo = shared_repo_with_an_old_block(home)
+    capsys.readouterr()
+
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    assert "byor: updated the byor ignore block in .gitignore" in capsys.readouterr().err
+    gitignore = (repo / ".gitignore").read_text()
+    assert gitignore.startswith("node_modules/\n")
+    assert ".byor/commands/personal/global/**/*.yml" in gitignore
+    assert "no-pip.yml" not in git(repo, "status", "--short", "--untracked-files=all")
+
+
+def test_byor_sync_rewrites_an_ignore_block_that_predates_command_rules(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = shared_repo_with_an_old_block(home)
+    capsys.readouterr()
+
+    assert main(["sync", "--repo", str(repo)]) == 0
+
+    assert "Updated the byor ignore block in .gitignore" in capsys.readouterr().out
+    assert all(pattern in (repo / ".gitignore").read_text() for pattern in IGNORED_PATTERNS)
+
+
+def test_self_heal_never_adds_a_block_to_an_ignore_file_without_one(home: Path) -> None:
+    repo = shared_repo_with_an_old_block(home)
+    (repo / ".gitignore").write_text("node_modules/\n")
+
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    assert (repo / ".gitignore").read_text() == "node_modules/\n"
+
+
+def test_byor_sync_rewrites_an_outdated_private_block(home: Path) -> None:
+    repo = home / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--private", "--no-git-hooks"]) == 0
+    exclude = ignore_file(repo, private=True)
+    exclude.write_text(exclude.read_text().replace("sgconfig.yml\n", ""))
+
+    assert main(["sync", "--repo", str(repo)]) == 0
+
+    assert all(pattern in exclude.read_text() for pattern in PRIVATE_IGNORED_PATTERNS)

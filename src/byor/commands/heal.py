@@ -7,12 +7,14 @@ never blocks the unrelated command — often the very command that fixes it.
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 from byor.agents.install import install_agent
 from byor.config import global_rules_dir, load_global_config, repo_config_path
 from byor.errors import ByorError, ConfigError
 from byor.rules.sync import load_canonical_rules, summarize_changes, sync_repo
+from byor.scaffold.ignore import refresh_ignore_blocks
 from byor.scaffold.sgconfig import ensure_home_sgconfig
 
 if TYPE_CHECKING:
@@ -20,6 +22,7 @@ if TYPE_CHECKING:
 
 __all__ = (
     "heal_global",
+    "heal_ignore_blocks",
     "heal_repo",
 )
 
@@ -67,3 +70,21 @@ def heal_repo(repo_root: Path, config_dir: Path) -> str | None:
     if not result.changed:
         return None
     return f"byor: synced {summarize_changes(result)}"
+
+
+def heal_ignore_blocks(repo_root: Path) -> list[str]:
+    """Rewrite the repo's outdated byor ignore blocks, one line per file changed.
+
+    The preamble runs this after `heal_repo`, so a repo initialized before byor gained a personal
+    path stops offering the new copies to git on its next command. A repo without
+    `.byor/config.yml` is skipped, since only `byor init` chooses where a block goes. Like the
+    other heals, a git or file error degrades to a warning so the command still runs, and a repo
+    whose blocks are current returns no lines.
+    """
+    if not repo_config_path(repo_root).is_file():
+        return []
+    try:
+        changed = refresh_ignore_blocks(repo_root)
+    except (ConfigError, OSError) as error:
+        return [f"byor: skipping ignore block self-heal: {error} (run 'byor doctor')"]
+    return [f"byor: updated the byor ignore block in {os.path.relpath(path, repo_root)}" for path in changed]

@@ -225,4 +225,10 @@ __marimo__/
 .byor/rules/personal/global/**/*.yaml
 .byor/rules/personal/packages/**/*.yml
 .byor/rules/personal/packages/**/*.yaml
+.byor/commands/personal/local/**/*.yml
+.byor/commands/personal/local/**/*.yaml
+.byor/commands/personal/global/**/*.yml
+.byor/commands/personal/global/**/*.yaml
+.byor/commands/personal/packages/**/*.yml
+.byor/commands/personal/packages/**/*.yaml
 # <<< Managed by BYOR <<<
