@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Literal
 from ruamel.yaml.comments import CommentedMap
 
 from byor.commands.doctor import quick_doctor_problems
+from byor.commands.heal import heal_ignore_blocks
 from byor.config import (
     CommandRuleScope,
     LocalConfig,
@@ -40,7 +41,7 @@ from byor.errors import (
     UnsafeOverwriteError,
 )
 from byor.io.fsio import write_text_atomic
-from byor.io.output import write_line
+from byor.io.output import write_line, write_lines
 from byor.io.paths import display_path, global_config_dir, resolve_repo_root
 from byor.io.yamlio import dump_yaml, parse_yaml_mapping
 from byor.rules.rules import (
@@ -533,6 +534,9 @@ def _finish(context: RepoContext, *, fan_out: bool) -> None:
 
 
 def _sync_and_report(repo_root: Path, canonical: CanonicalRules) -> SyncPlan:
+    # A worktree on a branch with an older ignore block would otherwise show the
+    # command-rule copies this sync writes as untracked files.
+    write_lines(heal_ignore_blocks(repo_root))
     plan, result = sync_repo(repo_root, canonical)
     if result.changed:
         write_line(f"Synced {summarize_changes(result)} into {repo_root}")
