@@ -483,7 +483,7 @@ def _ignore_block_check(repo_root: Path) -> Check:
         return [status for status in statuses if status.state == state]
 
     def listed(selected: list[IgnoreBlockStatus]) -> str:
-        return ", ".join(os.path.relpath(status.path, repo_root) for status in selected)
+        return ", ".join(Path(os.path.relpath(status.path, repo_root)).as_posix() for status in selected)
 
     outdated = having("outdated")
     stuck = [status for status in outdated if not status.writable]

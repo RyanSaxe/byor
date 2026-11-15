@@ -8,7 +8,7 @@ never blocks the unrelated command — often the very command that fixes it.
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 from byor.agents.install import install_agent, unrecorded_agents
 from byor.config import (
@@ -25,9 +25,6 @@ from byor.rules.sync import load_canonical_rules, summarize_changes, sync_repo
 from byor.scaffold.ignore import refresh_ignore_blocks
 from byor.scaffold.sgconfig import ensure_home_sgconfig
 from byor.scaffold.worktree import copy_from_main_checkout, pending_copy, worktree_disabled_entry
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 __all__ = (
     "heal_global",
@@ -116,7 +113,10 @@ def heal_ignore_blocks(repo_root: Path) -> list[str]:
         refreshed = refresh_ignore_blocks(repo_root)
     except ConfigError as error:
         return [f"byor: skipping ignore block self-heal: {error} (run 'byor doctor')"]
-    return [f"byor: updated the byor ignore block in {os.path.relpath(path, repo_root)}" for path in refreshed.changed]
+    return [
+        f"byor: updated the byor ignore block in {Path(os.path.relpath(path, repo_root)).as_posix()}"
+        for path in refreshed.changed
+    ]
 
 
 def heal_worktree(repo_root: Path, config_dir: Path) -> list[str]:

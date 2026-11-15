@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from byor.config import (
@@ -48,7 +49,6 @@ from byor.scaffold.worktree import linked_worktrees, pending_copy
 if TYPE_CHECKING:
     import argparse
     from collections.abc import Iterable, Iterator
-    from pathlib import Path
 
     from byor.config import MachineState
 
@@ -555,7 +555,7 @@ def _report_staleness(repo_root: Path, canonical: CanonicalRules) -> int:
         return STALE_EXIT_CODE
     outdated = outdated_ignore_blocks(repo_root)
     if unwritable := [status for status in outdated if not status.writable]:
-        listed = ", ".join(os.path.relpath(status.path, repo_root) for status in unwritable)
+        listed = ", ".join(Path(os.path.relpath(status.path, repo_root)).as_posix() for status in unwritable)
         sys.stdout.write(
             f"Sync is stale in {repo_root}: the byor ignore block in {listed} is out of date and the file is"
             " not writable; make it writable, then run `byor sync`.\n"
