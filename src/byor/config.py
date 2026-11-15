@@ -518,10 +518,11 @@ def migrate_machine_state(config_dir: Path, state_dir: Path) -> None:
 def legacy_machine_state(config_dir: Path, state_dir: Path) -> list[str]:
     """Name the entries older byor versions wrote under the config directory that remain there.
 
-    Returns labels such as "`ai.agents` in config.yml" and "repos.yml" for doctor to report. byor
-    reads none of them after `migrate_machine_state` copied them, so an edit to one silently does
-    nothing, which is why doctor asks the user to delete them. Raises ConfigError for a malformed
-    config.yml, as `load_global_config` does.
+    Returns labels such as "`ai.agents` in config.yml" and "repos.yml" for doctor to report; the
+    registry's label is its `paths.repos` value, so a custom location is named as configured.
+    byor reads none of them after `migrate_machine_state` copied them, so an edit to one silently
+    does nothing, which is why doctor asks the user to delete them. Raises ConfigError for a
+    malformed config.yml, as `load_global_config` does.
     """
     leftovers: list[str] = []
     path = global_config_path(config_dir)
@@ -535,7 +536,7 @@ def legacy_machine_state(config_dir: Path, state_dir: Path) -> list[str]:
     legacy_registry = config_dir / config.repos_path
     # An absolute `paths.repos` names the same file from both directories, and that file is live.
     if legacy_registry.is_file() and legacy_registry != repo_registry_path(state_dir, config):
-        leftovers.append("repos.yml")
+        leftovers.append(Path(config.repos_path).as_posix())
     return leftovers
 
 

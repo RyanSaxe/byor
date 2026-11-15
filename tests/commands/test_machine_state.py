@@ -203,6 +203,18 @@ def test_self_heal_warns_instead_of_failing_when_it_cannot_write_state(
     assert "byor: skipping agent recording: cannot write byor's state" in capsys.readouterr().err
 
 
+def test_doctor_names_an_old_registry_by_its_configured_path(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    config_dir = global_config_dir()
+    (config_dir / "registry").mkdir(parents=True)
+    (config_dir / "config.yml").write_text("paths:\n  repos: registry/my-repos.yml\n")
+    (config_dir / "registry" / "my-repos.yml").write_text(f"version: 1\nrepos:\n  - {home / 'repo'}\n")
+    capsys.readouterr()
+
+    main(["doctor", "--quick"])
+
+    assert "now: registry/my-repos.yml; delete them" in capsys.readouterr().out
+
+
 @pytest.mark.parametrize("hook", ["agent-check", "command-check"])
 def test_a_hook_fails_open_when_the_state_move_fails(
     home: Path,
