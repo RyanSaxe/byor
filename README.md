@@ -187,7 +187,7 @@ byor init      set up byor in a repository (docs/sync-model.md)
 byor hook      add or remove one agent integration
 byor doctor    check that everything is wired up
 byor profile   list or apply exclusion profiles
-byor package   list or install opt-in rule bundles
+byor package   list, install or remove opt-in rule bundles
 ```
 
 ### Rule Management

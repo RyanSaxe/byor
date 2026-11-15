@@ -382,8 +382,8 @@ byor can reliably integrate with, so byor omits them until that changes.
 ### skill
 
 The `byor` skill is a hub `SKILL.md` plus reference files
-(`references/patterns.md`, `references/checks.md`, `references/setup.md`,
-`references/packages.md`, `references/profiles.md`),
+(`references/patterns.md`, `references/checks.md`, `references/commands.md`,
+`references/setup.md`, `references/packages.md`, `references/profiles.md`),
 following the Agent Skills progressive-disclosure pattern so the shared
 rule-authoring guidance lives in one place. It does two things: **capture** (the
 default) and **setup**.

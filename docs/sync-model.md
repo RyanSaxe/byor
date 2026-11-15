@@ -101,7 +101,10 @@ byor keeps your settings and its own records in separate directories:
 Older byor versions kept `ai.agents` and `disabled_repos` in `config.yml` and
 wrote `repos.yml` beside it. The first run of this version copies all three
 into the state directory and leaves the old copies alone; `byor doctor` then
-names them so you can delete them.
+names them so you can delete them. Every command makes that one-time copy,
+hooks and `byor doctor` included, and it is the only write doctor ever makes.
+If the copy fails, say because `config.yml` is malformed, a command stops with
+the error while a hook prints it and carries on.
 
 ## Turning byor off for a repo
 
