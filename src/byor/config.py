@@ -148,6 +148,13 @@ class LocalConfig:
     excluded_check_tags: list[str] = field(default_factory=list)
     packages: list[str] = field(default_factory=list)
     """Global packages this user opted this repo into (see GlobalConfig.packages_path)."""
+    vendored_scripts: list[str] = field(default_factory=list)
+    """Gate scripts this checkout vendored from its own `~/...` sources, by repo relpath.
+
+    Only these get re-vendored or checked for drift: on a teammate's machine a
+    same-named home script is a different file and must never replace the
+    committed copy.
+    """
 
 
 @dataclass
@@ -371,6 +378,7 @@ def load_local_config(repo_root: Path) -> LocalConfig:
         excluded_checks=_string_list(checks, "excluded", path=path),
         excluded_check_tags=_string_list(checks, "excluded_tags", path=path),
         packages=_package_names(data, path=path),
+        vendored_scripts=_string_list(data, "vendored_scripts", path=path),
     )
 
 
@@ -395,6 +403,10 @@ def save_local_config(repo_root: Path, config: LocalConfig) -> None:
         },
     )
     data["packages"] = list(config.packages)
+    if config.vendored_scripts:
+        data["vendored_scripts"] = list(config.vendored_scripts)
+    else:
+        data.pop("vendored_scripts", None)
     write_yaml_atomic(path, data)
 
 
