@@ -71,8 +71,9 @@ def run_package(args: argparse.Namespace) -> int:
 def _remove_package_from_local(repo_root: Path, *, name: str) -> None:
     local = load_local_config(repo_root)
     if name not in local.packages:
-        installed = ", ".join(local.packages) or "none installed"
-        msg = f"package '{name}' is not installed in this repository (installed: {installed})"
+        installed = ", ".join(local.packages)
+        detail = f"installed: {installed}" if installed else "no packages are installed"
+        msg = f"package '{name}' is not installed in this repository ({detail})"
         raise ConfigError(msg)
     local.packages.remove(name)
     save_local_config(repo_root, local)
