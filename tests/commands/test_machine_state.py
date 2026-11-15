@@ -84,6 +84,16 @@ def test_the_copy_happens_once(home: Path) -> None:
     assert load_machine_state(global_state_dir()).agents == ["codex", "skill"]
 
 
+def test_the_copy_fills_a_state_directory_that_already_exists(home: Path) -> None:
+    write_old_layout(home)
+    global_state_dir().mkdir(parents=True)
+
+    main(["doctor", "--quick"])
+
+    assert load_machine_state(global_state_dir()).disabled_repos == [home / "legacy"]
+    assert load_repo_registry(global_state_dir() / "repos.yml") == [home / "repo"]
+
+
 def test_doctor_names_old_machine_state_left_under_the_config_dir(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
