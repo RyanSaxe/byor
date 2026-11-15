@@ -27,6 +27,7 @@ __all__ = (
     "ScanMatch",
     "ScanResult",
     "ast_grep_version",
+    "config_load_error",
     "resolve_ast_grep",
     "rule_load_error",
     "scan_command",
@@ -282,6 +283,31 @@ def rule_load_error(executable: Path, rule_text: str) -> str | None:
         return None
     detail = result.stderr.strip() or result.stdout.strip()
     return detail or f"`{executable.name} scan --inline-rules` exited {result.returncode}"
+
+
+def config_load_error(executable: Path, config: Path) -> str | None:
+    """Return ast-grep's complaint when it cannot load every rule `config` lists, else None.
+
+    One rule ast-grep rejects, or one ID listed twice across `ruleDirs`, stops the whole scan,
+    and the post-edit hook then fails open with no findings at all. byor's own parser checks only
+    the fields it needs, so doctor asks ast-grep itself: one `scan --config` from an empty scratch
+    directory loads every listed rule and scans nothing. Returns ast-grep's `Error:` line.
+    """
+    with tempfile.TemporaryDirectory(prefix="byor-config-probe-") as scratch:
+        result = subprocess.run(
+            [str(executable), "scan", "--color", "never", "--config", str(config)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=scratch,
+            check=False,
+        )
+    if result.returncode == 0:
+        return None
+    lines = [line.strip() for line in f"{result.stderr}\n{result.stdout}".splitlines() if line.strip()]
+    cause = next((line for line in lines if line.startswith("Error")), None)
+    return cause or f"`{executable.name} scan --config {config.name}` exited {result.returncode}"
 
 
 def ast_grep_version(executable: Path) -> str:

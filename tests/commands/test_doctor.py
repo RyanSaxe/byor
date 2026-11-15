@@ -878,3 +878,34 @@ def test_doctor_flags_command_rules_ast_grep_cannot_load(home: Path, capsys: pyt
     out = capsys.readouterr().out
     assert "FAIL  command_rules" in out
     assert "disabling the pre-command gate" in out
+
+
+def test_doctor_fails_rules_valid_when_ast_grep_cannot_load_a_rule(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    (repo / ".byor" / "rules" / "project" / "typo.yml").write_text(
+        "id: typo\nlanguage: Pythn\nmessage: x\nrule:\n  pattern: foo()\n"
+    )
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  rules_valid" in out
+    assert "ast-grep cannot load the rules sgconfig.yml lists" in out
+
+
+def test_doctor_flags_personal_files_that_git_already_tracks(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = home / "tracked"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--no-private", "--no-git-hooks"]) == 0
+    git(repo, "add", "--force", ".byor/local.yml")
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
+
+    assert "git already tracks personal byor files, which no ignore block can hide: .byor/local.yml" in (
+        capsys.readouterr().out
+    )
