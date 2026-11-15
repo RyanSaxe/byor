@@ -359,7 +359,8 @@ def _worktree_copy_check(repo_root: Path) -> Check | None:
         pending = pending_copy(repo_root)
     except ConfigError:
         return None
-    if pending is None:
+    # Only byor's own files decide whether the worktree has its rules; copy_ignored files can follow later.
+    if pending is None or not pending.byor_relpaths:
         return None
     entry = worktree_disabled_entry(repo_root, load_machine_state(global_state_dir()))
     if entry is not None:

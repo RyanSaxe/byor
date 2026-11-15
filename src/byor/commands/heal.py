@@ -157,8 +157,11 @@ def heal_worktree(repo_root: Path, config_dir: Path) -> list[str]:
         return [f"byor: skipping worktree self-heal: {error} (run 'byor sync' to retry)"]
     if copied is None:
         return []
-    noun = "file" if len(copied.relpaths) == 1 else "files"
-    lines = [f"byor: copied {len(copied.relpaths)} byor {noun} from the main checkout {copied.main_root}"]
+    count = len(copied.byor_relpaths) + len(copied.other_relpaths)
+    noun = "file" if count == 1 else "files"
+    lines = [f"byor: copied {count} byor {noun} from the main checkout {copied.main_root}"]
+    if not copied.byor_relpaths:
+        return lines
     lines.extend(heal_ignore_blocks(repo_root))
     try:
         sync_repo(repo_root, load_canonical_rules(config_dir))

@@ -125,7 +125,8 @@ def _sync_and_report(repo_root: Path, canonical: CanonicalRules) -> None:
 
 
 def _report_staleness(repo_root: Path, canonical: CanonicalRules) -> int:
-    if pending_copy(repo_root) is not None:
+    pending = pending_copy(repo_root)
+    if pending is not None and pending.byor_relpaths:
         sys.stdout.write(
             f"Sync is stale in {repo_root}; run `byor sync` to copy byor's files from the main checkout.\n"
         )

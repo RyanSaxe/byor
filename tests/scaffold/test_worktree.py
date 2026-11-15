@@ -258,3 +258,21 @@ def test_copy_ignored_brings_other_ignored_files_into_a_new_worktree_only_when_s
     main(["list", "--repo", str(worktree)])
 
     assert (worktree / ".env").exists() is copy_ignored
+
+
+def test_commands_skip_the_other_ignored_files_while_another_process_copies_them(home: Path) -> None:
+    main_repo = make_main_checkout(home, private=False)
+    commit_file(main_repo, ".gitignore", content=(main_repo / ".gitignore").read_text() + ".env\n")
+    (main_repo / ".env").write_text("TOKEN=1\n")
+    worktree = add_worktree(main_repo)
+    main(["list", "--repo", str(worktree)])
+    save_global_config(global_config_dir(), GlobalConfig(worktrees_copy_ignored=True))
+    lock = Path(git(worktree, "rev-parse", "--absolute-git-dir").strip()) / worktree_copy.LOCK_NAME
+    lock.touch()
+
+    assert main(["list", "--repo", str(worktree)]) == 0
+    assert not (worktree / ".env").exists()
+
+    lock.unlink()
+    main(["list", "--repo", str(worktree)])
+    assert (worktree / ".env").read_text() == "TOKEN=1\n"

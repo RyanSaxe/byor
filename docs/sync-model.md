@@ -251,9 +251,14 @@ worktrees:
 ```
 
 The same rules apply to those files: byor copies one only when the worktree's
-git ignores it too, and never overwrites one the worktree has. A large ignored
-folder, such as `node_modules`, makes that first copy slow, and the first agent
-hook in a new worktree waits for it.
+git ignores it too, and never overwrites one the worktree has. byor copies its
+own files first and the others after. The command or hook that copies waits
+for all of them, but hooks that fire meanwhile wait only for byor's files, which
+take milliseconds, and check with the repo's rules while a large ignored
+folder, such as `node_modules`, is still copying.
+
+Turning `copy_ignored` on later brings the ignored files into existing
+worktrees too, once, on their next byor command.
 
 `byor doctor` and `byor sync --check` never copy. In a worktree that has not
 copied yet, both say to run `byor sync`. byor treats a worktree of a repo you
