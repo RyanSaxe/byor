@@ -90,7 +90,9 @@ MACHINE_STATE_FILE = "state.yml"
 # means the move is done, because the directory can exist first, for example as a link into a
 # dotfiles repo, and a state.yml lost after the move must not bring the old records back.
 STATE_MOVED_MARKER = ".moved-from-config"
-STATE_MOVED_TEXT = "byor copied its agents, disabled paths and repo registry here from config.yml.\n"
+STATE_MOVED_TEXT = (
+    "byor has moved any agents, disabled paths and repo registry from config.yml here, and never moves them again.\n"
+)
 
 # The value types a managed config section may hold, written back in place.
 SectionValue = str | None | bool | int | list[str]
