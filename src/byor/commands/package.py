@@ -1,8 +1,8 @@
 """Manage opt-in BYOR rule packages.
 
 Packages are reusable bundles that repositories choose explicitly rather than inheriting globally.
-This command lists available packages, records selected packages locally, and triggers sync so their
-rules and checks become effective.
+This command lists available packages, records or drops a repository's packages locally, and syncs
+so their rules and checks take effect or go away.
 """
 
 from __future__ import annotations
@@ -53,8 +53,29 @@ def run_package(args: argparse.Namespace) -> int:
         if result.changed:
             write_line(f"Synced package '{args.name}' into {repo_root}")
         return 0
+    if args.package_action == "remove":
+        repo_root = resolve_repo_root(explicit=args.repo)
+        load_repo_config(repo_root)
+        _remove_package_from_local(repo_root, name=args.name)
+        write_line(f"Removed package '{args.name}' from .byor/local.yml")
+        _, result = sync_repo(repo_root, load_canonical_rules(config_dir))
+        if result.changed:
+            write_line(f"Removed package '{args.name}' rule copies from {repo_root}")
+        return 0
     msg = f"unknown package action: {args.package_action}"
     raise ConfigError(msg)
+
+
+# Removal skips the availability check that `add` makes, because the common
+# reason to remove a package is that it no longer exists.
+def _remove_package_from_local(repo_root: Path, *, name: str) -> None:
+    local = load_local_config(repo_root)
+    if name not in local.packages:
+        installed = ", ".join(local.packages) or "none installed"
+        msg = f"package '{name}' is not installed in this repository (installed: {installed})"
+        raise ConfigError(msg)
+    local.packages.remove(name)
+    save_local_config(repo_root, local)
 
 
 def add_package_to_local(

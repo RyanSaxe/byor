@@ -357,11 +357,12 @@ checks:
     run: uv run ruff check --select ALL
 ```
 
-Install and list packages the way you apply profiles:
+Install, list and remove packages the way you apply profiles:
 
 ```bash
 byor package list
 byor package add python-strict
+byor package remove python-strict
 byor init --packages python-strict web-conventions   # or at init time
 ```
 
@@ -378,6 +379,9 @@ git-ignored but visible to ast-grep. Rules and checks share one precedence:
 repo wins over package wins over global (by ID for rules, by name for checks).
 Opting into a package is an easy way to override your global setup.
 Excluding a package rule or check works through the usual `byor exclude`.
+`byor package remove` drops the opt-in and the rule copies, and it works for a
+package that no longer exists under `~/.config/byor/packages/`, which
+`byor doctor` reports for every registered repo.
 
 To share a package's rules or checks with the team, promote them into tracked
 config: `byor promote RULE_ID --from package` and `byor promote --check NAME`.
