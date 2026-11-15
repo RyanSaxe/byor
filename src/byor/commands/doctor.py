@@ -285,12 +285,7 @@ def _global_rules_check(config_dir: Path, global_config: GlobalConfig) -> Check:
                 f"{', '.join(linked)}; link the whole rules folder or copy the files instead"
             ),
         )
-    noun = "rule" if len(rules) == 1 else "rules"
-    return Check(
-        id="global_rules",
-        ok=True,
-        message=f"{len(rules)} global {noun} parse",
-    )
+    return Check(id="global_rules", ok=True, message=_rules_parse(len(rules), kind="global"))
 
 
 # The hook fails open when ast-grep cannot load a rule, so only ast-grep itself can tell doctor
@@ -316,12 +311,7 @@ def _global_command_rules_check(config_dir: Path, global_config: GlobalConfig) -
             ok=False,
             message=f"duplicate global command rule IDs: {', '.join(duplicates)}",
         )
-    noun = "rule" if len(rules) == 1 else "rules"
-    return Check(
-        id="global_command_rules",
-        ok=True,
-        message=f"{len(rules)} global command {noun} parse",
-    )
+    return Check(id="global_command_rules", ok=True, message=_rules_parse(len(rules), kind="global command"))
 
 
 def _command_rules_check(repo_root: Path, paths: RepoPaths, *, global_config: GlobalConfig) -> Check:
@@ -844,3 +834,7 @@ def _unrecorded_agent_problems(recorded: list[str]) -> list[str]:
             "or run `byor hook install --agent NAME` for each"
         )
     return problems
+
+
+def _rules_parse(count: int, *, kind: str) -> str:
+    return f"1 {kind} rule parses" if count == 1 else f"{count} {kind} rules parse"
