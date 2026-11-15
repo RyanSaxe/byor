@@ -41,12 +41,17 @@ def run_install(args: argparse.Namespace) -> int:
         agents.append("skill")
 
     messages: list[str] = []
-    sgconfig_path = ensure_home_sgconfig(global_rules_dir(config_dir, config))
-    if sgconfig_path is not None:
-        messages.append(f"Wrote ~/{sgconfig_path.name}")
-    # One broken agent config must not stop the others or leave the ones already
-    # written unrecorded, so each agent installs on its own and failures come last.
+    # One broken config must not stop the rest or leave what was already written
+    # unrecorded, so ~/sgconfig.yml and each agent install on their own, and the
+    # failures are reported last.
     failures: list[str] = []
+    try:
+        sgconfig_path = ensure_home_sgconfig(global_rules_dir(config_dir, config))
+    except ConfigError as error:
+        failures.append(f"byor: skipped ~/sgconfig.yml: {error}")
+    else:
+        if sgconfig_path is not None:
+            messages.append(f"Wrote ~/{sgconfig_path.name}")
     installed: list[str] = []
     for agent in agents:
         try:

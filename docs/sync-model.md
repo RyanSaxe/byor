@@ -25,8 +25,11 @@ The same limit applies to your global rules folder: in a repo without
 `~/.config/byor/rules` that is itself a symlink never fires there. `byor doctor`
 reports such files. Link the whole folder instead, or copy the files. When byor
 writes a file you linked, such as `~/.claude/settings.json`, it writes through
-the link into the file it points at, and a read-only target is an error that
-names the file.
+the link into the file it points at. byor never replaces a file you made
+read-only, linked or not: writing one is an error that names the file, and
+self-heal reports it as a warning for that agent. A link that points nowhere,
+such as `~/.config/byor/rules` after the dotfiles checkout moved, is named by
+`byor install` and `byor doctor`.
 
 Copies can go stale. The UX principle:
 

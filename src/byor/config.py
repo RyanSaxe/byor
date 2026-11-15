@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Literal
 from ruamel.yaml.comments import CommentedMap
 
 from byor.errors import ConfigError, RepoNotInitializedError
-from byor.io.fsio import write_text_atomic
+from byor.io.fsio import dangling_link_problem, write_text_atomic
 from byor.io.lock import acquire_lock
 from byor.io.paths import covers_path, same_path
 from byor.io.yamlio import load_yaml_mapping, write_yaml_atomic
@@ -636,6 +636,11 @@ def load_current_machine_state(config_dir: Path, state_dir: Path) -> MachineStat
 
 
 def _move_pending(state_dir: Path) -> bool:
+    # A dangling link reads as "no state directory", and the move would then
+    # fail renaming onto the link with an error that never names it.
+    if problem := dangling_link_problem(state_dir):
+        msg = f"cannot use byor's state directory: {problem}"
+        raise ConfigError(msg)
     try:
         return not state_dir.exists()
     except OSError as error:

@@ -52,6 +52,7 @@ from byor.errors import (
     RepoNotInitializedError,
     RuleValidationError,
 )
+from byor.io.fsio import dangling_link_problem
 from byor.io.gitio import git_stdout
 from byor.io.output import write_line, write_lines
 from byor.io.paths import global_config_dir, global_state_dir, home_sgconfig_path, resolve_repo_root
@@ -211,6 +212,8 @@ def _ast_grep_check(global_config: GlobalConfig) -> Check:
 
 def _home_sgconfig_check(config_dir: Path, global_config: GlobalConfig) -> Check:
     path = home_sgconfig_path()
+    if problem := dangling_link_problem(global_rules_dir(config_dir, global_config)):
+        return Check(id="home_sgconfig", ok=False, message=f"no global rule applies: {problem}")
     if not path.is_file():
         return Check(
             id="home_sgconfig",
