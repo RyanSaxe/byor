@@ -13,7 +13,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from byor.agents.harness import emit_deny, parse_command_payload
-from byor.commands.heal import heal_worktree
+from byor.commands.heal import heal_repo_for_hook, heal_worktree
 from byor.config import (
     command_rule_dir_relpaths,
     global_commands_dir,
@@ -103,6 +103,7 @@ def _hook_gate(args: argparse.Namespace, *, harness: Harness) -> int:
         worktree_lines = [f"byor: {error}"]
     for line in worktree_lines:
         sys.stderr.write(f"{line}\n")
+    heal_repo_for_hook(repo_root, config_dir)
     rendered = _gate(repo_root, payload.command, global_config=global_config, config_dir=config_dir)
     stdout, exit_code = emit_deny(harness, rendered)
     if stdout:

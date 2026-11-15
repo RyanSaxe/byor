@@ -76,6 +76,12 @@ The exceptions: `byor sync` itself (its body is the sync),
 their own steps, and `byor doctor`, which is read-only — it reports staleness
 and the command that fixes it instead of repairing anything.
 
+The agent hooks, `byor agent-check --stdin-hook` and `byor command-check
+--stdin-hook`, sync the copies the same way before they check, and print
+nothing about it, since their output goes to the agent. So a rule that
+arrives without byor, such as through a git pull into a linked
+`~/.config/byor/rules/`, applies from the agent's next edit or command.
+
 In a repo with `gate: true`, `byor sync` also regenerates the gate files
 byor owns, and `byor sync --check` counts a stale one.
 
@@ -170,8 +176,8 @@ would re-enable every repo under it.
 **A global rule changes.** `byor add`/`byor edit` with global scope sync
 the current repo *and* all registered repos immediately. After out-of-band
 edits (e.g. a dotfiles pull changes `~/.config/byor/rules/`), the next
-byor command heals the current repo, and `byor sync --all` heals
-everywhere.
+byor command or agent hook heals the repo it runs in, and `byor sync --all`
+heals everywhere.
 
 **A rule is promoted.** `byor promote RULE_ID --from global` copies the
 canonical rule into project rules; the canonical original stays. Sync then

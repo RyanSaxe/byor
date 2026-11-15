@@ -324,6 +324,27 @@ def test_stdin_hook_scans_the_edited_file_from_the_claude_payload(
     assert "Rule: no-python-cast" in out
 
 
+def test_stdin_hook_applies_a_global_rule_that_arrived_without_byor(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = make_repo(home)
+    # As a git pull into a linked rules folder delivers it: no byor command runs.
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
+    source = repo / "src.py"
+    source.write_text('x = cast(int, "1")\n')
+    stdin(monkeypatch, {"tool_input": {"file_path": str(source)}})
+    capsys.readouterr()
+
+    assert main(agent_check_args(repo, "--stdin-hook", "claude-code")) == 2
+
+    assert "Rule: no-cast" in capsys.readouterr().out
+
+
 def test_stdin_hook_without_a_file_path_scans_nothing(
     check_repo: Path,
     # monkeypatch isolates process state (env, cwd, stdio): an external boundary

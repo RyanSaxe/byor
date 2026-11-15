@@ -1,7 +1,7 @@
 """Self-heal machine and repository state before commands run.
 
-The CLI preamble calls these to keep global agent integrations and repo mirrors converged with the
-installed byor. Healing degrades to warnings instead of failing, so a broken agent config or repo
+The CLI preamble and the agent hooks call these to keep global agent integrations and repo mirrors
+converged with the installed byor. Healing degrades to warnings instead of failing, so a broken agent config or repo
 never blocks the unrelated command — often the very command that fixes it.
 """
 
@@ -34,6 +34,7 @@ __all__ = (
     "heal_global",
     "heal_ignore_blocks",
     "heal_repo",
+    "heal_repo_for_hook",
     "heal_worktree",
 )
 
@@ -113,6 +114,25 @@ def heal_repo(repo_root: Path, config_dir: Path) -> str | None:
     if not result.changed:
         return None
     return f"byor: synced {summarize_changes(result)}"
+
+
+def heal_repo_for_hook(repo_root: Path, config_dir: Path) -> None:
+    """Resync the repo mirrors before an agent hook checks, without printing anything.
+
+    A git pull into a linked rules folder changes the rules without running byor, so without this
+    an agent's hooks would check against the old copies until some byor command ran in the repo.
+    The hook's output belongs to the agent, so a sync is silent. A worktree still waiting for
+    byor's files from its main checkout is left alone, because without its `.byor/local.yml` a
+    sync would drop the package copies the copy brings. Hooks fail open: a copy byor cannot write
+    keeps the old one, and `byor doctor` reports it as stale.
+    """
+    try:
+        pending = pending_copy(repo_root)
+        if pending is not None and pending.byor_relpaths:
+            return
+        heal_repo(repo_root, config_dir)
+    except (ByorError, OSError):
+        return
 
 
 def heal_ignore_blocks(repo_root: Path) -> list[str]:
