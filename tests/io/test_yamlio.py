@@ -5,6 +5,8 @@ key order. Loading is strict about shape: an empty document reads as an empty ma
 mapping top level or invalid YAML raises ConfigError instead of leaking parser internals.
 """
 
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -57,3 +59,15 @@ def test_load_rejects_non_utf8_bytes_with_config_error(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError, match="not valid UTF-8"):
         load_yaml_mapping(path)
+
+
+@pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user")
+def test_load_names_a_file_it_cannot_read(tmp_path: Path) -> None:
+    path = tmp_path / "state.yml"
+    path.write_text("version: 1\n")
+    path.chmod(0)
+    try:
+        with pytest.raises(ConfigError, match=r"state\.yml: cannot read"):
+            load_yaml_mapping(path)
+    finally:
+        path.chmod(0o600)
