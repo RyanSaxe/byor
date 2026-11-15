@@ -69,9 +69,12 @@ it writes the check and will stress test and iterate with you to refine it.
 ## Install
 
 ```bash
-uv tool install byor    # the CLI (bundles ast-grep)
-byor install            # editor + agent integrations, once per machine
+uv tool install byor --with-executables-from ast-grep-cli   # byor, plus ast-grep on PATH
+byor install                                               # editor + agent integrations, once per machine
 ```
+
+byor bundles ast-grep and finds it either way. `--with-executables-from ast-grep-cli`
+also puts it on your PATH, for the `ast-grep scan` and `ast-grep lsp` uses below.
 
 The above commands will set up byor globally. After doing so, open up your coding agent
 and ask it to help set you up. It will likely read your markdown files for rules it can
