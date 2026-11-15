@@ -33,10 +33,10 @@ from byor.commands.rules import (
     run_promote,
     run_remove,
 )
+from byor.commands.sync import run_sync
 from byor.config import load_machine_state, migrate_machine_state
 from byor.errors import ByorError
 from byor.io.paths import global_config_dir, global_state_dir, resolve_repo_root
-from byor.rules.sync import run_sync
 from byor.scaffold.worktree import worktree_disabled_entry
 from byor.scan.agent_check import FAIL_OPEN_ERRORS, run_agent_check
 from byor.scan.command_check import run_command_check

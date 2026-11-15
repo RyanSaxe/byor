@@ -16,8 +16,8 @@ import pytest
 from support import git, write_global_command_rule
 
 from byor.cli import main
+from byor.commands.sync import STALE_EXIT_CODE
 from byor.errors import ConfigError
-from byor.rules.sync import STALE_EXIT_CODE
 from byor.scaffold.ignore import (
     BLOCK_BEGIN,
     BLOCK_END,

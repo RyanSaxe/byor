@@ -14,9 +14,9 @@ import pytest
 from support import commit_file, git, install_package, write_global_command_rule, write_global_rule, write_rule
 
 from byor.cli import main
+from byor.commands.sync import STALE_EXIT_CODE
 from byor.config import GlobalConfig, save_global_config
 from byor.io.paths import global_config_dir, global_state_dir
-from byor.rules.sync import STALE_EXIT_CODE
 from byor.scaffold import worktree as worktree_copy
 
 PIP_COMMAND = "pip install requests"
