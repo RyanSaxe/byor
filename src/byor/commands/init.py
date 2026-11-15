@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 from byor.commands.doctor import quick_doctor_problems
 from byor.commands.gate import install_gate
-from byor.commands.package import add_package_to_local
+from byor.commands.package import add_package_to_local, sync_or_restore_packages
 from byor.commands.profile import add_profile_to_local
 from byor.commands.prompts import prompt_choice
 from byor.config import (
@@ -27,6 +27,7 @@ from byor.config import (
     global_commands_dir,
     global_rules_dir,
     load_global_config,
+    load_local_config,
     load_machine_state,
     load_repo_config,
     local_config_path,
@@ -44,7 +45,7 @@ from byor.io.gitio import git_output
 from byor.io.output import write_line, write_lines
 from byor.io.paths import display_path, global_config_dir, global_state_dir, resolve_repo_root
 from byor.rules.rules import discover_rule_files
-from byor.rules.sync import load_canonical_rules, summarize_changes, sync_repo
+from byor.rules.sync import summarize_changes
 from byor.scaffold.githooks import install_git_shims
 from byor.scaffold.ignore import (
     ignore_file,
@@ -159,8 +160,9 @@ def initialize_repo(repo_root: Path, config_dir: Path, *, options: InitOptions) 
     registrable = main_root is None or not repo_config_path(main_root).is_file()
     if options.register and registrable and register_repo(repo_root, repo_registry_path(state_dir, global_config)):
         messages.append("Registered repository for `byor sync --all`")
+    previous_packages = load_local_config(repo_root).packages
     messages.extend(_apply_profiles_and_packages(repo_root, config_dir, global_config=global_config, options=options))
-    _, sync_result = sync_repo(repo_root, load_canonical_rules(config_dir))
+    sync_result = sync_or_restore_packages(repo_root, config_dir, previous=previous_packages)
     if sync_result.changed:
         messages.append(f"Synced {summarize_changes(sync_result)}")
     if options.gate:

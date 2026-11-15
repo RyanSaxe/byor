@@ -17,7 +17,7 @@ from byor.config import (
     load_repo_config,
     save_local_config,
 )
-from byor.errors import ConfigError
+from byor.errors import ByorError, ConfigError
 from byor.io.output import write_line, write_lines
 from byor.io.paths import global_config_dir, resolve_repo_root
 from byor.rules.sync import load_canonical_rules, sync_repo
@@ -26,10 +26,13 @@ if TYPE_CHECKING:
     import argparse
     from pathlib import Path
 
+    from byor.rules.sync import SyncChanges
+
 __all__ = (
     "add_package_to_local",
     "available_packages",
     "run_package",
+    "sync_or_restore_packages",
 )
 
 
@@ -42,14 +45,15 @@ def run_package(args: argparse.Namespace) -> int:
     if args.package_action == "add":
         repo_root = resolve_repo_root(explicit=args.repo)
         load_repo_config(repo_root)
+        previous = load_local_config(repo_root).packages
         add_package_to_local(
             repo_root,
             config_dir,
             global_config=config,
             name=args.name,
         )
+        result = sync_or_restore_packages(repo_root, config_dir, previous=previous)
         write_line(f"Installed package '{args.name}' in .byor/local.yml")
-        _, result = sync_repo(repo_root, load_canonical_rules(config_dir))
         if result.changed:
             write_line(f"Synced package '{args.name}' into {repo_root}")
         return 0
@@ -77,6 +81,24 @@ def _remove_package_from_local(repo_root: Path, *, name: str) -> None:
         raise ConfigError(msg)
     local.packages.remove(name)
     save_local_config(repo_root, local)
+
+
+def sync_or_restore_packages(repo_root: Path, config_dir: Path, *, previous: list[str]) -> SyncChanges:
+    """Sync after recording packages, and put back `previous` if that sync fails.
+
+    The sync is where two packages claiming one rule ID fail, after the package is
+    already in `.byor/local.yml`. Leaving it there would fail every later sync and
+    self-heal in the repo, so the record goes back to how it was before the error is
+    reported. The mirrors need no undo: the plan fails before anything is copied.
+    """
+    try:
+        _, changes = sync_repo(repo_root, load_canonical_rules(config_dir))
+    except ByorError:
+        local = load_local_config(repo_root)
+        local.packages = previous
+        save_local_config(repo_root, local)
+        raise
+    return changes
 
 
 def add_package_to_local(

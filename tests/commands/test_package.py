@@ -120,3 +120,15 @@ def test_add_unknown_package_errors_and_lists_available(home: Path, capsys: pyte
     err = capsys.readouterr().err
     assert "unknown package 'ghost'" in err
     assert "python-strict" in err
+
+
+def test_add_of_a_package_whose_rule_id_collides_leaves_local_config_as_it_was(home: Path) -> None:
+    write_package_rule(home, "a", relpath="no-cast.yml", rule_id="no-cast")
+    write_package_rule(home, "b", relpath="no-cast.yml", rule_id="no-cast")
+    repo = make_repo(home)
+    assert main(["package", "add", "a", "--repo", str(repo)]) == 0
+
+    assert main(["package", "add", "b", "--repo", str(repo)]) != 0
+
+    assert load_local_config(repo).packages == ["a"]
+    assert main(["sync", "--repo", str(repo)]) == 0

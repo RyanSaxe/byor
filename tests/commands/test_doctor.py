@@ -456,7 +456,7 @@ def test_doctor_reports_a_package_id_collision_instead_of_dying(home: Path, caps
 
     captured = capsys.readouterr()
     assert "FAIL  package_rules" in captured.out
-    assert "byor exclude" in captured.out
+    assert "byor package remove" in captured.out
     # The report still renders instead of one raw escaped error.
     assert "ok    repo_config" in captured.out
     assert captured.err == ""

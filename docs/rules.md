@@ -131,7 +131,7 @@ copy, no error. Conflicts that ast-grep would see are errors:
 | Local ID matches global ID | Local wins; sync skips the copy |
 | Package ID matches global ID | Package wins; sync skips the global copy |
 | Project ID matches local ID | Error: a local variation of a project rule requires a different ID |
-| Two installed packages share an ID | Error: exclude one with `byor exclude` |
+| Two installed packages share an ID | Error: drop one with `byor package remove`; `byor package add` leaves `.byor/local.yml` as it was |
 
 ## Command rules
 

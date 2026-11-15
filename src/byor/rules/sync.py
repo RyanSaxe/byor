@@ -257,7 +257,8 @@ def compute_packages_plan(
     over a same-ID global rule, so the second returned value — the surviving
     IDs — is what the global plan skips. Two installed packages defining the
     same surviving ID is a hard error: ast-grep rejects duplicate IDs, so byor
-    names both and points at `byor exclude`.
+    names both and points at `byor package remove`, since `byor exclude` would
+    drop the ID from both packages.
     """
     project_ids = {rule.id for rule in project}
     local_ids = {rule.id for rule in local}
@@ -285,7 +286,7 @@ def compute_packages_plan(
     require_unique_ids(
         kept,
         "installed package rules",
-        hint="Two installed packages define this ID; exclude one with `byor exclude`.",
+        hint="Two installed packages define this ID; drop one of them with `byor package remove NAME`.",
     )
     return SyncPlan(desired=desired, skipped=skipped), {rule.id for rule in kept}
 
