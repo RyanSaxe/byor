@@ -161,8 +161,9 @@ def unrecorded_agents(recorded: Sequence[str]) -> UnrecordedAgents:
     """Find agents that have byor's hooks or plugin file but are missing from `recorded`.
 
     Self-heal refreshes only recorded agents, so an integration installed by
-    hand or by an older byor stays at whatever version wrote it. The skill is
-    left out because `byor install` always records it. Each agent is checked on
+    hand or by an older byor stays at whatever version wrote it. The skill
+    counts too: `byor install` always records it, but a deleted `state.yml`
+    loses that record like any other. Each agent is checked on
     its own: an unreadable config, such as a settings file that is not valid
     UTF-8 or JSON, becomes a problem line for that agent and never stops the
     scan or the command that runs it.
@@ -170,7 +171,7 @@ def unrecorded_agents(recorded: Sequence[str]) -> UnrecordedAgents:
     found: list[str] = []
     problems: list[str] = []
     for agent in AGENT_CHOICES:
-        if agent in recorded or agent == "skill":
+        if agent in recorded:
             continue
         try:
             if _has_byor_integration(agent):
@@ -183,6 +184,12 @@ def unrecorded_agents(recorded: Sequence[str]) -> UnrecordedAgents:
 
 
 def _has_byor_integration(agent: str) -> bool:
+    if agent == "skill":
+        return any(
+            marked_text_status(base / relpath, content, marker=MANAGED_MARKER) in ("unchanged", "drifted")
+            for base in global_skill_dirs()
+            for relpath, content in skill_files()
+        )
     if (plugin := PLUGIN_AGENTS.get(agent)) is not None:
         status = marked_text_status(_plugin_path(plugin), plugin.content, marker=plugin.marker)
         return status in ("unchanged", "drifted")

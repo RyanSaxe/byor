@@ -78,8 +78,8 @@ def _record_unrecorded_agents(state_dir: Path) -> list[str]:
     state.agents.extend(agent for agent in scan.found if agent not in state.agents)
     try:
         save_machine_state(state_dir, state)
-    except OSError as error:
-        return [*messages, f"byor: skipping agent recording: cannot write byor's state: {error}"]
+    except ConfigError as error:
+        return [*messages, f"byor: skipping agent recording: {error}"]
     return [*messages, f"byor: recorded {', '.join(scan.found)}, whose byor integration was already installed"]
 
 

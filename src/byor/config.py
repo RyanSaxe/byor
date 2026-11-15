@@ -486,7 +486,7 @@ def save_machine_state(state_dir: Path, state: MachineState) -> None:
     data["version"] = CONFIG_VERSION
     data["agents"] = list(state.agents)
     data["disabled_repos"] = [str(entry) for entry in state.disabled_repos]
-    write_yaml_atomic(path, data)
+    _write_state_file(path, data)
 
 
 def migrate_machine_state(config_dir: Path, state_dir: Path) -> None:
@@ -563,7 +563,17 @@ def save_repo_registry(path: Path, repos: list[Path]) -> None:
     data = _load_or_new(path)
     data["version"] = CONFIG_VERSION
     data["repos"] = [str(repo) for repo in repos]
-    write_yaml_atomic(path, data)
+    _write_state_file(path, data)
+
+
+# The state directory is the one place byor writes on every computer, so an
+# unwritable one must read as a config error naming the path, not a traceback.
+def _write_state_file(path: Path, data: CommentedMap) -> None:
+    try:
+        write_yaml_atomic(path, data)
+    except OSError as error:
+        msg = f"cannot write byor's state to {path}: {error}"
+        raise ConfigError(msg) from error
 
 
 def register_repo(repo_root: Path, registry_path: Path) -> bool:

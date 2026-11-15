@@ -22,6 +22,7 @@ from byor.config import (
     MachineState,
     load_machine_state,
     load_repo_registry,
+    machine_state_path,
     save_global_config,
     save_machine_state,
 )
@@ -236,3 +237,30 @@ def test_a_hook_fails_open_when_the_state_move_fails(
 
     assert "byor: skipping the state move" in capsys.readouterr().err
     assert main(["doctor", "--quick"]) != 0
+
+
+def test_a_deleted_state_file_gets_the_skill_recorded_again(home: Path) -> None:
+    repo = make_repo(home)
+    assert main(["install", "--agents", "skill", "--non-interactive"]) == 0
+    machine_state_path(global_state_dir()).unlink()
+
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    assert "skill" in recorded_agents()
+
+
+@pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user")
+def test_disable_reports_an_unwritable_state_folder_as_an_error(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    save_machine_state(global_state_dir(), MachineState())
+    target = home / "some-repo"
+    target.mkdir()
+    global_state_dir().chmod(0o500)
+    capsys.readouterr()
+    try:
+        assert main(["disable", str(target)]) != 0
+    finally:
+        global_state_dir().chmod(0o700)
+
+    err = capsys.readouterr().err
+    assert "cannot write byor's state to" in err
+    assert "Traceback" not in err
