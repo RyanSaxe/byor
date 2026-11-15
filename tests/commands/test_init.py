@@ -212,6 +212,21 @@ def test_init_no_package_skips_global_package_default(repo: Path) -> None:
     assert load_local_config(repo).packages == []
 
 
+def test_init_names_a_missing_default_package_and_creates_nothing(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_package_rule(repo.parent, "python-strict", relpath="no-cast.yml", rule_id="pkg-no-cast")
+    seed_init_defaults(repo, InitDefaults(packages=["python-strict", "gone"]))
+
+    assert main(["init", "--repo", str(repo), "--non-interactive"]) != 0
+
+    err = capsys.readouterr().err
+    assert "unknown package 'gone'" in err
+    assert "init.packages" in err
+    assert not (repo / ".byor").exists()
+    assert not (repo / "sgconfig.yml").exists()
+
+
 def test_init_is_idempotent(repo: Path) -> None:
     main(["init", "--repo", str(repo), "--non-interactive"])
     snapshot = {path: path.read_text() for path in repo.rglob("*") if path.is_file()}
