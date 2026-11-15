@@ -265,7 +265,8 @@ byor include --tag TAG
 removes the ID and syncs; if a project or local rule still owns the ID, the
 global rule stays skipped and `include` says so. These commands affect global
 and installed-package rules; project and local rules are repo files you edit
-directly.
+directly, so `exclude` refuses an ID that no global or installed-package rule
+has.
 
 Tag exclusions add entries under `global.excluded_tags` and skip any personal
 global rule with a matching `metadata.byor.tags` value. Tags are user-defined

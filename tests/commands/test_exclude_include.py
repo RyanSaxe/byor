@@ -60,7 +60,7 @@ def test_include_leaves_rule_skipped_when_project_owns_the_id(home: Path, capsys
 
 
 def test_exclude_fixes_a_package_rule_id_collision(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """The exact wedge the collision error recommends `byor exclude` for.
+    """Excluding the colliding ID is one way out of a package rule ID collision.
 
     Two installed packages defining the same rule ID break sync, so the
     self-heal preamble must degrade to a warning instead of blocking the very
@@ -86,6 +86,7 @@ def test_exclude_fixes_a_package_rule_id_collision(home: Path, capsys: pytest.Ca
 
 def test_exclude_is_idempotent(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = make_repo(home)
+    write_global_rule(home, "no-cast.yml", rule_id="no-cast")
     main(["exclude", "--repo", str(repo), "no-cast"])
     capsys.readouterr()
 
@@ -153,3 +154,14 @@ def test_exclude_requires_an_initialized_repo(home: Path, capsys: pytest.Capture
     assert "byor init" in captured.err
     assert "Traceback" not in captured.err
     assert not (repo / ".byor").exists()
+
+
+def test_exclude_refuses_an_id_no_global_or_package_rule_has(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = make_repo(home)
+    write_rule(repo / ".byor" / "rules" / "project" / "no-cast.yml", "no-cast")
+    capsys.readouterr()
+
+    assert main(["exclude", "--repo", str(repo), "no-cast"]) != 0
+
+    assert "no global or installed-package rule has ID 'no-cast'" in capsys.readouterr().err
+    assert "no-cast" not in load_local_config(repo).excluded_rule_ids
