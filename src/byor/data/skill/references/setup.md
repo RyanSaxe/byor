@@ -11,7 +11,7 @@ Run `byor doctor` as a quick sanity check. You are reading this skill, so byor
 already installed it — doctor mainly confirms which harnesses are wired and
 flags anything to repair. (If `byor` is somehow not on PATH, which is unexpected
 since the skill was installed by it, the user can repair with
-`uv tool install byor && byor install`.)
+`uv tool install byor --with-executables-from ast-grep-cli && byor install`.)
 
 You are running **inside** a specific harness (Claude Code, Codex, Copilot,
 OpenCode, or Pi). Its post-edit hook is what feeds diagnostics back to you here,

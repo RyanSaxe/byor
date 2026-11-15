@@ -176,8 +176,8 @@ A check that exits nonzero has its raw stdout and stderr appended under a
 `### <name>` header on the same channel as the diagnostics, and makes
 `agent-check` exit `2`. A check whose command cannot be found prints one
 warning line to stderr and is skipped. It never crashes the hook. `byor
-list` and `byor doctor` show the effective checks with their origin and any
-exclusions.
+list` and `byor doctor` show the effective checks with their origin. A
+check you excluded does not appear in either.
 
 Scope: project checks in committed `.byor/config.yml` apply only to that repo
 and are shared with everyone who works in it, like a committed pre-commit config.
@@ -423,7 +423,7 @@ own instruction file (CLAUDE.md, AGENTS.md, …).
 #### Setup
 
 `references/setup.md` drives onboarding. After the one-time bootstrap
-(`uv tool install byor && byor install`), say "set up byor" in your agent and it
+(`uv tool install byor --with-executables-from ast-grep-cli && byor install`), say "set up byor" in your agent and it
 verifies the install with `byor doctor` (repairing or adding harnesses by
 re-running `byor install`), optionally runs `byor init` if you want repo-scoped
 or team-shared rules, and, with your say-so, scans your existing instruction

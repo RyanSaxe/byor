@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from byor.commands.doctor import quick_doctor_problems
@@ -56,7 +57,6 @@ from byor.scan.astgrep import resolve_ast_grep, scan_files
 
 if TYPE_CHECKING:
     import argparse
-    from pathlib import Path
 
 __all__ = (
     "InitOptions",
@@ -78,6 +78,7 @@ class InitOptions:
 
 def run_init(args: argparse.Namespace) -> int:
     repo_root = resolve_repo_root(explicit=args.repo)
+    _refuse_home(repo_root)
     config_dir = global_config_dir()
     _require_enabled(repo_root, global_state_dir(), interactive=not args.non_interactive)
     defaults = load_global_config(config_dir).init
@@ -85,6 +86,18 @@ def run_init(args: argparse.Namespace) -> int:
     write_lines(initialize_repo(repo_root, config_dir, options=options))
     write_line(f"Initialized BYOR in {repo_root}")
     return 0
+
+
+# ~/sgconfig.yml is ast-grep's global config, which byor keeps for the global rules. A repo there
+# would add rule dirs that mirror those same rules, and every scan under home would then fail on
+# duplicate IDs, with the post-edit hook failing open.
+def _refuse_home(repo_root: Path) -> None:
+    if repo_root.resolve() == Path.home().resolve():
+        msg = (
+            "byor init cannot set up your home directory, because ~/sgconfig.yml there holds"
+            " byor's global rules; run byor init inside a repository instead"
+        )
+        raise ByorError(msg)
 
 
 def _require_enabled(repo_root: Path, state_dir: Path, *, interactive: bool) -> None:
@@ -118,6 +131,9 @@ def initialize_repo(repo_root: Path, config_dir: Path, *, options: InitOptions) 
     global_config = load_global_config(config_dir)
     state_dir = global_state_dir()
     _bootstrap_global_dir(config_dir, state_dir, config=global_config)
+    # The ignore block goes first, so a file byor cannot rewrite stops init
+    # before it creates any personal file that git would then offer to commit.
+    wrote_block = write_ignore_block(repo_root, private=options.private)
     repo_config = _ensure_repo_layout(repo_root, private=options.private)
     sgconfig_message = ensure_rule_dirs(
         repo_root / repo_config.paths.sgconfig,
@@ -126,7 +142,7 @@ def initialize_repo(repo_root: Path, config_dir: Path, *, options: InitOptions) 
     )
     if sgconfig_message is not None:
         messages.append(sgconfig_message)
-    if write_ignore_block(repo_root, private=options.private):
+    if wrote_block:
         target = display_path(ignore_file(repo_root, private=options.private), repo_root)
         messages.append(f"Wrote ignore block to {target}")
     sgconfig = repo_config.paths.sgconfig

@@ -354,3 +354,42 @@ def test_an_unwritable_outdated_block_is_left_alone_and_named(home: Path, capsys
     captured = capsys.readouterr()
     assert "byor: " not in captured.err
     assert "is out of date and the file is not writable" in captured.out
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        pytest.param(f"{BLOCK_BEGIN}\n.byor/local.yml\nsecrets.env\ndist/\n", id="no-end-marker"),
+        pytest.param(f"{BLOCK_BEGIN}\nsecrets.env\n{CURRENT_BLOCK}\ndist/\n", id="stray-begin-before-a-good-block"),
+    ],
+)
+def test_init_refuses_a_damaged_block_and_keeps_the_user_lines(home: Path, content: str) -> None:
+    repo = shared_repo_with_an_old_block(home)
+    (repo / ".gitignore").write_text(content)
+
+    with pytest.raises(ConfigError, match="is damaged"):
+        write_ignore_block(repo, private=False)
+
+    assert (repo / ".gitignore").read_text() == content
+
+
+def test_a_block_after_a_byte_order_mark_counts_as_the_block(home: Path) -> None:
+    repo = shared_repo_with_an_old_block(home)
+    content = f"﻿{CURRENT_BLOCK}\n"
+    (repo / ".gitignore").write_text(content, encoding="utf-8")
+
+    assert write_ignore_block(repo, private=False) is False
+    assert (repo / ".gitignore").read_text(encoding="utf-8") == content
+
+
+def test_init_writes_the_block_in_the_files_own_line_endings(home: Path) -> None:
+    repo = home / "crlf"
+    repo.mkdir()
+    git(repo, "init", "-q")
+    (repo / ".gitignore").write_bytes(b"node_modules/\r\n")
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--no-private", "--no-git-hooks"]) == 0
+
+    content = (repo / ".gitignore").read_bytes()
+    assert content.startswith(b"node_modules/\r\n")
+    assert b"\n" not in content.replace(b"\r\n", b"")

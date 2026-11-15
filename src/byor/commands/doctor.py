@@ -52,6 +52,7 @@ from byor.errors import (
     RepoNotInitializedError,
     RuleValidationError,
 )
+from byor.io.gitio import git_stdout
 from byor.io.output import write_line, write_lines
 from byor.io.paths import global_config_dir, global_state_dir, home_sgconfig_path, resolve_repo_root
 from byor.io.yamlio import load_yaml_mapping
@@ -65,7 +66,7 @@ from byor.scaffold.githooks import shim_findings
 from byor.scaffold.ignore import IgnoreBlockStatus, ignore_block_statuses, rule_visibility_ok
 from byor.scaffold.precommit import CONFIG_RELPATH
 from byor.scaffold.worktree import pending_copy, worktree_disabled_entry
-from byor.scan.astgrep import ast_grep_version, resolve_ast_grep, scan_command
+from byor.scan.astgrep import ast_grep_version, config_load_error, resolve_ast_grep, scan_command
 from byor.scan.checks import effective_checks
 
 if TYPE_CHECKING:
@@ -167,7 +168,7 @@ def _repo_checks(
         _ignore_block_check(repo_root),
     ]
     if not quick and repo_check.ok:
-        checks.extend(_rule_checks(repo_root, repo_config.paths, config_dir=config_dir))
+        checks.extend(_rule_checks(repo_root, repo_config.paths, config_dir=config_dir, global_config=global_config))
         checks.append(_command_rules_check(repo_root, repo_config.paths, global_config=global_config))
         gate_check = _gate_check(repo_root, repo_config)
         if gate_check is not None:
@@ -257,6 +258,16 @@ def _global_rules_check(config_dir: Path, global_config: GlobalConfig) -> Check:
             ok=False,
             message=f"duplicate global rule IDs: {', '.join(duplicates)}",
         )
+    home_sgconfig = home_sgconfig_path()
+    if home_sgconfig.is_file() and (cause := _ast_grep_load_error(home_sgconfig, global_config)):
+        return Check(
+            id="global_rules",
+            ok=False,
+            message=(
+                f"ast-grep cannot load the rules ~/{home_sgconfig.name} lists, so the post-edit hook"
+                f" checks nothing in repos without `byor init`: {cause}"
+            ),
+        )
     # ast-grep does not load a symlinked file inside a ruleDirs folder, so these
     # rules never fire through ~/sgconfig.yml in a repo without byor init. byor's
     # own loader follows the links, which is why they still parse here.
@@ -276,6 +287,16 @@ def _global_rules_check(config_dir: Path, global_config: GlobalConfig) -> Check:
         ok=True,
         message=f"{len(rules)} global {noun} parse",
     )
+
+
+# The hook fails open when ast-grep cannot load a rule, so only ast-grep itself can tell doctor
+# that a scan would silently check nothing. A missing ast-grep is ast_grep_found's to report.
+def _ast_grep_load_error(config: Path, global_config: GlobalConfig) -> str | None:
+    try:
+        executable = resolve_ast_grep(global_config.ast_grep_command)
+    except AstGrepNotFoundError:
+        return None
+    return config_load_error(executable, config)
 
 
 def _global_command_rules_check(config_dir: Path, global_config: GlobalConfig) -> Check:
@@ -443,7 +464,7 @@ def _rule_visibility_check(repo_root: Path, paths: RepoPaths) -> Check:
     )
 
 
-def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path) -> list[Check]:
+def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path, global_config: GlobalConfig) -> list[Check]:
     try:
         project = load_rules(repo_root / paths.project_rules)
         local = load_rules(repo_root / paths.personal_local_rules)
@@ -454,7 +475,7 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path) -> list
         Check(
             id="rules_valid",
             ok=True,
-            message="all rule files parse with required fields",
+            message="all rule files load in ast-grep",
         )
     ]
     try:
@@ -466,6 +487,19 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path) -> list
         check_id_conflicts(project, local, canonical_global=canonical.rules)
     except DuplicateRuleIdError as error:
         checks.append(Check(id="rule_ids_unique", ok=False, message=str(error)))
+        return checks
+    # After byor's own ID check, whose message names the scopes, ast-grep itself says whether the
+    # rules the repo's sgconfig lists load at all, including package copies and fields it rejects.
+    sgconfig = repo_root / paths.sgconfig
+    if sgconfig.is_file() and (cause := _ast_grep_load_error(sgconfig, global_config)):
+        checks[0] = Check(
+            id="rules_valid",
+            ok=False,
+            message=(
+                f"ast-grep cannot load the rules {paths.sgconfig} lists, so the post-edit hook"
+                f" checks nothing in this repo: {cause}"
+            ),
+        )
         return checks
     checks.append(
         Check(
@@ -489,6 +523,17 @@ def _rule_checks(repo_root: Path, paths: RepoPaths, *, config_dir: Path) -> list
     return checks
 
 
+# The personal state an ignore block hides. Tracked .gitkeep and .ignore files in these
+# directories are meant to be committed, so only the rule copies and local.yml count.
+PERSONAL_PATHS = (".byor/local.yml", ".byor/rules/personal", ".byor/commands/personal")
+SHOWN_TRACKED_FILES = 3
+
+
+def _tracked_personal_files(repo_root: Path) -> list[str]:
+    output = git_stdout(repo_root, "ls-files", "-z", "--", *PERSONAL_PATHS) or ""
+    return [name for name in output.split("\0") if name.endswith((".yml", ".yaml"))]
+
+
 def _ignore_block_check(repo_root: Path) -> Check:
     statuses = ignore_block_statuses(repo_root)
 
@@ -501,6 +546,9 @@ def _ignore_block_check(repo_root: Path) -> Check:
     outdated = having("outdated")
     stuck = [status for status in outdated if not status.writable]
     covered = bool(having("current"))
+    tracked = _tracked_personal_files(repo_root) if covered else []
+    more = len(tracked) - SHOWN_TRACKED_FILES
+    shown = ", ".join(tracked[:SHOWN_TRACKED_FILES]) + (f" and {more} more" if more > 0 else "")
     reasons = "; ".join(f"{listed([status])}: {status.reason}" for status in having("unreadable"))
     # Checked in order, and the first case that applies decides. An outdated block counts even
     # beside a current one, so doctor agrees with `byor sync --check`. A `None` message means ok.
@@ -514,6 +562,11 @@ def _ignore_block_check(repo_root: Path) -> Check:
             bool(outdated),
             f"the byor ignore block in {listed(outdated)} is out of date"
             f"{'' if covered else ', so some personal byor files are committable'}; run `byor sync` to update it",
+        ),
+        (
+            bool(tracked),
+            f"git already tracks personal byor files, which no ignore block can hide: {shown};"
+            " untrack them with `git rm --cached` and commit",
         ),
         (covered, None),
         (

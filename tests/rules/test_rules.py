@@ -197,3 +197,11 @@ def test_scope_rules_dirs_map_to_repo_paths_and_canonical_global_root() -> None:
         == repo_root / ".byor/rules/personal/local"
     )
     assert scope_rules_dir("global", repo_root, paths=paths, global_rules_root=global_root) == global_root
+
+
+def test_load_rule_names_a_file_that_is_not_utf8(tmp_path: Path) -> None:
+    path = tmp_path / "latin1.yml"
+    path.write_bytes(b"id: caf\xe9\n")
+
+    with pytest.raises(RuleValidationError, match=r"latin1\.yml: not valid UTF-8"):
+        load_rule(path)
