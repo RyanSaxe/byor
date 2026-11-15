@@ -400,7 +400,10 @@ def load_global_config(config_dir: Path) -> GlobalConfig:
     if not path.is_file():
         return GlobalConfig()
     data = load_yaml_mapping(path)
-    _check_version(data, path)
+    # The user writes config.yml, and byor no longer creates it, so a hand-written file
+    # without `version`, or an empty one, means version 1; only a different version fails.
+    if "version" in data:
+        _check_version(data, path)
     paths = _section(data, "paths", path=path)
     ast_grep = _section(data, "ast_grep", path=path)
     output = _section(data, "output", path=path)
