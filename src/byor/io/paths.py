@@ -13,12 +13,15 @@ from pathlib import Path
 from byor.errors import ConfigError
 
 __all__ = (
+    "covers_path",
     "display_path",
     "global_config_dir",
     "global_state_dir",
     "home_sgconfig_path",
+    "resolve_init_root",
     "resolve_repo_root",
     "resolve_within",
+    "same_path",
 )
 
 
@@ -68,18 +71,67 @@ def display_path(path: Path, repo_root: Path) -> str:
 def resolve_repo_root(explicit: Path | None = None, start: Path | None = None) -> Path:
     """Resolve the repository root for repo-operating commands.
 
-    `explicit` (the --repo flag) wins outright. Otherwise search upward from
-    `start` (default: cwd), preferring the nearest directory containing
-    .byor/config.yml, else the nearest containing .git, else `start` itself.
+    `explicit` (the --repo flag) wins outright. Otherwise search upward from `start` (default:
+    cwd) for the nearest directory holding either `.git` (a folder, or the file of a linked
+    worktree) or `.byor/config.yml`, else `start` itself. Nearest wins, so a git repo nested in a
+    byor repo, a submodule, or a worktree placed inside its main checkout (`.worktrees/x`) is its
+    own root and never takes the outer repo's rules or settings.
     """
     if explicit is not None:
         return explicit.resolve()
     base = (start or Path.cwd()).resolve()
-    directories = (base, *base.parents)
-    for directory in directories:
-        if (directory / ".byor" / "config.yml").is_file():
-            return directory
-    for directory in directories:
-        if (directory / ".git").exists():
+    for directory in (base, *base.parents):
+        if (directory / ".git").exists() or (directory / ".byor" / "config.yml").is_file():
             return directory
     return base
+
+
+def resolve_init_root(explicit: Path | None = None) -> Path:
+    """Resolve the directory `byor init` sets up, like `resolve_repo_root`.
+
+    An explicit --repo must already be a directory. Without this check a typo such as
+    `byor init --repo nothere/sub` created the whole tree and registered it, because the atomic
+    writer makes missing parents, and a --repo naming a file crashed with a raw NotADirectoryError.
+    Both now raise ConfigError with one line naming the path. Other commands need no check: they
+    report a missing --repo as a repo without `.byor/config.yml`.
+    """
+    if explicit is not None and not explicit.exists():
+        msg = f"{explicit} does not exist; create the repository first"
+        raise ConfigError(msg)
+    if explicit is not None and not explicit.is_dir():
+        msg = f"{explicit} is not a directory"
+        raise ConfigError(msg)
+    return resolve_repo_root(explicit=explicit)
+
+
+def same_path(first: Path, second: Path) -> bool:
+    """Whether two resolved paths name the same directory.
+
+    `Path.resolve()` keeps the case the user typed, so on a case-insensitive volume, the macOS and
+    Windows default, `~/Clients` and `~/clients` are one directory with two spellings. Paths that
+    differ only in case are compared on disk; a path that does not exist matches only its exact
+    spelling.
+    """
+    if first == second:
+        return True
+    if first.as_posix().casefold() != second.as_posix().casefold():
+        return False
+    try:
+        return first.samefile(second)
+    except OSError:
+        return False
+
+
+def covers_path(entry: Path, path: Path) -> bool:
+    """Whether the resolved directory `entry` is `path` or one of its ancestors.
+
+    This is the test a `byor disable` entry uses to cover a repo. The string comparison handles
+    the common case; when it fails, the prefix of `path` that is as deep as `entry` is compared
+    with `same_path`, so a disabled `~/Clients` also covers `~/clients/c1` on a case-insensitive
+    volume. The prefix is only stat'ed when it differs from `entry` in case alone, so hooks in
+    ordinary repos pay nothing for it. `/foo` never covers `/foobar`.
+    """
+    if path.is_relative_to(entry):
+        return True
+    depth = len(entry.parts)
+    return len(path.parts) >= depth and same_path(Path(*path.parts[:depth]), entry)

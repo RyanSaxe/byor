@@ -26,10 +26,12 @@ if TYPE_CHECKING:
 __all__ = (
     "IgnoreBlockStatus",
     "RefreshResult",
+    "has_private_block",
     "ignore_block_statuses",
     "ignore_file",
     "outdated_ignore_blocks",
     "refresh_ignore_blocks",
+    "remove_private_block",
     "rule_visibility_ok",
     "write_ignore_block",
     "write_rule_visibility_file",
@@ -340,3 +342,57 @@ def _with_block(lines: list[str], *, existing: _Block | None, patterns: tuple[st
         content += newline
     separator = newline if content else ""
     return content + separator + block
+
+
+def has_private_block(repo_root: Path) -> bool:
+    """Report whether `.git/info/exclude` holds a well-formed private byor block.
+
+    init uses this to keep a private repo private when `--private` is not given: falling back to
+    the shared default would write a `.gitignore` block that git then offers to commit. The exclude
+    file lives in the common git dir, so every worktree of a private repo sees the same answer.
+    """
+    try:
+        path = ignore_file(repo_root, private=True)
+    except ConfigError:
+        return False
+    if not path.is_file():
+        return False
+    lines = _read_lines(path)
+    if isinstance(lines, _Unreadable):
+        return False
+    block = _find_block(lines)
+    return isinstance(block, _Block) and _lists_private_directory(lines[block.begin + 1 : block.end])
+
+
+def remove_private_block(repo_root: Path) -> Literal["removed", "damaged"] | None:
+    """Delete a private byor block from `.git/info/exclude`, for a repo that is turning shared.
+
+    A private init hides all of `.byor/` and `sgconfig.yml` through the exclude file, which every
+    worktree shares. A later shared init writes its block to `.gitignore` but would otherwise leave
+    that one in place, so the team config, the promoted rules and `sgconfig.yml` stay ignored and a
+    gate gets committed without them. Only a well-formed block listing `.byor/` is removed, byte for
+    byte; a shared block that byor 0.2.0 put there stays. Returns "damaged" when the markers do not
+    pair up, so the caller can tell the user to remove the block by hand.
+    """
+    try:
+        path = ignore_file(repo_root, private=True)
+    except ConfigError:
+        return None
+    if not path.is_file():
+        return None
+    lines = _read_lines(path)
+    if isinstance(lines, _Unreadable):
+        return None
+    block = _find_block(lines)
+    if block == "damaged":
+        return "damaged"
+    if block is None or not _lists_private_directory(lines[block.begin + 1 : block.end]):
+        return None
+    # A byte-order mark on the begin marker's line belongs to the file, not to the block.
+    bom = BYTE_ORDER_MARK if block.begin == 0 and lines[0].startswith(BYTE_ORDER_MARK) else ""
+    write_text_atomic(path, bom + "".join([*lines[: block.begin], *lines[block.end + 1 :]]))
+    return "removed"
+
+
+def _lists_private_directory(block_lines: list[str]) -> bool:
+    return any(line.strip().removeprefix("/") in _PRIVATE_DIRECTORY_LINES for line in block_lines)

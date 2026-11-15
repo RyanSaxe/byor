@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import time
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -20,10 +18,9 @@ from typing import TYPE_CHECKING
 from byor.config import disabled_entry, load_repo_config, local_config_path, repo_config_path
 from byor.errors import WorktreeCopyBusyError
 from byor.io.gitio import git_stdout
+from byor.io.lock import file_lock
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
-
     from byor.config import MachineState
 
 __all__ = (
@@ -40,7 +37,6 @@ LOCK_NAME = "byor-copy.lock"
 PARTIAL_MARK = ".byor-copy-"
 WORKTREE_PREFIX = "worktree "
 LOCK_WAIT_SECONDS = 5.0
-LOCK_POLL_SECONDS = 0.05
 # A copy takes milliseconds, so a lock this old was left by a process that died mid-copy.
 STALE_LOCK_SECONDS = 30.0
 
@@ -166,7 +162,7 @@ def copy_from_main_checkout(repo_root: Path) -> PendingCopy | None:
     git_dir = _linked_git_dir(repo_root)
     if git_dir is None or pending_copy(repo_root) is None:
         return None
-    with _copy_lock(git_dir) as held:
+    with file_lock(git_dir / LOCK_NAME, wait_seconds=LOCK_WAIT_SECONDS, stale_seconds=STALE_LOCK_SECONDS) as held:
         if not held:
             msg = (
                 f"another byor process is copying byor's files into {repo_root} from its main checkout; "
@@ -218,32 +214,3 @@ def _remove_partials(repo_root: Path) -> None:
     for partial in candidates:
         if partial.is_file() or partial.is_symlink():
             partial.unlink()
-
-
-@contextmanager
-def _copy_lock(git_dir: Path) -> Iterator[bool]:
-    lock = git_dir / LOCK_NAME
-    deadline = time.monotonic() + LOCK_WAIT_SECONDS
-    while True:
-        try:
-            os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-            break
-        except FileExistsError:
-            if _lock_is_stale(lock):
-                lock.unlink(missing_ok=True)
-                continue
-            if time.monotonic() >= deadline:
-                yield False
-                return
-            time.sleep(LOCK_POLL_SECONDS)
-    try:
-        yield True
-    finally:
-        lock.unlink(missing_ok=True)
-
-
-def _lock_is_stale(lock: Path) -> bool:
-    try:
-        return time.time() - lock.stat().st_mtime > STALE_LOCK_SECONDS
-    except FileNotFoundError:
-        return True

@@ -17,7 +17,7 @@ from byor.config import (
     global_rules_dir,
     load_global_config,
     load_machine_state,
-    save_machine_state,
+    updating_machine_state,
 )
 from byor.errors import ConfigError
 from byor.io.output import write_line, write_lines
@@ -47,15 +47,16 @@ def run_install(args: argparse.Namespace) -> int:
     # One broken agent config must not stop the others or leave the ones already
     # written unrecorded, so each agent installs on its own and failures come last.
     failures: list[str] = []
+    installed: list[str] = []
     for agent in agents:
         try:
             messages.extend(install_agent(agent))
         except ConfigError as error:
             failures.append(f"byor: skipped {agent}: {error}")
             continue
-        if agent not in state.agents:
-            state.agents.append(agent)
-    save_machine_state(state_dir, state)
+        installed.append(agent)
+    with updating_machine_state(state_dir) as current:
+        current.agents.extend(agent for agent in installed if agent not in current.agents)
 
     write_lines(messages)
     if failures:

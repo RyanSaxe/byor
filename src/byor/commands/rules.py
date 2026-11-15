@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Literal
 from ruamel.yaml.comments import CommentedMap
 
 from byor.commands.doctor import quick_doctor_problems
+from byor.commands.gate import vendor_check
 from byor.commands.heal import heal_ignore_blocks
 from byor.config import (
     CommandRuleScope,
@@ -296,7 +297,10 @@ def _promote_check(context: RepoContext, name: str) -> int:
     if match is None:
         msg = f"no global or package check named '{name}' to promote"
         raise ByorError(msg)
-    repo_config.checks.append(match.definition)
+    # A gated repo commits its checks for teammates and CI, so a `~/` script is vendored in, as
+    # `init --gate` does; otherwise the gate would run a home path nobody else has.
+    definition = vendor_check(context.repo_root, match.definition) if repo_config.gate else match.definition
+    repo_config.checks.append(definition)
     save_repo_config(context.repo_root, repo_config)
     write_line(f"Promoted check '{name}' into .byor/config.yml")
     return 0

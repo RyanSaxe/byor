@@ -141,7 +141,9 @@ byor enable                    # undo (an exact entry only, never a prefix)
 ```
 
 Entries are resolved absolute paths recorded under `disabled_repos` in
-byor's state file, `~/.local/state/byor/state.yml`. In a covered repo the hook exits silently,
+byor's state file, `~/.local/state/byor/state.yml`. On a case-insensitive
+volume, the macOS and Windows default, an entry also covers paths spelled in
+another case. In a covered repo the hook exits silently,
 self-heal leaves the repo alone (machine-level healing still runs), and
 `byor sync --all` skips it with a note. Explicit commands (`byor list`,
 `byor sync`, ...) print one line saying the repo is disabled instead of

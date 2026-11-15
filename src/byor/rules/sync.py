@@ -29,6 +29,7 @@ from byor.config import (
     load_repo_config,
     load_repo_registry,
     local_config_path,
+    locked_state_file,
     repo_config_path,
     repo_registry_path,
     save_repo_registry,
@@ -523,16 +524,16 @@ def _prune_registry(config_dir: Path) -> None:
 
     Only nonexistent paths are pruned: existing repos keep their registration,
     disabled-but-existing ones included, so pruning can never forget a repo the
-    user still has.
+    user still has. The registry lock keeps a repo that a concurrent init registers.
     """
     registry_path = repo_registry_path(global_state_dir(), load_global_config(config_dir))
-    repos = load_repo_registry(registry_path)
-    removed = [repo for repo in repos if not repo.is_dir()]
-    if not removed:
-        return
+    with locked_state_file(registry_path):
+        repos = load_repo_registry(registry_path)
+        removed = [repo for repo in repos if not repo.is_dir()]
+        if removed:
+            save_repo_registry(registry_path, [repo for repo in repos if repo.is_dir()])
     for repo in removed:
         sys.stdout.write(f"Pruned {repo} from the registry\n")
-    save_repo_registry(registry_path, [repo for repo in repos if repo.is_dir()])
 
 
 def _sync_all(config_dir: Path, canonical: CanonicalRules, *, check: bool) -> int:

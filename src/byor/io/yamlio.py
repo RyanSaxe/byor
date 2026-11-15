@@ -49,6 +49,9 @@ def load_yaml_mapping(path: Path) -> CommentedMap:
     except UnicodeDecodeError as error:
         msg = f"{path}: not valid UTF-8: {error}"
         raise ConfigError(msg) from error
+    except OSError as error:
+        msg = f"{path}: cannot read: {error.strerror or error}"
+        raise ConfigError(msg) from error
     return parse_yaml_mapping(text, source=path)
 
 

@@ -10,15 +10,21 @@ from __future__ import annotations
 import os
 import shlex
 import shutil
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from ruamel.yaml.comments import CommentedMap
 
 from byor.errors import ConfigError, RepoNotInitializedError
 from byor.io.fsio import write_text_atomic
+from byor.io.lock import acquire_lock
+from byor.io.paths import covers_path, same_path
 from byor.io.yamlio import load_yaml_mapping, write_yaml_atomic
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 __all__ = (
     "CheckDef",
@@ -49,6 +55,7 @@ __all__ = (
     "load_repo_config",
     "load_repo_registry",
     "local_config_path",
+    "locked_state_file",
     "machine_state_path",
     "migrate_machine_state",
     "register_repo",
@@ -60,9 +67,15 @@ __all__ = (
     "save_machine_state",
     "save_repo_config",
     "save_repo_registry",
+    "updating_machine_state",
 )
 
 CONFIG_VERSION = 1
+
+# How long a state-writing command waits for another one, and when a lock counts as left behind.
+# Each read-modify-write under the lock takes milliseconds.
+STATE_LOCK_WAIT_SECONDS = 10.0
+STATE_LOCK_STALE_SECONDS = 30.0
 
 # A package's checks manifest; reserved at the package root, never a rule file.
 PACKAGE_CHECKS_FILE = "checks.yml"
@@ -223,7 +236,7 @@ def disabled_entry(repo_root: Path, state: MachineState) -> Path | None:
     """
     resolved = repo_root.resolve()
     for entry in state.disabled_repos:
-        if resolved.is_relative_to(entry):
+        if covers_path(entry, resolved):
             return entry
     return None
 
@@ -521,6 +534,53 @@ def save_machine_state(state_dir: Path, state: MachineState) -> None:
     _write_state_file(path, data)
 
 
+@contextmanager
+def locked_state_file(path: Path) -> Iterator[None]:
+    """Hold the lock for one read-modify-write of the state file `path`.
+
+    Commands and agent hooks run at the same time, and each writer reads the whole file, changes
+    it and writes it back, so without the lock the last writer silently drops the others' changes.
+    The lock is `path` with `.lock` appended. Raises ConfigError naming the path when the state
+    directory cannot be written, and when another byor process holds the lock for
+    `STATE_LOCK_WAIT_SECONDS`, so the user can run the command again.
+    """
+    lock = path.with_name(f"{path.name}.lock")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        held = acquire_lock(lock, wait_seconds=STATE_LOCK_WAIT_SECONDS, stale_seconds=STATE_LOCK_STALE_SECONDS)
+    except OSError as error:
+        msg = f"cannot write byor's state to {path}: {error}"
+        raise ConfigError(msg) from error
+    if not held:
+        msg = f"another byor command held {lock} for {STATE_LOCK_WAIT_SECONDS:.0f} seconds; run the command again"
+        raise ConfigError(msg)
+    try:
+        yield
+    finally:
+        lock.unlink(missing_ok=True)
+
+
+@contextmanager
+def updating_machine_state(state_dir: Path) -> Iterator[MachineState]:
+    """Load `state.yml` under its lock, let the caller change it, and save it.
+
+    Every command that changes the agents or disabled paths goes through this, so two that run
+    together both keep their change. The body sees the state as of the moment the lock was taken,
+    so it must decide what to change from that state, not from one read earlier:
+
+        with updating_machine_state(state_dir) as state:
+            if target not in state.disabled_repos:
+                state.disabled_repos.append(target)
+
+    Nothing is saved when the body raises, and the lock is released either way. Raises the same
+    ConfigError as `locked_state_file`.
+    """
+    with locked_state_file(machine_state_path(state_dir)):
+        state = load_machine_state(state_dir)
+        yield state
+        save_machine_state(state_dir, state)
+
+
 def migrate_machine_state(config_dir: Path, state_dir: Path) -> None:
     """Copy what older byor versions recorded under the config directory into `state_dir`, once.
 
@@ -531,6 +591,8 @@ def migrate_machine_state(config_dir: Path, state_dir: Path) -> None:
     later starts empty instead of bringing back agents and disabled paths the user has changed
     since, and later runs cost one stat. The directory is built under a temporary name and renamed
     into place, so a failed move leaves nothing behind and runs again on the next command.
+    Concurrent first runs are safe without the state lock: only one rename can create the
+    directory, and the others discard their copy.
 
     Raises:
         ConfigError: an old record cannot be read or parsed, or the state directory cannot be
@@ -669,12 +731,14 @@ def _write_state_file(path: Path, data: CommentedMap) -> None:
 
 
 def register_repo(repo_root: Path, registry_path: Path) -> bool:
-    repos = load_repo_registry(registry_path)
+    # A path spelled in another case on a case-insensitive volume is the same repo.
     resolved = repo_root.resolve()
-    if resolved in repos:
-        return False
-    repos.append(resolved)
-    save_repo_registry(registry_path, repos)
+    with locked_state_file(registry_path):
+        repos = load_repo_registry(registry_path)
+        if any(same_path(resolved, repo) for repo in repos):
+            return False
+        repos.append(resolved)
+        save_repo_registry(registry_path, repos)
     return True
 
 
