@@ -358,9 +358,10 @@ def _hook_repo_root(*, explicit: Path | None, payload: EditPayload) -> Path:
 
     A hook fires with the session's cwd, which need not contain the file the
     agent edited; starting from the first absolute edited path applies that
-    file's own repo rules and keeps the cwd repo's out. Relative paths (codex
-    patches) fall back to cwd resolution, since only the invoking repo can
-    anchor them. An explicit --repo still wins inside resolve_repo_root.
+    file's own repo rules and keeps the cwd repo's out. Codex patch paths
+    are anchored at the payload's cwd when it has one; paths still relative
+    fall back to cwd resolution, since only the invoking repo can anchor them.
+    An explicit --repo still wins inside resolve_repo_root.
     """
     start = next((file.parent for file in payload.edits if file.is_absolute()), None)
     return resolve_repo_root(explicit=explicit, start=start)

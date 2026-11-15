@@ -79,6 +79,14 @@ def test_copilot_without_a_recognizable_path_scans_nothing() -> None:
     assert parse_payload("copilot", raw) == EditPayload()
 
 
+def test_copilot_read_only_tools_scan_nothing() -> None:
+    view = {"toolName": "view", "toolArgs": json.dumps({"path": "/r/n.py"})}
+    editor_view = {"toolName": "str_replace_editor", "toolArgs": json.dumps({"command": "view", "path": "/r/n.py"})}
+
+    assert parse_payload("copilot", json.dumps(view)) == EditPayload()
+    assert parse_payload("copilot", json.dumps(editor_view)) == EditPayload()
+
+
 def test_codex_parses_the_apply_patch_envelope() -> None:
     patch = "*** Begin Patch\n*** Update File: src/model.py\n@@\n-old = 1\n+new = 1\n+also = 2\n*** End Patch"
     raw = json.dumps({"tool_name": "apply_patch", "tool_input": {"command": patch}})
@@ -86,6 +94,13 @@ def test_codex_parses_the_apply_patch_envelope() -> None:
     payload = parse_payload("codex", raw)
 
     assert payload.edits == {Path("src/model.py"): ["new = 1\nalso = 2"]}
+
+
+def test_codex_patch_paths_are_relative_to_the_session_cwd() -> None:
+    patch = "*** Begin Patch\n*** Add File: mod.py\n+print(1)\n*** End Patch"
+    raw = json.dumps({"cwd": "/repo/src", "tool_name": "apply_patch", "tool_input": {"command": patch}})
+
+    assert parse_payload("codex", raw) == EditPayload(edits={Path("/repo/src/mod.py"): ["print(1)"]})
 
 
 def test_apply_patch_handles_multiple_files_and_pure_deletions() -> None:
