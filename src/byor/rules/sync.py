@@ -23,6 +23,7 @@ from byor.config import (
     global_rules_dir,
     load_global_config,
     load_local_config,
+    load_machine_state,
     load_repo_config,
     load_repo_registry,
     repo_config_path,
@@ -31,7 +32,7 @@ from byor.config import (
 )
 from byor.errors import ByorError
 from byor.io.fsio import prune_empty_dirs, write_text_atomic
-from byor.io.paths import global_config_dir, resolve_repo_root, resolve_within
+from byor.io.paths import global_config_dir, global_state_dir, resolve_repo_root, resolve_within
 from byor.rules.rules import (
     Rule,
     check_id_conflicts,
@@ -433,10 +434,12 @@ def summarize_changes(result: MirrorResult) -> str:
 
 def iter_registered_repos(config_dir: Path) -> Iterator[Path]:
     config = load_global_config(config_dir)
-    for repo_root in load_repo_registry(repo_registry_path(config_dir, config)):
+    state_dir = global_state_dir()
+    state = load_machine_state(state_dir)
+    for repo_root in load_repo_registry(repo_registry_path(state_dir, config)):
         if not repo_root.is_dir():
             sys.stderr.write(f"byor: skipping {repo_root}: path no longer exists\n")
-        elif disabled_entry(repo_root, config) is not None:
+        elif disabled_entry(repo_root, state) is not None:
             sys.stderr.write(f"byor: skipping {repo_root}: disabled for byor (run `byor enable`)\n")
         elif not repo_config_path(repo_root).is_file():
             sys.stderr.write(f"byor: skipping {repo_root}: no .byor/config.yml\n")
@@ -471,7 +474,7 @@ def _prune_registry(config_dir: Path) -> None:
     disabled-but-existing ones included, so pruning can never forget a repo the
     user still has.
     """
-    registry_path = repo_registry_path(config_dir, load_global_config(config_dir))
+    registry_path = repo_registry_path(global_state_dir(), load_global_config(config_dir))
     repos = load_repo_registry(registry_path)
     removed = [repo for repo in repos if not repo.is_dir()]
     if not removed:

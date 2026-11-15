@@ -1,7 +1,7 @@
 """Load and write BYOR configuration files.
 
-Configuration spans repository, local, global, registry, package, check, profile, and init-default
-data. This module centralizes YAML parsing and validation so command modules operate on typed
+Configuration spans repository, local, global, registry, machine-state, package, check, profile, and
+init-default data. This module centralizes YAML parsing and validation so command modules operate on typed
 dataclasses instead of raw mappings.
 """
 
@@ -15,6 +15,7 @@ from typing import Literal
 from ruamel.yaml.comments import CommentedMap
 
 from byor.errors import ConfigError, RepoNotInitializedError
+from byor.io.fsio import write_text_atomic
 from byor.io.yamlio import load_yaml_mapping, write_yaml_atomic
 
 __all__ = (
@@ -24,6 +25,7 @@ __all__ = (
     "GlobalConfig",
     "InitDefaults",
     "LocalConfig",
+    "MachineState",
     "ProfileConfig",
     "RepoConfig",
     "RepoPaths",
@@ -34,19 +36,24 @@ __all__ = (
     "global_config_path",
     "global_packages_dir",
     "global_rules_dir",
+    "legacy_machine_state",
     "load_global_config",
     "load_local_config",
+    "load_machine_state",
     "load_package_checks",
     "load_package_command_checks",
     "load_repo_config",
     "load_repo_registry",
     "local_config_path",
+    "machine_state_path",
+    "migrate_machine_state",
     "register_repo",
     "repo_config_path",
     "repo_registry_path",
     "rule_dir_relpaths",
     "save_global_config",
     "save_local_config",
+    "save_machine_state",
     "save_repo_config",
     "save_repo_registry",
 )
@@ -58,6 +65,9 @@ PACKAGE_CHECKS_FILE = "checks.yml"
 
 # A package's command rules; reserved at the package root, never file rules.
 PACKAGE_COMMANDS_DIR = "commands"
+
+# byor's record of one computer, under the state directory: never in config.yml, which the user owns.
+MACHINE_STATE_FILE = "state.yml"
 
 # The value types a managed config section may hold, written back in place.
 SectionValue = str | None | bool | int | list[str]
@@ -171,17 +181,29 @@ class GlobalConfig:
     """Trim text diagnostics to one line plus the fix; `--concise` forces it on."""
     output_max_diagnostics: int | None = None
     """Cap rendered diagnostics, noting how many more were found; None is unlimited."""
-    agents: list[str] = field(default_factory=list)
-    """The AI agents registered globally by `byor install` / `byor hook install`."""
     checks: list[CheckDef] = field(default_factory=list)
     command_checks: list[CommandCheckDef] = field(default_factory=list)
     init: InitDefaults = field(default_factory=InitDefaults)
     profiles: dict[str, ProfileConfig] = field(default_factory=dict)
+
+
+@dataclass
+class MachineState:
+    """What byor records about one computer, kept in `state.yml` in the state directory.
+
+    `byor install` and `byor hook install` add to `agents`, and `byor disable` and `byor enable`
+    change `disabled_repos`. byor writes these itself, so they live beside `repos.yml` in the
+    state directory and never in config.yml, which holds only the user's settings. Self-heal
+    refreshes the integrations of every agent listed here.
+    """
+
+    agents: list[str] = field(default_factory=list)
+    """The AI agents registered globally by `byor install` / `byor hook install`."""
     disabled_repos: list[Path] = field(default_factory=list)
     """Absolute paths `byor disable` turned off: repo roots or directory prefixes."""
 
 
-def disabled_entry(repo_root: Path, config: GlobalConfig) -> Path | None:
+def disabled_entry(repo_root: Path, state: MachineState) -> Path | None:
     """Return the `disabled_repos` entry covering `repo_root`, if any.
 
     An entry covers a path when it names it exactly or is an ancestor
@@ -189,7 +211,7 @@ def disabled_entry(repo_root: Path, config: GlobalConfig) -> Path | None:
     covering entry wins.
     """
     resolved = repo_root.resolve()
-    for entry in config.disabled_repos:
+    for entry in state.disabled_repos:
         if resolved.is_relative_to(entry):
             return entry
     return None
@@ -260,8 +282,10 @@ def load_package_command_checks(config_dir: Path, config: GlobalConfig, *, name:
     return _command_check_defs(load_yaml_mapping(path), path)
 
 
-def repo_registry_path(config_dir: Path, config: GlobalConfig) -> Path:
-    return config_dir / config.repos_path
+def repo_registry_path(state_dir: Path, config: GlobalConfig) -> Path:
+    # `paths.repos` is a setting the user owns, but the file it names is one byor writes, so it
+    # resolves against the state directory, never the config directory.
+    return state_dir / config.repos_path
 
 
 def load_repo_config(repo_root: Path) -> RepoConfig:
@@ -380,7 +404,6 @@ def load_global_config(config_dir: Path) -> GlobalConfig:
     paths = _section(data, "paths", path=path)
     ast_grep = _section(data, "ast_grep", path=path)
     output = _section(data, "output", path=path)
-    ai = _section(data, "ai", path=path)
     init = _section(data, "init", path=path)
     defaults = GlobalConfig()
     return GlobalConfig(
@@ -391,7 +414,6 @@ def load_global_config(config_dir: Path) -> GlobalConfig:
         ast_grep_command=_string(ast_grep, "command", default=defaults.ast_grep_command, path=path),
         output_concise=_bool(output, "concise", path=path, default=defaults.output_concise),
         output_max_diagnostics=_optional_positive_int(output, "max_diagnostics", path=path),
-        agents=_string_list(ai, "agents", path=path),
         checks=_check_defs(data, path),
         command_checks=_command_check_defs(data, path),
         init=InitDefaults(
@@ -404,11 +426,16 @@ def load_global_config(config_dir: Path) -> GlobalConfig:
             packages=_string_list(init, "packages", path=path),
         ),
         profiles=_profile_configs(data, path),
-        disabled_repos=[Path(entry) for entry in _string_list(data, "disabled_repos", path=path)],
     )
 
 
 def save_global_config(config_dir: Path, config: GlobalConfig) -> None:
+    """Write the user's settings to config.yml.
+
+    No byor command calls this: config.yml belongs to the user, and byor keeps what it records in
+    the state directory instead (see `save_machine_state`). It exists so tests and other tools can
+    write the file byor reads, in the format `load_global_config` expects.
+    """
     path = global_config_path(config_dir)
     data = _load_or_new(path)
     data["version"] = CONFIG_VERSION
@@ -427,18 +454,97 @@ def save_global_config(config_dir: Path, config: GlobalConfig) -> None:
     if config.output_max_diagnostics is not None:
         output_values["max_diagnostics"] = config.output_max_diagnostics
     _update_section(data, "output", values=output_values)
-    _update_section(data, "ai", values={"agents": list(config.agents)})
     _write_checks(data, config.checks)
     _write_command_checks(data, config.command_checks)
     _write_init_defaults(data, config.init)
     _write_profiles(data, config.profiles)
-    # `byor enable` empties the list, so the key is dropped rather than left
-    # behind as `disabled_repos: []`.
-    if config.disabled_repos:
-        data["disabled_repos"] = [str(entry) for entry in config.disabled_repos]
-    else:
-        data.pop("disabled_repos", None)
     write_yaml_atomic(path, data)
+
+
+def machine_state_path(state_dir: Path) -> Path:
+    return state_dir / MACHINE_STATE_FILE
+
+
+def load_machine_state(state_dir: Path) -> MachineState:
+    path = machine_state_path(state_dir)
+    if not path.is_file():
+        return MachineState()
+    data = load_yaml_mapping(path)
+    _check_version(data, path)
+    return MachineState(
+        agents=_string_list(data, "agents", path=path),
+        disabled_repos=[Path(entry) for entry in _string_list(data, "disabled_repos", path=path)],
+    )
+
+
+def save_machine_state(state_dir: Path, state: MachineState) -> None:
+    path = machine_state_path(state_dir)
+    data = _load_or_new(path)
+    data["version"] = CONFIG_VERSION
+    data["agents"] = list(state.agents)
+    data["disabled_repos"] = [str(entry) for entry in state.disabled_repos]
+    write_yaml_atomic(path, data)
+
+
+def migrate_machine_state(config_dir: Path, state_dir: Path) -> None:
+    """Copy what older byor versions recorded under the config directory into `state_dir`, once.
+
+    Older versions kept `ai.agents` and `disabled_repos` in config.yml and wrote `repos.yml` beside
+    it. The first run of this version copies all three into the state directory and leaves the old
+    file and keys as they are, because config.yml belongs to the user; `byor doctor` then asks the
+    user to delete them. An existing `state.yml` marks the move done, so later runs cost one stat.
+
+    Raises:
+        ConfigError: config.yml is malformed, or the state directory cannot be written.
+
+    """
+    if machine_state_path(state_dir).is_file():
+        return
+    config = load_global_config(config_dir)
+    legacy_registry = config_dir / config.repos_path
+    registry = repo_registry_path(state_dir, config)
+    try:
+        if legacy_registry.is_file() and not registry.exists():
+            write_text_atomic(registry, legacy_registry.read_text(encoding="utf-8"))
+        save_machine_state(state_dir, _legacy_machine_state(config_dir))
+    except OSError as error:
+        msg = f"cannot write byor's state to {state_dir}: {error}"
+        raise ConfigError(msg) from error
+
+
+def legacy_machine_state(config_dir: Path, state_dir: Path) -> list[str]:
+    """Name the entries older byor versions wrote under the config directory that remain there.
+
+    Returns labels such as "`ai.agents` in config.yml" and "repos.yml" for doctor to report. byor
+    reads none of them after `migrate_machine_state` copied them, so an edit to one silently does
+    nothing, which is why doctor asks the user to delete them. Raises ConfigError for a malformed
+    config.yml, as `load_global_config` does.
+    """
+    leftovers: list[str] = []
+    path = global_config_path(config_dir)
+    if path.is_file():
+        data = load_yaml_mapping(path)
+        if "agents" in _section(data, "ai", path=path):
+            leftovers.append("`ai.agents` in config.yml")
+        if "disabled_repos" in data:
+            leftovers.append("`disabled_repos` in config.yml")
+    config = load_global_config(config_dir)
+    legacy_registry = config_dir / config.repos_path
+    # An absolute `paths.repos` names the same file from both directories, and that file is live.
+    if legacy_registry.is_file() and legacy_registry != repo_registry_path(state_dir, config):
+        leftovers.append("repos.yml")
+    return leftovers
+
+
+def _legacy_machine_state(config_dir: Path) -> MachineState:
+    path = global_config_path(config_dir)
+    if not path.is_file():
+        return MachineState()
+    data = load_yaml_mapping(path)
+    return MachineState(
+        agents=_string_list(_section(data, "ai", path=path), "agents", path=path),
+        disabled_repos=[Path(entry) for entry in _string_list(data, "disabled_repos", path=path)],
+    )
 
 
 def load_repo_registry(path: Path) -> list[Path]:

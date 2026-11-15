@@ -1,16 +1,16 @@
 """Exercise BYOR path helpers.
 
-Two lookups everything else builds on: the global config dir prefers XDG_CONFIG_HOME and falls back
-to ~/.config. Repo-root resolution searches with a fixed precedence — an explicit repo argument
-wins, a .byor config beats a nearer .git dir, then the nearest git dir, then the start directory
-itself.
+The lookups everything else builds on: the global config dir prefers XDG_CONFIG_HOME and falls back
+to ~/.config, and byor's state dir prefers XDG_STATE_HOME and falls back to ~/.local/state.
+Repo-root resolution searches with a fixed precedence — an explicit repo argument wins, a .byor
+config beats a nearer .git dir, then the nearest git dir, then the start directory itself.
 """
 
 from pathlib import Path
 
 import pytest
 
-from byor.io.paths import global_config_dir, resolve_repo_root
+from byor.io.paths import global_config_dir, global_state_dir, resolve_repo_root
 
 
 # monkeypatch isolates process state (env, cwd, stdio): an external boundary
@@ -30,6 +30,23 @@ def test_global_config_dir_falls_back_to_home_dot_config(monkeypatch: pytest.Mon
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
     assert global_config_dir() == tmp_path / ".config" / "byor"
+
+
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
+def test_global_state_dir_prefers_xdg_state_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+    assert global_state_dir() == tmp_path / "state" / "byor"
+
+
+# monkeypatch isolates process state (env, cwd, stdio): an external boundary
+# ast-grep-ignore: python.question-mocks
+def test_global_state_dir_falls_back_to_home_local_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("XDG_STATE_HOME", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    assert global_state_dir() == tmp_path / ".local" / "state" / "byor"
 
 
 def test_explicit_repo_wins_over_search(tmp_path: Path) -> None:

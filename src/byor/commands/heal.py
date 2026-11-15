@@ -11,7 +11,7 @@ import os
 from typing import TYPE_CHECKING
 
 from byor.agents.install import install_agent
-from byor.config import global_rules_dir, load_global_config, repo_config_path
+from byor.config import global_rules_dir, load_global_config, load_machine_state, repo_config_path
 from byor.errors import ByorError, ConfigError
 from byor.rules.sync import load_canonical_rules, summarize_changes, sync_repo
 from byor.scaffold.ignore import refresh_ignore_blocks
@@ -29,7 +29,7 @@ __all__ = (
 )
 
 
-def heal_global(config_dir: Path) -> list[str]:
+def heal_global(config_dir: Path, state_dir: Path) -> list[str]:
     """Keep machine-level state current with the installed byor, quietly.
 
     Runs on every command (even outside a repo): refreshes the global skill
@@ -48,7 +48,7 @@ def heal_global(config_dir: Path) -> list[str]:
             ensure_home_sgconfig(rules_dir)
         except ConfigError as error:
             warnings.append(f"byor: skipping ~/sgconfig.yml self-heal: {error} (run 'byor doctor')")
-    for agent in config.agents:
+    for agent in load_machine_state(state_dir).agents:
         try:
             install_agent(agent)
         except ConfigError as error:

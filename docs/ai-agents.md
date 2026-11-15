@@ -333,8 +333,9 @@ byor hook uninstall --agent AGENT
 ```
 
 `AGENT` is one of `claude-code`, `codex`, `copilot`, `opencode`,
-`pi`, or `skill`. byor records the agents you install under `ai.agents` in
-`~/.config/byor/config.yml`, which `doctor` and `hook uninstall` read.
+`pi`, or `skill`. byor records the agents you install under `agents` in its
+state file, `~/.local/state/byor/state.yml`, which self-heal, `doctor` and
+`hook uninstall` read.
 
 Generated files carry the marker
 `<!-- Managed by BYOR. Manual edits may be overwritten. -->` (a `//` comment

@@ -12,14 +12,15 @@ from typing import TYPE_CHECKING
 from byor.agents.install import AGENT_CHOICES, install_agent
 from byor.commands.prompts import ask, numbers_to_choices, print_options
 from byor.config import (
-    GlobalConfig,
+    MachineState,
     global_rules_dir,
     load_global_config,
-    save_global_config,
+    load_machine_state,
+    save_machine_state,
 )
 from byor.errors import ConfigError
 from byor.io.output import write_line, write_lines
-from byor.io.paths import global_config_dir
+from byor.io.paths import global_config_dir, global_state_dir
 from byor.scaffold.sgconfig import ensure_home_sgconfig
 
 if TYPE_CHECKING:
@@ -31,7 +32,9 @@ __all__ = ("run_install",)
 def run_install(args: argparse.Namespace) -> int:
     config_dir = global_config_dir()
     config = load_global_config(config_dir)
-    agents = _resolve_agents(args, config)
+    state_dir = global_state_dir()
+    state = load_machine_state(state_dir)
+    agents = _resolve_agents(args, state)
     # The harness-neutral rule-capture skill always installs.
     if "skill" not in agents:
         agents.append("skill")
@@ -42,9 +45,9 @@ def run_install(args: argparse.Namespace) -> int:
         messages.append(f"Wrote ~/{sgconfig_path.name}")
     for agent in agents:
         messages.extend(install_agent(agent))
-        if agent not in config.agents:
-            config.agents.append(agent)
-    save_global_config(config_dir, config)
+        if agent not in state.agents:
+            state.agents.append(agent)
+    save_machine_state(state_dir, state)
 
     write_lines(messages)
     write_line("byor is installed. Run `byor init` in a repo to add project rules.")
@@ -52,12 +55,12 @@ def run_install(args: argparse.Namespace) -> int:
     return 0
 
 
-def _resolve_agents(args: argparse.Namespace, config: GlobalConfig) -> list[str]:
+def _resolve_agents(args: argparse.Namespace, state: MachineState) -> list[str]:
     if args.agents is not None:
         return _parse_agents(args.agents)
     if not args.non_interactive:
-        return _prompt_agents(config.agents)
-    return list(config.agents)
+        return _prompt_agents(state.agents)
+    return list(state.agents)
 
 
 def _parse_agents(raw: str) -> list[str]:

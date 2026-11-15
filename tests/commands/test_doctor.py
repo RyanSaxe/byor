@@ -33,13 +33,13 @@ from byor.commands.doctor import collect_checks
 from byor.config import (
     CheckDef,
     LocalConfig,
-    load_global_config,
+    load_machine_state,
     load_repo_config,
-    save_global_config,
     save_local_config,
+    save_machine_state,
     save_repo_config,
 )
-from byor.io.paths import global_config_dir
+from byor.io.paths import global_state_dir
 from byor.scaffold.githooks import SHIM_MARKER
 from byor.scan.astgrep import NOT_FOUND_MESSAGE
 
@@ -519,16 +519,16 @@ def test_doctor_flags_byor_hooks_for_an_agent_missing_from_the_global_config(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = repo_with_agents(home, "claude-code")
-    config = load_global_config(global_config_dir())
-    config.agents.remove("claude-code")
-    save_global_config(global_config_dir(), config)
+    state = load_machine_state(global_state_dir())
+    state.agents.remove("claude-code")
+    save_machine_state(global_state_dir(), state)
     capsys.readouterr()
 
     assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
 
     out = capsys.readouterr().out
     assert "FAIL  agent_files" in out
-    assert "missing from `agents` in ~/.config/byor/config.yml, so self-heal never updates them: claude-code;" in out
+    assert "missing from `agents` in byor's state.yml, so self-heal never updates them: claude-code;" in out
     assert "run `byor hook install --agent NAME` for each" in out
 
 

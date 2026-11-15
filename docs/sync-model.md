@@ -80,7 +80,7 @@ byor sync --all     # mirror every registered repo
 byor sync --check   # report; exit 3 when stale
 ```
 
-`init` registers each repo in `~/.config/byor/repos.yml` (skip with
+`init` registers each repo in `~/.local/state/byor/repos.yml` (skip with
 `--no-register`); `sync --all` syncs every registered repo, warning and
 skipping paths that no longer exist. `byor sync --all --prune` drops those
 dead entries from the registry; existing repos are never pruned.
@@ -88,6 +88,20 @@ dead entries from the registry; existing repos are never pruned.
 The mental model: running byor *anything* makes this repo correct;
 `byor doctor` tells you what is wrong without touching it;
 `byor sync --all` makes every repo correct.
+
+## Your settings and byor's records
+
+byor keeps your settings and its own records in separate directories:
+
+| Directory | Contains | Written by |
+| --------- | -------- | ---------- |
+| `~/.config/byor/` (`$XDG_CONFIG_HOME/byor`) | `config.yml`, `rules/`, `commands/`, `packages/`, `scripts/` | You. byor writes rules there only when you ask, as with `byor add`, and never writes `config.yml`, so a dotfiles repo can supply it. |
+| `~/.local/state/byor/` (`$XDG_STATE_HOME/byor`) | `state.yml` (installed agents, disabled paths) and `repos.yml` | byor: `install`, `hook`, `disable`, `enable` and `init`. |
+
+Older byor versions kept `ai.agents` and `disabled_repos` in `config.yml` and
+wrote `repos.yml` beside it. The first run of this version copies all three
+into the state directory and leaves the old copies alone; `byor doctor` then
+names them so you can delete them.
 
 ## Turning byor off for a repo
 
@@ -103,7 +117,7 @@ byor enable                    # undo (an exact entry only, never a prefix)
 ```
 
 Entries are resolved absolute paths recorded under `disabled_repos` in
-`~/.config/byor/config.yml`. In a covered repo the hook exits silently,
+byor's state file, `~/.local/state/byor/state.yml`. In a covered repo the hook exits silently,
 self-heal leaves the repo alone (machine-level healing still runs), and
 `byor sync --all` skips it with a note. Explicit commands (`byor list`,
 `byor sync`, ...) print one line saying the repo is disabled instead of
@@ -309,6 +323,6 @@ There is no deinit command yet, so offboarding a private setup is manual:
 - Delete any `Managed by BYOR` hooks from `.git/hooks/`, including a
   `pre-commit.legacy` left by `pre-commit install`: it carries the marker and
   must be deleted too.
-- Drop the repo's line from `~/.config/byor/repos.yml` (under
-  `$XDG_CONFIG_HOME/byor` when that is set), so `sync --all` and `doctor` stop
+- Drop the repo's line from `~/.local/state/byor/repos.yml` (under
+  `$XDG_STATE_HOME/byor` when that is set), so `sync --all` and `doctor` stop
   looking for it.

@@ -19,10 +19,11 @@ from byor.config import (
     disabled_entry,
     global_commands_dir,
     load_global_config,
+    load_machine_state,
     load_repo_config,
     repo_config_path,
 )
-from byor.io.paths import global_config_dir, resolve_repo_root
+from byor.io.paths import global_config_dir, global_state_dir, resolve_repo_root
 from byor.rules.rules import load_rules
 from byor.scan.agent_check import DIAGNOSTICS_EXIT_CODE, FAIL_OPEN_ERRORS
 from byor.scan.astgrep import resolve_ast_grep, scan_command
@@ -93,7 +94,7 @@ def _hook_gate(args: argparse.Namespace, *, harness: Harness) -> int:
     if payload.command is None:
         return 0
     repo_root = resolve_repo_root(explicit=args.repo, start=payload.cwd)
-    if disabled_entry(repo_root, global_config) is not None:
+    if disabled_entry(repo_root, load_machine_state(global_state_dir())) is not None:
         return 0
     worktree_line = heal_worktree(repo_root, config_dir)
     if worktree_line is not None:

@@ -32,7 +32,7 @@ from byor.config import (
     repo_registry_path,
     save_repo_config,
 )
-from byor.io.paths import global_config_dir
+from byor.io.paths import global_config_dir, global_state_dir
 from byor.rules.sync import mirror_contents, mirror_global_rules
 
 
@@ -353,8 +353,8 @@ def test_sync_all_syncs_registered_repos_and_skips_missing_paths(
 
 
 def registered_repos() -> list[Path]:
-    config_dir = global_config_dir()
-    return load_repo_registry(repo_registry_path(config_dir, load_global_config(config_dir)))
+    config = load_global_config(global_config_dir())
+    return load_repo_registry(repo_registry_path(global_state_dir(), config))
 
 
 def test_sync_all_prune_drops_only_nonexistent_registry_entries(home: Path, capsys: pytest.CaptureFixture[str]) -> None:

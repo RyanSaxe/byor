@@ -1,7 +1,7 @@
 """Exercise `byor disable` and `byor enable`.
 
-Disable entries live only in the global config — resolved repo roots or directory prefixes — and
-never write into the repo, so they work for repos that never ran `byor init`. A covered repo
+Disable entries live only in byor's machine state — resolved repo roots or directory prefixes — and
+never write into the repo or the user's config.yml, so they work for repos that never ran `byor init`. A covered repo
 silences the post-edit hook, turns explicit commands into a one-line stderr notice, is skipped by
 `sync --all`, and makes `byor init` ask before lifting an exact entry (never a prefix).
 """
@@ -15,8 +15,8 @@ import pytest
 from support import git, make_repo, mirror, write_global_rule
 
 from byor.cli import main
-from byor.config import load_global_config
-from byor.io.paths import global_config_dir
+from byor.config import load_machine_state, machine_state_path
+from byor.io.paths import global_config_dir, global_state_dir
 from byor.scaffold.sgconfig import ensure_home_sgconfig
 
 
@@ -42,7 +42,7 @@ def hook_edit(monkeypatch: pytest.MonkeyPatch, source: Path) -> int:
 
 
 def disabled_repos() -> list[Path]:
-    return load_global_config(global_config_dir()).disabled_repos
+    return load_machine_state(global_state_dir()).disabled_repos
 
 
 def test_disable_silences_the_hook_in_an_uninitd_repo_but_not_siblings(
@@ -151,17 +151,18 @@ def test_disable_dedupes_and_reports_an_existing_covering_entry(home: Path, caps
     assert disabled_repos() == [clients.resolve()]
 
 
-def test_enable_removes_an_exact_entry_and_drops_the_empty_key(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_disable_and_enable_write_only_the_machine_state(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = home / "legacy"
     repo.mkdir()
     main(["disable", str(repo)])
+    assert str(repo.resolve()) in machine_state_path(global_state_dir()).read_text()
     capsys.readouterr()
 
     assert main(["enable", str(repo)]) == 0
 
     assert f"Enabled byor in {repo.resolve()}" in capsys.readouterr().out
     assert disabled_repos() == []
-    assert "disabled_repos" not in (global_config_dir() / "config.yml").read_text()
+    assert not (global_config_dir() / "config.yml").exists()
 
 
 def test_enable_under_a_prefix_names_the_covering_entry(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
