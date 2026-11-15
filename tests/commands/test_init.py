@@ -385,3 +385,15 @@ def test_init_refuses_the_home_directory(repo: Path, capsys: pytest.CaptureFixtu
 
     assert "cannot set up your home directory" in capsys.readouterr().err
     assert not (home / ".byor").exists()
+
+
+def test_init_refuses_an_ignore_file_it_cannot_decode_and_creates_nothing(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    git(repo, "init", "-q")
+    (repo / ".gitignore").write_bytes(b"# caf\xe9\n")
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--no-private", "--no-git-hooks"]) != 0
+
+    assert "cannot read" in capsys.readouterr().err
+    assert not (repo / ".byor").exists()

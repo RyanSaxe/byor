@@ -380,3 +380,16 @@ def test_a_block_after_a_byte_order_mark_counts_as_the_block(home: Path) -> None
 
     assert write_ignore_block(repo, private=False) is False
     assert (repo / ".gitignore").read_text(encoding="utf-8") == content
+
+
+def test_init_writes_the_block_in_the_files_own_line_endings(home: Path) -> None:
+    repo = home / "crlf"
+    repo.mkdir()
+    git(repo, "init", "-q")
+    (repo / ".gitignore").write_bytes(b"node_modules/\r\n")
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--no-private", "--no-git-hooks"]) == 0
+
+    content = (repo / ".gitignore").read_bytes()
+    assert content.startswith(b"node_modules/\r\n")
+    assert b"\n" not in content.replace(b"\r\n", b"")

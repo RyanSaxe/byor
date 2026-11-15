@@ -304,7 +304,12 @@ def write_ignore_block(repo_root: Path, *, private: bool) -> bool:
         msg = f"{repo_root} has no .git directory; cannot use private mode"
         raise ConfigError(msg)
     path = ignore_file(repo_root, private=private)
-    current = path.read_text(encoding="utf-8") if path.is_file() else ""
+    try:
+        # Decoding the bytes keeps CRLF intact, which read_text's newline translation would not.
+        current = path.read_bytes().decode("utf-8") if path.is_file() else ""
+    except UnicodeDecodeError as error:
+        msg = f"cannot read {path} as UTF-8 ({error.reason}); save it as UTF-8, then run byor init again"
+        raise ConfigError(msg) from error
     bom = BYTE_ORDER_MARK if current.startswith(BYTE_ORDER_MARK) else ""
     lines = current.removeprefix(bom).splitlines(keepends=True)
     block = _find_block(lines)
@@ -314,7 +319,8 @@ def write_ignore_block(repo_root: Path, *, private: bool) -> bool:
             " end marker after it; fix the markers by hand, then run byor init again"
         )
         raise ConfigError(msg)
-    updated = bom + _with_block(lines, existing=block, patterns=_patterns(private=private))
+    newline = "\r\n" if lines and lines[0].endswith("\r\n") else "\n"
+    updated = bom + _with_block(lines, existing=block, patterns=_patterns(private=private), newline=newline)
     if updated == current:
         return False
     write_text_atomic(path, updated)
@@ -325,12 +331,12 @@ def _patterns(*, private: bool) -> tuple[str, ...]:
     return PRIVATE_IGNORED_PATTERNS if private else IGNORED_PATTERNS
 
 
-def _with_block(lines: list[str], *, existing: _Block | None, patterns: tuple[str, ...]) -> str:
-    block = "\n".join((BLOCK_BEGIN, *patterns, BLOCK_END)) + "\n"
+def _with_block(lines: list[str], *, existing: _Block | None, patterns: tuple[str, ...], newline: str) -> str:
+    block = newline.join((BLOCK_BEGIN, *patterns, BLOCK_END)) + newline
     if existing is not None:
         return "".join(lines[: existing.begin]) + block + "".join(lines[existing.end + 1 :])
     content = "".join(lines)
     if content and not content.endswith("\n"):
-        content += "\n"
-    separator = "\n" if content else ""
+        content += newline
+    separator = newline if content else ""
     return content + separator + block

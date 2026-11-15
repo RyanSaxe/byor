@@ -131,6 +131,9 @@ def initialize_repo(repo_root: Path, config_dir: Path, *, options: InitOptions) 
     global_config = load_global_config(config_dir)
     state_dir = global_state_dir()
     _bootstrap_global_dir(config_dir, state_dir, config=global_config)
+    # The ignore block goes first, so a file byor cannot rewrite stops init
+    # before it creates any personal file that git would then offer to commit.
+    wrote_block = write_ignore_block(repo_root, private=options.private)
     repo_config = _ensure_repo_layout(repo_root, private=options.private)
     sgconfig_message = ensure_rule_dirs(
         repo_root / repo_config.paths.sgconfig,
@@ -139,7 +142,7 @@ def initialize_repo(repo_root: Path, config_dir: Path, *, options: InitOptions) 
     )
     if sgconfig_message is not None:
         messages.append(sgconfig_message)
-    if write_ignore_block(repo_root, private=options.private):
+    if wrote_block:
         target = display_path(ignore_file(repo_root, private=options.private), repo_root)
         messages.append(f"Wrote ignore block to {target}")
     sgconfig = repo_config.paths.sgconfig

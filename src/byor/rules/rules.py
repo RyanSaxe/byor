@@ -82,7 +82,11 @@ def load_rule(path: Path) -> Rule:
     metadata.byor block degrades to defaults when malformed: ast-grep
     ignores metadata, and deep validation is doctor's job.
     """
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as error:
+        msg = f"{path}: not valid UTF-8: {error}"
+        raise RuleValidationError(msg) from error
     try:
         data = parse_yaml_mapping(text, source=path)
     except ConfigError as error:
