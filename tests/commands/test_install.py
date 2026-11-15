@@ -6,6 +6,7 @@ duplicates) and a clean failure for an unknown agent name.
 """
 
 import io
+import os
 import sys
 from pathlib import Path
 
@@ -76,3 +77,53 @@ def test_install_still_reads_a_piped_answer(
     assert main(["install"]) == 0
 
     assert global_agents() == ["codex", "skill"]
+
+
+POSIX_NON_ROOT = pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user"
+)
+
+
+@POSIX_NON_ROOT
+def test_install_refuses_a_read_only_settings_file_and_installs_the_rest(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    settings = home / ".claude" / "settings.json"
+    settings.parent.mkdir()
+    settings.write_text('{"theme": "dark"}\n')
+    settings.chmod(0o444)
+    capsys.readouterr()
+
+    assert main(["install", "--agents", "claude-code,codex", "--non-interactive"]) == 1
+
+    assert settings.read_text() == '{"theme": "dark"}\n'
+    assert "cannot write" in capsys.readouterr().err
+    assert "codex" in global_agents()
+
+
+@POSIX_NON_ROOT
+def test_install_still_installs_agents_when_a_read_only_sgconfig_cannot_list_the_rules(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sgconfig = home / "sgconfig.yml"
+    sgconfig.write_text("ruleDirs:\n  - my-rules\n")
+    sgconfig.chmod(0o444)
+    capsys.readouterr()
+
+    assert main(["install", "--agents", "claude-code", "--non-interactive"]) == 1
+
+    assert "byor: skipped ~/sgconfig.yml" in capsys.readouterr().err
+    assert "claude-code" in global_agents()
+
+
+def test_install_and_doctor_name_a_dangling_global_rules_link(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    rules = home / "xdg" / "byor" / "rules"
+    rules.parent.mkdir(parents=True)
+    rules.symlink_to(home / "moved-dotfiles" / "rules")
+    capsys.readouterr()
+
+    assert main(["install", "--agents", "skill", "--non-interactive"]) == 1
+    assert f"{rules} is a symlink to" in capsys.readouterr().err
+
+    assert main(["doctor", "--quick"]) == 1
+    assert "FAIL  home_sgconfig     no global rule applies:" in capsys.readouterr().out

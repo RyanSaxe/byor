@@ -21,6 +21,7 @@ from byor.commands.gate import (
     referenced_vendored_scripts,
     stale_gate_files,
     transitive_vendored_scripts,
+    user_owned_gate_gaps,
     vendored_script_problems,
 )
 from byor.commands.package import available_packages
@@ -52,6 +53,7 @@ from byor.errors import (
     RepoNotInitializedError,
     RuleValidationError,
 )
+from byor.io.fsio import dangling_link_problem
 from byor.io.gitio import git_stdout
 from byor.io.output import write_line, write_lines
 from byor.io.paths import global_config_dir, global_state_dir, home_sgconfig_path, resolve_repo_root
@@ -211,6 +213,8 @@ def _ast_grep_check(global_config: GlobalConfig) -> Check:
 
 def _home_sgconfig_check(config_dir: Path, global_config: GlobalConfig) -> Check:
     path = home_sgconfig_path()
+    if problem := dangling_link_problem(global_rules_dir(config_dir, global_config)):
+        return Check(id="home_sgconfig", ok=False, message=f"no global rule applies: {problem}")
     if not path.is_file():
         return Check(
             id="home_sgconfig",
@@ -281,12 +285,7 @@ def _global_rules_check(config_dir: Path, global_config: GlobalConfig) -> Check:
                 f"{', '.join(linked)}; link the whole rules folder or copy the files instead"
             ),
         )
-    noun = "rule" if len(rules) == 1 else "rules"
-    return Check(
-        id="global_rules",
-        ok=True,
-        message=f"{len(rules)} global {noun} parse",
-    )
+    return Check(id="global_rules", ok=True, message=_rules_parse(len(rules), kind="global"))
 
 
 # The hook fails open when ast-grep cannot load a rule, so only ast-grep itself can tell doctor
@@ -312,12 +311,7 @@ def _global_command_rules_check(config_dir: Path, global_config: GlobalConfig) -
             ok=False,
             message=f"duplicate global command rule IDs: {', '.join(duplicates)}",
         )
-    noun = "rule" if len(rules) == 1 else "rules"
-    return Check(
-        id="global_command_rules",
-        ok=True,
-        message=f"{len(rules)} global command {noun} parse",
-    )
+    return Check(id="global_command_rules", ok=True, message=_rules_parse(len(rules), kind="global command"))
 
 
 def _command_rules_check(repo_root: Path, paths: RepoPaths, *, global_config: GlobalConfig) -> Check:
@@ -365,7 +359,8 @@ def _worktree_copy_check(repo_root: Path) -> Check | None:
         pending = pending_copy(repo_root)
     except ConfigError:
         return None
-    if pending is None:
+    # Only byor's own files decide whether the worktree has its rules; copy_ignored files can follow later.
+    if pending is None or not pending.byor_relpaths:
         return None
     entry = worktree_disabled_entry(repo_root, load_machine_state(global_state_dir()))
     if entry is not None:
@@ -612,7 +607,14 @@ def _gate_check(repo_root: Path, repo_config: RepoConfig) -> Check | None:
         return Check(
             id="gate_files",
             ok=False,
-            message=f"gate files are stale: {', '.join(stale)}; run `byor init --gate`",
+            message=f"gate files are stale: {', '.join(stale)}; run `byor sync`",
+        )
+    gaps = user_owned_gate_gaps(repo_root, repo_config)
+    if gaps:
+        return Check(
+            id="gate_files",
+            ok=False,
+            message=f"{'; '.join(gaps)}; run `byor init --gate` to print the lines to add",
         )
     return Check(id="gate_files", ok=True, message="gate files match the configured checks")
 
@@ -833,3 +835,7 @@ def _unrecorded_agent_problems(recorded: list[str]) -> list[str]:
             "or run `byor hook install --agent NAME` for each"
         )
     return problems
+
+
+def _rules_parse(count: int, *, kind: str) -> str:
+    return f"1 {kind} rule parses" if count == 1 else f"{count} {kind} rules parse"

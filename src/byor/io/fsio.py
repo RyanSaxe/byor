@@ -8,6 +8,7 @@ command and scaffold code can stay declarative.
 from __future__ import annotations
 
 import contextlib
+import errno
 import os
 import stat
 import tempfile
@@ -15,6 +16,7 @@ from pathlib import Path
 from typing import Literal
 
 __all__ = (
+    "dangling_link_problem",
     "has_marker",
     "marked_text_status",
     "prune_empty_dirs",
@@ -56,6 +58,18 @@ def marked_text_status(path: Path, content: str, *, marker: str) -> MarkedTextSt
     return "drifted"
 
 
+def dangling_link_problem(path: Path) -> str | None:
+    """Describe `path` when it is a symlink whose target does not exist, else None.
+
+    A moved dotfiles checkout leaves links like `~/.config/byor/rules` pointing
+    nowhere. Every existence check then reads as "missing", so callers name the
+    link and its target instead of reporting an empty folder or a failed rename.
+    """
+    if not path.is_symlink() or path.exists():
+        return None
+    return f"{path} is a symlink to {path.readlink()}, which does not exist; point the link at a real folder"
+
+
 def has_marker(path: Path, marker: str) -> bool:
     # Bytes, not text: a user's own file need not be UTF-8, and only the marker matters.
     return marker.encode("utf-8") in path.read_bytes()
@@ -94,6 +108,10 @@ def write_text_atomic(path: Path, content: str) -> None:
     # itself would cut a dotfiles- or Nix-managed file loose from its source.
     if path.is_symlink():
         path = path.resolve()
+    # Renaming over a file needs write access only to its directory, so a file the
+    # user made read-only would otherwise be replaced without a word.
+    if path.exists() and not os.access(path, os.W_OK):
+        raise PermissionError(errno.EACCES, os.strerror(errno.EACCES), str(path))
     path.parent.mkdir(parents=True, exist_ok=True)
     handle_fd, temp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
     try:

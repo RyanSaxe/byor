@@ -13,6 +13,7 @@ from support import (
     install_package,
     make_repo,
     mirror,
+    write_command_rule,
     write_global_rule,
     write_package_rule,
     write_rule,
@@ -165,3 +166,15 @@ def test_exclude_refuses_an_id_no_global_or_package_rule_has(home: Path, capsys:
 
     assert "no global or installed-package rule has ID 'no-cast'" in capsys.readouterr().err
     assert "no-cast" not in load_local_config(repo).excluded_rule_ids
+
+
+def test_exclude_points_a_repo_command_rule_at_its_file(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = make_repo(home)
+    write_command_rule(repo / ".byor" / "commands" / "personal" / "local" / "no-pip.yml", "no-pip")
+    capsys.readouterr()
+
+    assert main(["exclude", "--repo", str(repo), "no-pip"]) != 0
+
+    err = capsys.readouterr().err
+    assert "local command rule .byor/commands/personal/local/no-pip.yml" in err
+    assert "byor edit" not in err

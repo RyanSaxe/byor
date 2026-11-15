@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 __all__ = (
     "IgnoreBlockStatus",
     "RefreshResult",
+    "RemovedPrivateBlock",
     "has_private_block",
     "ignore_block_statuses",
     "ignore_file",
@@ -183,14 +184,20 @@ def refresh_ignore_blocks(repo_root: Path) -> RefreshResult:
     endings. A damaged, edited, missing or unreadable block is left alone, and a block keeps its own
     setup, so this never turns a shared repo private or the reverse. A symlinked ignore file is
     written through to its target. A file byor cannot write is reported in `unwritable` and never
-    replaced.
+    replaced. While git runs byor, as the post-checkout shim does, a tracked `.gitignore` is left
+    alone: changing it there leaves the work tree dirty, which blocks the next checkout or rebase,
+    and `git checkout -- .gitignore` would fire the shim and dirty it again. The next byor command
+    the user runs updates it.
     """
     changed: list[Path] = []
     unwritable: list[tuple[Path, str]] = []
+    under_git = _run_by_git()
     for path in _ignore_files(repo_root):
         lines = _read_lines(path)
         block = None if isinstance(lines, _Unreadable) else _find_block(lines)
         if isinstance(lines, _Unreadable) or not isinstance(block, _Block) or not block.missing:
+            continue
+        if under_git and _tracked(repo_root, path):
             continue
         if not _writable(path):
             unwritable.append((path, "the file is not writable"))
@@ -204,6 +211,17 @@ def refresh_ignore_blocks(repo_root: Path) -> RefreshResult:
             continue
         changed.append(path)
     return RefreshResult(changed=changed, unwritable=unwritable)
+
+
+# git exports GIT_PREFIX to every process it starts after finding the repository, such as a hook,
+# an alias or `git rebase -x`, and a shell the user opened does not have it.
+def _run_by_git() -> bool:
+    return "GIT_PREFIX" in os.environ
+
+
+def _tracked(repo_root: Path, path: Path) -> bool:
+    relpath = os.path.relpath(path, repo_root)
+    return git_output(repo_root, "ls-files", "--", relpath) is not None
 
 
 def _ignore_files(repo_root: Path) -> list[Path]:
@@ -364,15 +382,23 @@ def has_private_block(repo_root: Path) -> bool:
     return isinstance(block, _Block) and _lists_private_directory(lines[block.begin + 1 : block.end])
 
 
-def remove_private_block(repo_root: Path) -> Literal["removed", "damaged"] | None:
+@dataclass(frozen=True)
+class RemovedPrivateBlock:
+    kept_lines: int
+    """Lines the user added inside the block, left in the file where the block was."""
+
+
+def remove_private_block(repo_root: Path) -> RemovedPrivateBlock | Literal["damaged"] | None:
     """Delete a private byor block from `.git/info/exclude`, for a repo that is turning shared.
 
     A private init hides all of `.byor/` and `sgconfig.yml` through the exclude file, which every
     worktree shares. A later shared init writes its block to `.gitignore` but would otherwise leave
     that one in place, so the team config, the promoted rules and `sgconfig.yml` stay ignored and a
-    gate gets committed without them. Only a well-formed block listing `.byor/` is removed, byte for
-    byte; a shared block that byor 0.2.0 put there stays. Returns "damaged" when the markers do not
-    pair up, so the caller can tell the user to remove the block by hand.
+    gate gets committed without them. Only a well-formed block listing `.byor/` is removed; a shared
+    block that byor 0.2.0 put there stays. The markers and byor's own lines go, and any other line
+    inside the block stays where it was, so a file the user hid there stays hidden. Returns
+    "damaged" when the markers do not pair up, so the caller can tell the user to remove the block
+    by hand.
     """
     try:
         path = ignore_file(repo_root, private=True)
@@ -388,10 +414,15 @@ def remove_private_block(repo_root: Path) -> Literal["removed", "damaged"] | Non
         return "damaged"
     if block is None or not _lists_private_directory(lines[block.begin + 1 : block.end]):
         return None
+    kept = [
+        line
+        for line in lines[block.begin + 1 : block.end]
+        if line.strip() and line.strip().removeprefix("/") not in _PRIVATE_LINES
+    ]
     # A byte-order mark on the begin marker's line belongs to the file, not to the block.
     bom = BYTE_ORDER_MARK if block.begin == 0 and lines[0].startswith(BYTE_ORDER_MARK) else ""
-    write_text_atomic(path, bom + "".join([*lines[: block.begin], *lines[block.end + 1 :]]))
-    return "removed"
+    write_text_atomic(path, bom + "".join([*lines[: block.begin], *kept, *lines[block.end + 1 :]]))
+    return RemovedPrivateBlock(kept_lines=len(kept))
 
 
 def _lists_private_directory(block_lines: list[str]) -> bool:

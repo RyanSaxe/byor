@@ -55,6 +55,27 @@ def test_hook_denies_a_matching_command_via_permission_decision(
     assert "Rewrite the command" in envelope["permissionDecisionReason"]
 
 
+def test_hook_applies_a_global_command_rule_that_arrived_without_byor(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = make_repo(home)
+    # As a git pull into a linked commands folder delivers it: no byor command runs.
+    write_global_command_rule(home, "no-pip.yml", rule_id="no-pip")
+    stdin(monkeypatch, {**PIP_PAYLOAD, "cwd": str(repo)})
+    capsys.readouterr()
+
+    assert main(["command-check", "--stdin-hook", "claude-code"]) == 0
+
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert captured.err == ""
+
+
 def test_hook_approves_a_clean_command_with_no_output(
     home: Path,
     # monkeypatch isolates process state (env, cwd, stdio): an external boundary

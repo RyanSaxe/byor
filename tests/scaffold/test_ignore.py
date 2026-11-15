@@ -16,8 +16,8 @@ import pytest
 from support import git, write_global_command_rule
 
 from byor.cli import main
+from byor.commands.sync import STALE_EXIT_CODE
 from byor.errors import ConfigError
-from byor.rules.sync import STALE_EXIT_CODE
 from byor.scaffold.ignore import (
     BLOCK_BEGIN,
     BLOCK_END,
@@ -184,6 +184,23 @@ def test_byor_sync_rewrites_an_ignore_block_that_predates_command_rules(
 
     assert f"Updated the byor ignore block in {repo / '.gitignore'}" in capsys.readouterr().out
     assert all(pattern in (repo / ".gitignore").read_text() for pattern in IGNORED_PATTERNS)
+
+
+# A post-checkout shim that rewrote it would leave the work tree dirty and block the next checkout.
+def test_sync_run_by_git_leaves_a_tracked_gitignore_alone(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = shared_repo_with_an_old_block(home)
+    git(repo, "add", ".gitignore")
+    before = (repo / ".gitignore").read_bytes()
+    monkeypatch.setenv("GIT_PREFIX", "")
+
+    assert main(["sync", "--repo", str(repo)]) == 0
+
+    assert (repo / ".gitignore").read_bytes() == before
 
 
 def test_self_heal_never_adds_a_block_to_an_ignore_file_without_one(home: Path) -> None:

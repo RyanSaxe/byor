@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 from byor.commands.doctor import quick_doctor_problems
 from byor.commands.gate import install_gate
-from byor.commands.package import add_package_to_local, sync_or_restore_packages
+from byor.commands.package import add_package_to_local, available_packages, sync_or_restore_packages
 from byor.commands.profile import add_profile_to_local
 from byor.commands.prompts import prompt_choice
 from byor.config import (
@@ -25,6 +25,7 @@ from byor.config import (
     command_rule_dir_relpaths,
     disabled_entry,
     global_commands_dir,
+    global_config_path,
     global_rules_dir,
     load_global_config,
     load_local_config,
@@ -41,7 +42,7 @@ from byor.config import (
     save_repo_registry,
     updating_machine_state,
 )
-from byor.errors import ByorError, RepoNotInitializedError
+from byor.errors import ByorError, ConfigError, RepoNotInitializedError
 from byor.io.gitio import git_output
 from byor.io.output import write_line, write_lines
 from byor.io.paths import display_path, global_config_dir, global_state_dir, resolve_init_root, same_path
@@ -49,6 +50,7 @@ from byor.rules.rules import discover_rule_files
 from byor.rules.sync import summarize_changes
 from byor.scaffold.githooks import install_git_shims
 from byor.scaffold.ignore import (
+    RemovedPrivateBlock,
     has_private_block,
     ignore_file,
     remove_private_block,
@@ -78,6 +80,8 @@ class InitOptions:
     replace_sgconfig: bool
     profiles: list[str]
     packages: list[str]
+    profiles_from_config: bool = False
+    packages_from_config: bool = False
 
 
 def run_init(args: argparse.Namespace) -> int:
@@ -138,6 +142,7 @@ def initialize_repo(repo_root: Path, config_dir: Path, *, options: InitOptions) 
     messages: list[str] = []
     global_config = load_global_config(config_dir)
     state_dir = global_state_dir()
+    _check_named_selections(config_dir, global_config, options=options)
     _bootstrap_global_dir(config_dir, state_dir, config=global_config)
     # The ignore block goes first, so a file byor cannot rewrite stops init
     # before it creates any personal file that git would then offer to commit.
@@ -184,6 +189,46 @@ def initialize_repo(repo_root: Path, config_dir: Path, *, options: InitOptions) 
     return messages
 
 
+def _check_named_selections(config_dir: Path, global_config: GlobalConfig, *, options: InitOptions) -> None:
+    installed_packages = available_packages(config_dir, global_config)
+    problems = [
+        _unknown_names(
+            "profile",
+            [name for name in options.profiles if name not in global_config.profiles],
+            available=sorted(global_config.profiles),
+            config_key="init.profiles" if options.profiles_from_config else None,
+            config_dir=config_dir,
+        ),
+        _unknown_names(
+            "package",
+            [name for name in options.packages if name not in installed_packages],
+            available=installed_packages,
+            config_key="init.packages" if options.packages_from_config else None,
+            config_dir=config_dir,
+        ),
+    ]
+    problems = [problem for problem in problems if problem]
+    if problems:
+        msg = "; ".join([*problems, "init changed nothing"])
+        raise ConfigError(msg)
+
+
+def _unknown_names(
+    kind: str, unknown: list[str], *, available: list[str], config_key: str | None, config_dir: Path
+) -> str | None:
+    if not unknown:
+        return None
+    noun = kind if len(unknown) == 1 else f"{kind}s"
+    listed = ", ".join(f"'{name}'" for name in unknown)
+    message = f"unknown {noun} {listed} (available: {', '.join(available) or 'none'})"
+    if config_key is None:
+        return message
+    # Init defaults often come from a config.yml shared across machines, so a
+    # name missing on this one must say where it came from and how to override it.
+    config_path = global_config_path(config_dir)
+    return f"{message}, named in {config_key} in {config_path}; pass --{kind}s or --no-{kind} to override it"
+
+
 def _apply_profiles_and_packages(
     repo_root: Path,
     config_dir: Path,
@@ -191,13 +236,10 @@ def _apply_profiles_and_packages(
     global_config: GlobalConfig,
     options: InitOptions,
 ) -> list[str]:
-    messages: list[str] = []
-    for name in options.profiles:
-        add_profile_to_local(repo_root, global_config, name=name)
-        messages.append(f"Added profile '{name}' to .byor/local.yml")
-    for name in options.packages:
-        add_package_to_local(repo_root, config_dir, global_config=global_config, name=name)
-        messages.append(f"Installed package '{name}' in .byor/local.yml")
+    messages = [add_profile_to_local(repo_root, global_config, name=name) for name in options.profiles]
+    messages += [
+        add_package_to_local(repo_root, config_dir, global_config=global_config, name=name) for name in options.packages
+    ]
     return messages
 
 
@@ -246,8 +288,14 @@ def _bootstrap_global_dir(config_dir: Path, state_dir: Path, *, config: GlobalCo
 # and sgconfig.yml ignored, so the shared setup's tracked config could never be committed.
 def _drop_private_block(repo_root: Path) -> list[str]:
     result = remove_private_block(repo_root)
-    if result == "removed":
-        return ["Removed the private byor block from .git/info/exclude, so .byor/ and sgconfig.yml can be committed"]
+    if isinstance(result, RemovedPrivateBlock):
+        removed = "Removed the private byor block from .git/info/exclude, so .byor/ and sgconfig.yml can be committed"
+        if result.kept_lines:
+            kept = (
+                "the line you added inside it stays" if result.kept_lines == 1 else "the lines you added inside it stay"
+            )
+            removed += f"; {kept} in .git/info/exclude"
+        return [removed]
     if result == "damaged":
         return [
             "warning: .git/info/exclude has a damaged byor block; remove it by hand so .byor/ and "
@@ -319,6 +367,8 @@ def _options_from_args(args: argparse.Namespace, defaults: InitDefaults) -> Init
         replace_sgconfig=args.replace_sgconfig,
         profiles=_resolve_profiles(args, defaults),
         packages=_resolve_packages(args, defaults),
+        profiles_from_config=not (args.no_profile or args.profile or args.profiles),
+        packages_from_config=not (args.no_package or args.package or args.packages),
     )
 
 

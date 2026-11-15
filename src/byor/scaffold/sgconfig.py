@@ -15,6 +15,7 @@ from pathlib import Path
 from ruamel.yaml.comments import CommentedMap
 
 from byor.errors import ConfigError
+from byor.io.fsio import dangling_link_problem
 from byor.io.paths import home_sgconfig_path
 from byor.io.yamlio import load_yaml_mapping, write_yaml_atomic
 
@@ -69,6 +70,8 @@ def ensure_home_sgconfig(rules_dir: Path, home: Path | None = None) -> Path | No
     changed, or None when nothing changed.
     """
     home = home or Path.home()
+    if problem := dangling_link_problem(rules_dir):
+        raise ConfigError(problem)
     try:
         rules_dir.mkdir(parents=True, exist_ok=True)
     except OSError:

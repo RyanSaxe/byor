@@ -30,6 +30,7 @@ from support import (
 from byor.agents.opencode import OPENCODE_PLUGIN_RELPATH
 from byor.cli import main
 from byor.commands.doctor import collect_checks
+from byor.commands.sync import STALE_EXIT_CODE
 from byor.config import (
     CheckDef,
     LocalConfig,
@@ -640,7 +641,7 @@ def test_doctor_flags_stale_gate_files(home: Path, capsys: pytest.CaptureFixture
 
     out = capsys.readouterr().out
     assert "FAIL  gate_files" in out
-    assert "run `byor init --gate`" in out
+    assert "run `byor sync`" in out
     # Doctor is read-only: the gate artifacts still lack the new check.
     assert "ruff" not in (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
     assert "ruff" not in (repo / ".pre-commit-config.yaml").read_text()
@@ -805,9 +806,15 @@ def test_doctor_flags_a_drifted_vendored_script(
     out = capsys.readouterr().out
     assert "FAIL  vendored_scripts" in out
     assert ".byor/scripts/fix.sh drifted from ~/fix.sh" in out
-    assert "run `byor init --gate`" in out
+    assert "run `byor sync`" in out
     # Doctor is read-only: the vendored copy still has the old body.
     assert "echo hi" in (repo / ".byor" / "scripts" / "fix.sh").read_text()
+
+    # The fix doctor names agrees with sync --check and actually re-vendors.
+    assert main(["sync", "--repo", str(repo), "--check"]) == STALE_EXIT_CODE
+    assert main(["sync", "--repo", str(repo)]) == 0
+    assert "echo changed" in (repo / ".byor" / "scripts" / "fix.sh").read_text()
+    assert main(["sync", "--repo", str(repo), "--check"]) == 0
 
 
 def test_doctor_flags_a_missing_packages_visibility_file(home: Path) -> None:

@@ -10,9 +10,11 @@ shim and commits nothing.
 from pathlib import Path
 
 import pytest
+from ruamel.yaml import YAML
 from support import git, install_package, write_global_check, write_global_rule, write_package_rule, write_rule
 
 from byor.cli import main
+from byor.commands.sync import STALE_EXIT_CODE
 from byor.config import CheckDef, load_local_config, load_repo_config, save_local_config, save_repo_config
 from byor.scaffold.precommit import AST_GREP_CLI_VERSION
 
@@ -52,6 +54,19 @@ def test_gate_promotes_rules_and_checks_and_writes_portable_artifacts(
     assert f"uvx --from ast-grep-cli=={AST_GREP_CLI_VERSION} ast-grep scan --error" in workflow
     assert "npm install" not in workflow
     assert "ruff-check" in workflow
+
+
+def test_gate_files_read_back_every_check_command_exactly(home: Path) -> None:
+    commands = ["grep -n 'TODO: '", "true", "echo done #1", "'quoted' start"]
+    for index, command in enumerate(commands):
+        write_global_check(f"check-{index}", command)
+    repo = gate_repo(home)
+
+    precommit = YAML(typ="safe").load((repo / ".pre-commit-config.yaml").read_text())
+    workflow = YAML(typ="safe").load((repo / ".github" / "workflows" / "byor-gate.yml").read_text())
+
+    assert [hook["entry"] for hook in precommit["repos"][0]["hooks"][1:]] == commands
+    assert [step["run"] for step in workflow["jobs"]["byor"]["steps"][3:]] == commands
 
 
 def test_gate_leaves_agent_only_checks_out_of_the_committed_files(home: Path) -> None:
@@ -116,9 +131,9 @@ def test_gate_workflow_branch_is_stable_across_checkouts(home: Path) -> None:
     assert main(["doctor", "--repo", str(repo)]) == 0
 
 
-# Doctor's drift remediation says "run `byor init --gate`", which users run
-# from whatever branch they are on; re-recording gate_branch there resurrected
-# the CI branch flap the recorded value exists to prevent.
+# Users rerun `byor init --gate` from whatever branch they are on;
+# re-recording gate_branch there resurrected the CI branch flap the recorded
+# value exists to prevent.
 def test_rerunning_init_gate_keeps_the_recorded_branch(home: Path) -> None:
     repo = gate_repo(home)
     git(repo, "commit", "--allow-empty", "-q", "-m", "init")
@@ -163,18 +178,29 @@ def test_gate_fail_on_error_drops_the_error_flag_from_both_files(home: Path) -> 
     assert main(["doctor", "--repo", str(repo)]) == 0
 
 
-def test_gate_self_heals_when_a_check_is_added_later(home: Path) -> None:
+def test_promoting_a_check_refreshes_the_gate_files(home: Path) -> None:
     write_global_rule(home, "python/no-cast.yml", rule_id="no-cast")
     repo = gate_repo(home)
     assert "later-check" not in (repo / ".pre-commit-config.yaml").read_text()
 
     write_global_check("later", "later-check")
     assert main(["promote", "--repo", str(repo), "--check", "later"]) == 0
-    # Any subsequent repo command regenerates the byor-owned artifacts.
-    assert main(["list", "--repo", str(repo)]) == 0
 
     assert "later-check" in (repo / ".pre-commit-config.yaml").read_text()
     assert "later-check" in (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
+
+
+def test_sync_refreshes_stale_gate_files_and_sync_check_reports_them(home: Path) -> None:
+    repo = gate_repo(home)
+    config = load_repo_config(repo)
+    config.fail_on = "error"
+    save_repo_config(repo, config)
+
+    assert main(["sync", "--repo", str(repo), "--check"]) == STALE_EXIT_CODE
+    assert main(["sync", "--repo", str(repo)]) == 0
+    assert "--error" not in (repo / ".pre-commit-config.yaml").read_text()
+    assert "--error" not in (repo / ".github" / "workflows" / "byor-gate.yml").read_text()
+    assert main(["sync", "--repo", str(repo), "--check"]) == 0
 
 
 # monkeypatch isolates process state (env, cwd, stdio): an external boundary
@@ -571,6 +597,26 @@ def test_gate_does_not_clobber_an_existing_precommit_config(home: Path, capsys: 
     assert "already exists" in capsys.readouterr().out
 
 
+def test_a_user_owned_precommit_config_is_explained_once_then_checked_by_doctor(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = home / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    config = repo / ".pre-commit-config.yaml"
+    config.write_text("repos: []\n")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--gate"]) == 0
+    block = capsys.readouterr().out.split("add this to its `repos:` list:\n", 1)[1].split("\n\n", 1)[0]
+
+    assert main(["list", "--repo", str(repo)]) == 0
+    assert "already exists" not in capsys.readouterr().err
+    assert main(["doctor", "--repo", str(repo)]) != 0
+    assert ".pre-commit-config.yaml does not run" in capsys.readouterr().out
+
+    config.write_text(f"repos:\n{block}\n")
+    assert main(["doctor", "--repo", str(repo)]) == 0
+
+
 # The pre-commit writer already printed adoption guidance; the CI writer used
 # to no-op silently, leaving the user with gate: true and no CI enforcement.
 def test_gate_does_not_clobber_an_existing_ci_workflow_but_prints_guidance(
@@ -609,3 +655,30 @@ def test_promoting_a_home_script_check_into_a_gated_repo_vendors_it(
 
     assert next(c.run for c in load_repo_config(repo).checks if c.name == "later") == ".byor/scripts/later.sh"
     assert (repo / ".byor" / "scripts" / "later.sh").is_file()
+    assert load_local_config(repo).vendored_scripts == [".byor/scripts/later.sh"]
+
+
+def test_promoting_a_check_never_replaces_a_script_a_repo_check_runs(
+    home: Path,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    for folder in ("a", "b"):
+        (home / folder).mkdir()
+        (home / folder / "lint.sh").write_text(f"#!/bin/sh\necho {folder}\n")
+    write_global_check("lint-a", "~/a/lint.sh")
+    repo = gate_repo(home)
+    script = repo / ".byor" / "scripts" / "lint.sh"
+    before = script.read_text()
+    write_global_check("lint-b", "~/b/lint.sh")
+    capsys.readouterr()
+
+    assert main(["promote", "--repo", str(repo), "--check", "lint-b"]) != 0
+
+    assert "rename one of the scripts" in capsys.readouterr().err
+    assert script.read_text() == before

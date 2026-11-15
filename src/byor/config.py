@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Literal
 from ruamel.yaml.comments import CommentedMap
 
 from byor.errors import ConfigError, RepoNotInitializedError
-from byor.io.fsio import write_text_atomic
+from byor.io.fsio import dangling_link_problem, write_text_atomic
 from byor.io.lock import acquire_lock
 from byor.io.paths import covers_path, same_path
 from byor.io.yamlio import load_yaml_mapping, write_yaml_atomic
@@ -85,6 +85,14 @@ PACKAGE_COMMANDS_DIR = "commands"
 
 # byor's record of one computer, under the state directory: never in config.yml, which the user owns.
 MACHINE_STATE_FILE = "state.yml"
+
+# Written last by the one-time move from config.yml. Its presence, not the state directory's,
+# means the move is done, because the directory can exist first, for example as a link into a
+# dotfiles repo, and a state.yml lost after the move must not bring the old records back.
+STATE_MOVED_MARKER = ".moved-from-config"
+STATE_MOVED_TEXT = (
+    "byor has moved any agents, disabled paths and repo registry from config.yml here, and never moves them again.\n"
+)
 
 # The value types a managed config section may hold, written back in place.
 SectionValue = str | None | bool | int | list[str]
@@ -592,12 +600,13 @@ def migrate_machine_state(config_dir: Path, state_dir: Path) -> None:
     Older versions kept `ai.agents` and `disabled_repos` in config.yml and wrote `repos.yml` beside
     it. The first run of this version copies all three into the state directory and leaves the old
     file and keys as they are, because config.yml belongs to the user; `byor doctor` then asks the
-    user to delete them. The state directory itself marks the move done, so a `state.yml` lost
-    later starts empty instead of bringing back agents and disabled paths the user has changed
-    since, and later runs cost one stat. The directory is built under a temporary name and renamed
-    into place, so a failed move leaves nothing behind and runs again on the next command.
-    Concurrent first runs are safe without the state lock: only one rename can create the
-    directory, and the others discard their copy.
+    user to delete them. The `STATE_MOVED_MARKER` file, written last, marks the move done, so a
+    `state.yml` lost later starts empty instead of bringing back agents and disabled paths the
+    user has changed since, and later runs cost one stat. A state directory that does not exist
+    yet is built under a temporary name and renamed into place, so a failed move leaves nothing
+    behind and runs again on the next command; concurrent first runs are safe, because only one
+    rename can create the directory. A directory that already exists, such as a link into a
+    dotfiles repo, is filled in place under the state lock instead.
 
     Raises:
         ConfigError: an old record cannot be read or parsed, or the state directory cannot be
@@ -618,7 +627,10 @@ def migrate_machine_state(config_dir: Path, state_dir: Path) -> None:
     # An absolute `paths.repos` names one file from both directories, so there is nothing to copy.
     if legacy_registry != repo_registry_path(state_dir, config):
         registry_text = _read_legacy_text(legacy_registry)
-    _create_state_dir(state_dir, config=config, state=legacy, registry_text=registry_text)
+    if state_dir.is_dir():
+        _fill_state_dir(state_dir, config=config, state=legacy, registry_text=registry_text)
+    else:
+        _create_state_dir(state_dir, config=config, state=legacy, registry_text=registry_text)
 
 
 def load_current_machine_state(config_dir: Path, state_dir: Path) -> MachineState:
@@ -627,20 +639,46 @@ def load_current_machine_state(config_dir: Path, state_dir: Path) -> MachineStat
     Hooks carry on when the one-time move fails, and until it succeeds an older byor's
     `disabled_repos` and `ai.agents` in config.yml are still the user's records, so a repo they
     disabled stays disabled. Commands stop when the move fails, so for them this is
-    `load_machine_state`. Raises ConfigError for a malformed record and OSError for a directory
-    byor cannot read, which hooks treat as an internal error and skip.
+    `load_machine_state`. Raises ConfigError for a malformed record or a state directory byor
+    cannot read, which hooks treat as an internal error and skip.
     """
-    if state_dir.exists():
-        return load_machine_state(state_dir)
-    return _legacy_machine_state(config_dir)
+    if _move_pending(state_dir):
+        return _legacy_machine_state(config_dir)
+    return load_machine_state(state_dir)
 
 
 def _move_pending(state_dir: Path) -> bool:
+    # A dangling link reads as "no state directory", and the move would then
+    # fail renaming onto the link with an error that never names it.
+    if problem := dangling_link_problem(state_dir):
+        msg = f"cannot use byor's state directory: {problem}"
+        raise ConfigError(msg)
     try:
-        return not state_dir.exists()
+        if not state_dir.exists():
+            return True
+        if (state_dir / STATE_MOVED_MARKER).exists():
+            return False
+        # A directory written before byor kept the marker already holds byor's own state.yml.
+        return not machine_state_path(state_dir).exists()
     except OSError as error:
         msg = f"cannot read byor's state directory {state_dir}: {error}"
         raise ConfigError(msg) from error
+
+
+def _fill_state_dir(state_dir: Path, *, config: GlobalConfig, state: MachineState, registry_text: str | None) -> None:
+    with locked_state_file(machine_state_path(state_dir)):
+        # Another byor process may have finished the move while this one waited for the lock.
+        if not _move_pending(state_dir):
+            return
+        registry = repo_registry_path(state_dir, config)
+        try:
+            if registry_text is not None and not registry.exists():
+                write_text_atomic(registry, registry_text)
+            save_machine_state(state_dir, state)
+            write_text_atomic(state_dir / STATE_MOVED_MARKER, STATE_MOVED_TEXT)
+        except OSError as error:
+            msg = f"cannot write byor's state to {state_dir}: {error}"
+            raise ConfigError(msg) from error
 
 
 def _read_legacy_text(path: Path) -> str | None:
@@ -664,6 +702,7 @@ def _create_state_dir(state_dir: Path, *, config: GlobalConfig, state: MachineSt
         if registry_text is not None:
             write_text_atomic(repo_registry_path(staging, config), registry_text)
         save_machine_state(staging, state)
+        write_text_atomic(staging / STATE_MOVED_MARKER, STATE_MOVED_TEXT)
         staging.rename(state_dir)
     except (OSError, ConfigError) as error:
         shutil.rmtree(staging, ignore_errors=True)

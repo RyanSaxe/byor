@@ -269,7 +269,13 @@ def _write_managed_path(
     display: str,
     marker: str = MANAGED_MARKER,
 ) -> list[str]:
-    result = write_marked_text(path, content, marker=marker)
+    try:
+        result = write_marked_text(path, content, marker=marker)
+    except OSError as error:
+        # A read-only plugin or skill file is one agent's problem, which install
+        # and self-heal report per agent instead of failing every command.
+        msg = f"cannot write {display}: {error.strerror or error}"
+        raise ConfigError(msg) from error
     if result == "unmarked":
         return [f"{display} exists without the BYOR marker; left untouched."]
     if result == "unchanged":

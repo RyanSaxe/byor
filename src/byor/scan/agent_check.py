@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from byor.agents.harness import EditPayload, Harness, emit, parse_payload
-from byor.commands.heal import heal_worktree
+from byor.commands.heal import heal_repo_for_hook, heal_worktree
 from byor.config import load_current_machine_state, load_global_config, repo_config_path
 from byor.errors import ByorError, WorktreeCopyBusyError
 from byor.io.paths import (
@@ -156,6 +156,7 @@ def _hook_diagnostics(args: argparse.Namespace, *, harness: Harness) -> int:
         worktree_lines = [f"byor: {error}"]
     for line in worktree_lines:
         sys.stderr.write(f"{line}\n")
+    heal_repo_for_hook(repo_root, config_dir)
     if not _has_any_rules(repo_root) and not global_config.checks:
         return 0
     payload = _resolved_payload(payload, repo_root)

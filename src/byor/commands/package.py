@@ -46,14 +46,14 @@ def run_package(args: argparse.Namespace) -> int:
         repo_root = resolve_repo_root(explicit=args.repo)
         load_repo_config(repo_root)
         previous = load_local_config(repo_root).packages
-        add_package_to_local(
+        message = add_package_to_local(
             repo_root,
             config_dir,
             global_config=config,
             name=args.name,
         )
         result = sync_or_restore_packages(repo_root, config_dir, previous=previous)
-        write_line(f"Installed package '{args.name}' in .byor/local.yml")
+        write_line(message)
         if result.changed:
             write_line(f"Synced package '{args.name}' into {repo_root}")
         return 0
@@ -107,12 +107,14 @@ def add_package_to_local(
     *,
     global_config: GlobalConfig,
     name: str,
-) -> None:
+) -> str:
     _require_package(config_dir, global_config, name=name)
     local = load_local_config(repo_root)
-    if name not in local.packages:
-        local.packages.append(name)
-        save_local_config(repo_root, local)
+    if name in local.packages:
+        return f"Package '{name}' is already installed in .byor/local.yml"
+    local.packages.append(name)
+    save_local_config(repo_root, local)
+    return f"Installed package '{name}' in .byor/local.yml"
 
 
 def available_packages(config_dir: Path, global_config: GlobalConfig) -> list[str]:

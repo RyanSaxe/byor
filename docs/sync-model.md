@@ -25,8 +25,11 @@ The same limit applies to your global rules folder: in a repo without
 `~/.config/byor/rules` that is itself a symlink never fires there. `byor doctor`
 reports such files. Link the whole folder instead, or copy the files. When byor
 writes a file you linked, such as `~/.claude/settings.json`, it writes through
-the link into the file it points at, and a read-only target is an error that
-names the file.
+the link into the file it points at. byor never replaces a file you made
+read-only, linked or not: writing one is an error that names the file, and
+self-heal reports it as a warning for that agent. A link that points nowhere,
+such as `~/.config/byor/rules` after the dotfiles checkout moved, is named by
+`byor install` and `byor doctor`.
 
 Copies can go stale. The UX principle:
 
@@ -73,6 +76,15 @@ The exceptions: `byor sync` itself (its body is the sync),
 their own steps, and `byor doctor`, which is read-only — it reports staleness
 and the command that fixes it instead of repairing anything.
 
+The agent hooks, `byor agent-check --stdin-hook` and `byor command-check
+--stdin-hook`, sync the copies the same way before they check, and print
+nothing about it, since their output goes to the agent. So a rule that
+arrives without byor, such as through a git pull into a linked
+`~/.config/byor/rules/`, applies from the agent's next edit or command.
+
+In a repo with `gate: true`, `byor sync` also regenerates the gate files
+byor owns, and `byor sync --check` counts a stale one.
+
 The same step, and `byor sync`, also update a byor ignore block that an
 older byor wrote before it gained a personal path, such as the command-rule
 copies under `.byor/commands/personal/`. byor adds the patterns the block
@@ -92,10 +104,15 @@ file is not writable. `byor doctor` names each of these cases, and
 `byor sync` names a file it cannot write. A block that cannot be updated
 never stops the rules from syncing.
 
+When git itself runs byor, as the post-checkout and post-merge shims do,
+byor leaves a tracked `.gitignore` alone, so checking out a branch with an
+older block never leaves the work tree dirty. The next byor command you run
+updates it.
+
 ```bash
 byor sync           # mirror this repo
 byor sync --all     # mirror every registered repo
-byor sync --check   # report; exit 3 when stale, including an outdated ignore block
+byor sync --check   # report; exit 3 when stale, including an outdated ignore block or gate file
 ```
 
 `init` registers each repo in `~/.local/state/byor/repos.yml` (skip with
@@ -121,8 +138,10 @@ wrote `repos.yml` beside it. The first run of this version copies all three
 into the state directory and leaves the old copies alone; `byor doctor` then
 names them so you can delete them. Every command makes that one-time copy,
 hooks and `byor doctor` included, and it is the only write doctor ever makes.
-The copy runs only while the state directory does not exist, so a `state.yml`
-you delete later starts empty rather than bringing the old records back.
+The copy also fills a state directory that already exists, such as one linked
+from a dotfiles repo, and writes `.moved-from-config` there when it finishes.
+After that, a `state.yml` you delete starts empty rather than bringing the old
+records back.
 If the copy fails, say because `config.yml` is malformed or a file cannot be
 read, a command stops with an error naming the file, while a hook prints it,
 keeps honoring the old `disabled_repos`, and carries on.
@@ -157,8 +176,8 @@ would re-enable every repo under it.
 **A global rule changes.** `byor add`/`byor edit` with global scope sync
 the current repo *and* all registered repos immediately. After out-of-band
 edits (e.g. a dotfiles pull changes `~/.config/byor/rules/`), the next
-byor command heals the current repo, and `byor sync --all` heals
-everywhere.
+byor command or agent hook heals the repo it runs in, and `byor sync --all`
+heals everywhere.
 
 **A rule is promoted.** `byor promote RULE_ID --from global` copies the
 canonical rule into project rules; the canonical original stays. Sync then
@@ -238,9 +257,19 @@ worktrees:
 ```
 
 The same rules apply to those files: byor copies one only when the worktree's
-git ignores it too, and never overwrites one the worktree has. A large ignored
-folder, such as `node_modules`, makes that first copy slow, and the first agent
-hook in a new worktree waits for it.
+git ignores it too, and never overwrites one the worktree has. byor copies its
+own files first and the others after. The command or hook that copies waits
+for all of them, but hooks that fire meanwhile wait only for byor's files, which
+take milliseconds, and check with the repo's rules while a large ignored
+folder, such as `node_modules`, is still copying. The copy line counts the two
+apart:
+
+```text
+byor: copied 17 byor files and 1204 other ignored files from the main checkout /home/me/project
+```
+
+Turning `copy_ignored` on later brings the ignored files into existing
+worktrees too, once, on their next byor command.
 
 `byor doctor` and `byor sync --check` never copy. In a worktree that has not
 copied yet, both say to run `byor sync`. byor treats a worktree of a repo you
@@ -262,12 +291,12 @@ and any check that runs a `~/` script into a committed copy under
 
 Each vendored copy carries a provenance marker recording its source as the
 check names it, such as `~/.config/byor/scripts/lint.sh`, even when that folder
-is a symlink. `byor init --gate` also lists the copies in `.byor/local.yml`, and
-self-heal re-vendors only those, when their source changes. A teammate's clone
-has no such list, so a same-named script in their home never replaces the
-committed copy. A gate set up by an older byor has no list either: run
-`byor init --gate` once on the machine that maintains it. Removing the marker
-makes the copy user-owned, never rewritten.
+is a symlink. `byor init --gate` and `byor promote --check` list the copies they
+write in `.byor/local.yml`, and self-heal and `byor sync` re-vendor only those,
+when their source changes. A teammate's clone has no such list, so a same-named
+script in their home never replaces the committed copy. A gate set up by an
+older byor has no list either: run `byor init --gate` once on the machine that
+maintains it. Removing the marker makes the copy user-owned, never rewritten.
 
 The emitted artifacts run `ast-grep scan` through uvx with a pinned
 `ast-grep-cli` version, so the gate never drifts with upstream releases, and run
@@ -288,12 +317,15 @@ setting, and doctor's staleness check respects it.
 
 The artifacts are byor-owned build products, like the rule mirror. A committed
 `gate: true` in `.byor/config.yml` marks the repo, and any self-healing byor
-command regenerates the CI workflow and the pre-commit config it owns from the
-current committed rules and checks (`byor doctor` only reports them stale). So the maintainer adds a rule or check with byor as
+command, and `byor sync`, regenerates the CI workflow and the pre-commit
+config it owns from the current committed rules and checks (`byor doctor`
+only reports them stale). So the maintainer adds a rule or check with byor as
 usual and the gate refreshes itself; teammates only ever run it, and need
 nothing byor. byor owns each file by its marker header (the whole file, not a
 block within it): a pre-existing, unmarked `.pre-commit-config.yaml` is never
-overwritten — byor prints the block to paste in instead.
+overwritten. `byor init --gate` prints the block to paste in instead, and
+`byor doctor` fails `gate_files` while the file lacks one of the gate's
+commands.
 
 Under `--private` the gate commits nothing: byor installs a local
 `.git/hooks/pre-commit` shim that runs `byor agent-check` on the staged files
@@ -377,6 +409,11 @@ ones), keeping all rules loadable by ast-grep.
 `.git/info/exclude` only affects untracked files, so if `sgconfig.yml` is
 already committed (the team uses ast-grep independently), byor's edits to it
 still show in `git status`; init warns when it detects this.
+
+Running `byor init` again keeps a private setup private.
+`byor init --no-private` turns it shared: it removes byor's block from
+`.git/info/exclude`, keeping any lines you added inside it, and writes the
+shared block to `.gitignore`.
 
 There is no deinit command yet, so offboarding a private setup is manual:
 

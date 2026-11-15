@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Literal
 from ruamel.yaml.comments import CommentedMap
 
 from byor.commands.doctor import quick_doctor_problems
-from byor.commands.gate import vendor_check
+from byor.commands.gate import regenerate_gate, vendor_promoted_check
 from byor.commands.heal import heal_ignore_blocks
 from byor.config import (
     CommandRuleScope,
@@ -299,10 +299,16 @@ def _promote_check(context: RepoContext, name: str) -> int:
         raise ByorError(msg)
     # A gated repo commits its checks for teammates and CI, so a `~/` script is vendored in, as
     # `init --gate` does; otherwise the gate would run a home path nobody else has.
-    definition = vendor_check(context.repo_root, match.definition) if repo_config.gate else match.definition
+    definition = (
+        vendor_promoted_check(context.repo_root, match.definition, repo_checks=repo_config.checks)
+        if repo_config.gate
+        else match.definition
+    )
     repo_config.checks.append(definition)
     save_repo_config(context.repo_root, repo_config)
     write_line(f"Promoted check '{name}' into .byor/config.yml")
+    if repo_config.gate:
+        write_lines(regenerate_gate(context.repo_root))
     return 0
 
 
@@ -317,12 +323,7 @@ def run_exclusion(args: argparse.Namespace) -> int:
             write_line(f"{_selector_subject(selector)} is already excluded")
         else:
             if selector.kind == "rule-id" and selector.value not in _excludable_rule_ids(context.canonical, local):
-                msg = (
-                    f"no global or installed-package rule has ID '{selector.value}', so excluding it would "
-                    "change nothing; project and local rules are repo files, which `byor edit` and "
-                    "`byor remove` change"
-                )
-                raise ByorError(msg)
+                raise ByorError(_needless_exclusion_message(context, selector.value))
             values.append(selector.value)
             save_local_config(context.repo_root, local)
             write_line(f"Excluded {_selector_subject(selector)} in .byor/local.yml")
@@ -339,6 +340,17 @@ def run_exclusion(args: argparse.Namespace) -> int:
             if skipped.id == selector.value:
                 write_line(f"'{skipped.id}' is still skipped: {skipped.reason}")
     return 0
+
+
+# `byor edit` and `byor remove` manage only file rules, so a repo command rule is pointed at its file.
+def _needless_exclusion_message(context: RepoContext, rule_id: str) -> str:
+    refusal = f"no global or installed-package rule has ID '{rule_id}', so excluding it would change nothing"
+    for scope in ("project", "local"):
+        for rule in _scope_rules(context, scope, command=True):
+            if rule.id == rule_id:
+                location = display_path(rule.path, context.repo_root)
+                return f"{refusal}; it is the {scope} command rule {location}: edit or delete it, then run `byor sync`"
+    return f"{refusal}; project and local rules are repo files, which `byor edit` and `byor remove` change"
 
 
 # Exclusions apply only to global and installed-package rules, file and command alike.
