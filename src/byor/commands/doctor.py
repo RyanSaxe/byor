@@ -573,7 +573,7 @@ def _missing_package_problems(repos: list[Path], available: set[str]) -> list[st
     if missing:
         problems.append(
             f"repos name packages that are not installed: {', '.join(missing)}; "
-            "remove each from `packages` in its repo's .byor/local.yml, or restore the package"
+            "run `byor package remove NAME` in each repo, or restore the package"
         )
     return problems
 

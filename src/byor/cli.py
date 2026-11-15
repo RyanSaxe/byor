@@ -63,7 +63,7 @@ COMMANDS = {
     "disable": "Turn byor off for a repository or a directory of repositories",
     "enable": "Turn byor back on for a disabled path",
     "profile": "List and apply local exclusion profiles",
-    "package": "List and install opt-in rule/check packages",
+    "package": "List, install and remove opt-in rule/check packages",
     "list": "Show rules and where they come from",
     "agent-check": "Run ast-grep on changed files and render agent feedback",
     "command-check": "Gate a shell command against command rules before it runs",
@@ -315,6 +315,9 @@ def _add_package_arguments(command: argparse.ArgumentParser) -> None:
     add = actions.add_parser("add", help="Install a package's rules and checks into this repository")
     add.add_argument("name", metavar="NAME", help="Package name")
     add.add_argument("--repo", type=Path, help=REPO_HELP)
+    remove = actions.add_parser("remove", help="Drop a package from this repository, even one that no longer exists")
+    remove.add_argument("name", metavar="NAME", help="Package name")
+    remove.add_argument("--repo", type=Path, help=REPO_HELP)
 
 
 def _add_agent_check_arguments(command: argparse.ArgumentParser) -> None:

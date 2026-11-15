@@ -512,6 +512,7 @@ def test_doctor_flags_a_registered_repo_that_names_a_deleted_package(
     out = capsys.readouterr().out
     assert "FAIL  registered_repos" in out
     assert "repos name packages that are not installed: ~/other (python-strict)" in out
+    assert "run `byor package remove NAME` in each repo" in out
 
 
 def test_doctor_flags_byor_hooks_for_an_agent_missing_from_the_global_config(

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 from support import (
+    install_package,
     make_repo,
     package_mirror,
     write_package_check,
@@ -74,6 +75,39 @@ def test_add_is_idempotent(home: Path) -> None:
     assert main(["package", "add", "python-strict", "--repo", str(repo)]) == 0
 
     assert load_local_config(repo).packages == ["python-strict"]
+
+
+def test_remove_drops_the_opt_in_and_its_rule_copies(home: Path) -> None:
+    write_package_rule(home, "python-strict", relpath="no-cast.yml", rule_id="pkg-no-cast")
+    repo = make_repo(home)
+    assert main(["package", "add", "python-strict", "--repo", str(repo)]) == 0
+
+    assert main(["package", "remove", "python-strict", "--repo", str(repo)]) == 0
+
+    assert load_local_config(repo).packages == []
+    assert not (package_mirror(repo) / "python-strict" / "no-cast.yml").exists()
+
+
+def test_remove_drops_a_package_that_no_longer_exists(home: Path) -> None:
+    repo = make_repo(home)
+    install_package(repo, "deleted-package")
+
+    assert main(["package", "remove", "deleted-package", "--repo", str(repo)]) == 0
+
+    assert load_local_config(repo).packages == []
+
+
+def test_remove_of_a_package_the_repo_never_installed_errors_and_lists_installed(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    install_package(repo, "style")
+    capsys.readouterr()
+
+    assert main(["package", "remove", "styel", "--repo", str(repo)]) != 0
+
+    assert "package 'styel' is not installed in this repository (installed: style)" in capsys.readouterr().err
+    assert load_local_config(repo).packages == ["style"]
 
 
 def test_add_unknown_package_errors_and_lists_available(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
