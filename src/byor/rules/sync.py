@@ -22,6 +22,7 @@ from byor.config import (
     global_commands_dir,
     global_packages_dir,
     global_rules_dir,
+    installed_package_dir,
     load_global_config,
     load_local_config,
     load_machine_state,
@@ -159,13 +160,11 @@ def load_canonical_rules(config_dir: Path) -> CanonicalRules:
 
 
 def load_installed_packages(canonical: CanonicalRules, names: Iterable[str]) -> list[InstalledPackage]:
+    # A name with no exactly matching package directory loads nothing, as doctor reports it.
     return [
-        InstalledPackage(
-            name=name,
-            root=canonical.packages_root / name,
-            rules=_load_package_rules(canonical.packages_root / name),
-        )
+        InstalledPackage(name=name, root=root, rules=_load_package_rules(root))
         for name in names
+        if (root := installed_package_dir(canonical.packages_root, name)) is not None
     ]
 
 
@@ -179,11 +178,10 @@ def load_installed_command_packages(canonical: CanonicalRules, names: Iterable[s
     """
     return [
         InstalledPackage(
-            name=name,
-            root=canonical.packages_root / name / PACKAGE_COMMANDS_DIR,
-            rules=load_rules(canonical.packages_root / name / PACKAGE_COMMANDS_DIR),
+            name=name, root=package / PACKAGE_COMMANDS_DIR, rules=load_rules(package / PACKAGE_COMMANDS_DIR)
         )
         for name in names
+        if (package := installed_package_dir(canonical.packages_root, name)) is not None
     ]
 
 

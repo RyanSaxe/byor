@@ -38,6 +38,7 @@ __all__ = (
     "global_config_path",
     "global_packages_dir",
     "global_rules_dir",
+    "installed_package_dir",
     "legacy_machine_state",
     "load_current_machine_state",
     "load_global_config",
@@ -278,16 +279,31 @@ def global_commands_dir(config_dir: Path, config: GlobalConfig) -> Path:
     return config_dir / config.commands_path
 
 
+def installed_package_dir(packages_root: Path, name: str) -> Path | None:
+    """Return the package directory whose name is exactly `name`, or None.
+
+    A case-insensitive filesystem would resolve `packages/pystrict` to a `PyStrict`
+    folder, so sync would keep applying a package that `byor doctor` and `byor package
+    add`, which compare names exactly, call not installed. Every lookup goes through
+    this exact match instead, the same on every filesystem.
+    """
+    if not packages_root.is_dir():
+        return None
+    return next((entry for entry in packages_root.iterdir() if entry.name == name and entry.is_dir()), None)
+
+
 def load_package_checks(config_dir: Path, config: GlobalConfig, *, name: str) -> list[CheckDef]:
-    path = global_packages_dir(config_dir, config) / name / PACKAGE_CHECKS_FILE
-    if not path.is_file():
+    package = installed_package_dir(global_packages_dir(config_dir, config), name)
+    path = package / PACKAGE_CHECKS_FILE if package is not None else None
+    if path is None or not path.is_file():
         return []
     return _check_defs(load_yaml_mapping(path), path)
 
 
 def load_package_command_checks(config_dir: Path, config: GlobalConfig, *, name: str) -> list[CommandCheckDef]:
-    path = global_packages_dir(config_dir, config) / name / PACKAGE_CHECKS_FILE
-    if not path.is_file():
+    package = installed_package_dir(global_packages_dir(config_dir, config), name)
+    path = package / PACKAGE_CHECKS_FILE if package is not None else None
+    if path is None or not path.is_file():
         return []
     return _command_check_defs(load_yaml_mapping(path), path)
 

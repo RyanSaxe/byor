@@ -146,3 +146,14 @@ def test_add_in_a_disabled_repo_prints_the_notice_and_changes_nothing(
 
     assert "this repository is disabled for byor" in capsys.readouterr().err
     assert load_local_config(repo).packages == []
+
+
+def test_a_package_named_with_different_case_than_its_folder_is_not_installed(home: Path) -> None:
+    write_package_rule(home, "PyStrict", relpath="no-cast.yml", rule_id="no-cast")
+    repo = make_repo(home)
+    install_package(repo, "pystrict")
+
+    assert main(["sync", "--repo", str(repo)]) == 0
+
+    assert not (package_mirror(repo) / "pystrict").exists()
+    assert main(["doctor", "--repo", str(repo), "--quick"]) == 1
