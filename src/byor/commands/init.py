@@ -8,7 +8,7 @@ without scattering setup decisions across commands.
 from __future__ import annotations
 
 import contextlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -49,6 +49,7 @@ from byor.rules.rules import discover_rule_files
 from byor.rules.sync import summarize_changes
 from byor.scaffold.githooks import install_git_shims
 from byor.scaffold.ignore import (
+    has_private_block,
     ignore_file,
     remove_private_block,
     write_ignore_block,
@@ -85,6 +86,9 @@ def run_init(args: argparse.Namespace) -> int:
     config_dir = global_config_dir()
     _require_enabled(repo_root, global_state_dir(), interactive=not args.non_interactive)
     defaults = load_global_config(config_dir).init
+    if has_private_block(repo_root):
+        # The repo's own setup outranks the global default; only --no-private turns it shared.
+        defaults = replace(defaults, private=True)
     options = _options_from_args(args, defaults)
     write_lines(initialize_repo(repo_root, config_dir, options=options))
     write_line(f"Initialized BYOR in {repo_root}")

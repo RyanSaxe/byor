@@ -419,3 +419,12 @@ def test_a_shared_init_after_a_private_one_lets_byors_config_be_committed(repo: 
 
     assert ".byor/" not in (repo / ".git" / "info" / "exclude").read_text()
     assert "?? .byor/config.yml" in git(repo, "status", "--porcelain", "--untracked-files=all")
+
+
+def test_init_without_private_keeps_a_private_repo_private(repo: Path) -> None:
+    git(repo, "init", "-q")
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--private", "--no-git-hooks"]) == 0
+
+    assert main(["init", "--repo", str(repo), "--non-interactive", "--no-git-hooks"]) == 0
+
+    assert not (repo / ".gitignore").exists()

@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 __all__ = (
     "IgnoreBlockStatus",
     "RefreshResult",
+    "has_private_block",
     "ignore_block_statuses",
     "ignore_file",
     "outdated_ignore_blocks",
@@ -341,6 +342,26 @@ def _with_block(lines: list[str], *, existing: _Block | None, patterns: tuple[st
         content += newline
     separator = newline if content else ""
     return content + separator + block
+
+
+def has_private_block(repo_root: Path) -> bool:
+    """Report whether `.git/info/exclude` holds a well-formed private byor block.
+
+    init uses this to keep a private repo private when `--private` is not given: falling back to
+    the shared default would write a `.gitignore` block that git then offers to commit. The exclude
+    file lives in the common git dir, so every worktree of a private repo sees the same answer.
+    """
+    try:
+        path = ignore_file(repo_root, private=True)
+    except ConfigError:
+        return False
+    if not path.is_file():
+        return False
+    lines = _read_lines(path)
+    if isinstance(lines, _Unreadable):
+        return False
+    block = _find_block(lines)
+    return isinstance(block, _Block) and _lists_private_directory(lines[block.begin + 1 : block.end])
 
 
 def remove_private_block(repo_root: Path) -> Literal["removed", "damaged"] | None:
