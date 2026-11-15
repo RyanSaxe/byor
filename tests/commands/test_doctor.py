@@ -155,6 +155,26 @@ def test_doctor_fails_when_the_ignore_block_is_removed(home: Path, capsys: pytes
     assert gitignore.read_text() == "node_modules/\n"
 
 
+def test_doctor_says_an_ignore_block_missing_newer_patterns_is_out_of_date(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    gitignore = repo / ".gitignore"
+    old_block = "".join(
+        line for line in gitignore.read_text().splitlines(keepends=True) if ".byor/commands/" not in line
+    )
+    gitignore.write_text(old_block)
+    capsys.readouterr()
+
+    assert main(["doctor", "--repo", str(repo)]) == 1
+
+    out = capsys.readouterr().out
+    assert "FAIL  ignore_block" in out
+    assert "the byor ignore block in .gitignore is out of date" in out
+    assert "run `byor sync` to update it" in out
+    assert gitignore.read_text() == old_block
+
+
 def test_doctor_accepts_a_private_ignore_block(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo = home / "repo"
     repo.mkdir()

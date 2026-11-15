@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 __all__ = (
     "ignore_block_current",
     "ignore_file",
+    "outdated_ignore_blocks",
+    "refresh_ignore_blocks",
     "rule_visibility_ok",
     "write_ignore_block",
     "write_rule_visibility_file",
@@ -109,10 +111,52 @@ def ignore_block_current(repo_root: Path) -> bool:
         if not path.is_file():
             continue
         content = path.read_text(encoding="utf-8")
-        patterns = PRIVATE_IGNORED_PATTERNS if private else IGNORED_PATTERNS
-        if _with_block(content, patterns) == content:
+        if _with_block(content, _patterns(private=private)) == content:
             return True
     return False
+
+
+def outdated_ignore_blocks(repo_root: Path) -> list[Path]:
+    """Return each ignore file whose byor block predates byor's current patterns.
+
+    byor adds a pattern whenever it gains a personal path, as it did for command-rule copies, and
+    a block written before that leaves the new files committable. Only a block with both of byor's
+    markers counts: a file without the block, or with a damaged one, is `byor init`'s to fix,
+    because adding a block means choosing between the shared and the private setup.
+    """
+    return [path for path, _private in _outdated_blocks(repo_root)]
+
+
+def refresh_ignore_blocks(repo_root: Path) -> list[Path]:
+    """Rewrite every outdated byor ignore block with the current patterns; return the files changed.
+
+    Self-heal and `byor sync` call this so a repo initialized by an older byor picks up new
+    patterns without a second `byor init`. Lines outside byor's markers stay as the user wrote
+    them, and a file without a complete block is left alone, so this never adds a block and never
+    turns a repo's setup from shared into private or the reverse. A shared block is rewritten with
+    the shared patterns and a private `.git/info/exclude` block with the private ones. An empty
+    list means every block was already current, which is the steady state on every command.
+    """
+    outdated = _outdated_blocks(repo_root)
+    for path, private in outdated:
+        content = path.read_text(encoding="utf-8")
+        write_text_atomic(path, _with_block(content, _patterns(private=private)))
+    return [path for path, _private in outdated]
+
+
+def _outdated_blocks(repo_root: Path) -> list[tuple[Path, bool]]:
+    outdated: list[tuple[Path, bool]] = []
+    for private in (False, True):
+        try:
+            path = ignore_file(repo_root, private=private)
+        except ConfigError:
+            continue
+        if not path.is_file():
+            continue
+        content = path.read_text(encoding="utf-8")
+        if _has_complete_block(content) and _with_block(content, _patterns(private=private)) != content:
+            outdated.append((path, private))
+    return outdated
 
 
 def ignore_file(repo_root: Path, *, private: bool) -> Path:
@@ -136,14 +180,23 @@ def write_ignore_block(repo_root: Path, *, private: bool) -> bool:
     if private and not (repo_root / ".git").exists():
         msg = f"{repo_root} has no .git directory; cannot use private mode"
         raise ConfigError(msg)
-    patterns = PRIVATE_IGNORED_PATTERNS if private else IGNORED_PATTERNS
     path = ignore_file(repo_root, private=private)
     current = path.read_text(encoding="utf-8") if path.is_file() else ""
-    updated = _with_block(current, patterns)
+    updated = _with_block(current, _patterns(private=private))
     if updated == current:
         return False
     write_text_atomic(path, updated)
     return True
+
+
+def _patterns(*, private: bool) -> tuple[str, ...]:
+    return PRIVATE_IGNORED_PATTERNS if private else IGNORED_PATTERNS
+
+
+def _has_complete_block(content: str) -> bool:
+    lines = content.splitlines(keepends=True)
+    begin = _marker_index(lines, BLOCK_BEGIN, start=0)
+    return begin is not None and _marker_index(lines, BLOCK_END, start=begin + 1) is not None
 
 
 def _with_block(content: str, patterns: tuple[str, ...]) -> str:

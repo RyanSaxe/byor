@@ -65,6 +65,15 @@ The exceptions: `byor sync` itself (its body is the sync),
 their own steps, and `byor doctor`, which is read-only — it reports staleness
 and the command that fixes it instead of repairing anything.
 
+The same step, and `byor sync`, also rewrite a byor ignore block that an
+older byor wrote before it gained a personal path, such as the command-rule
+copies under `.byor/commands/personal/`. Only the lines between byor's
+markers change, and a file without the block is left for `byor init`:
+
+```text
+byor: updated the byor ignore block in .gitignore
+```
+
 ```bash
 byor sync           # mirror this repo
 byor sync --all     # mirror every registered repo

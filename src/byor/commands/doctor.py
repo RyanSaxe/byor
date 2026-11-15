@@ -57,7 +57,7 @@ from byor.rules.sync import (
     repo_plans,
 )
 from byor.scaffold.githooks import shim_findings
-from byor.scaffold.ignore import ignore_block_current, rule_visibility_ok
+from byor.scaffold.ignore import ignore_block_current, outdated_ignore_blocks, rule_visibility_ok
 from byor.scaffold.precommit import CONFIG_RELPATH
 from byor.scan.astgrep import ast_grep_version, resolve_ast_grep, scan_command
 from byor.scan.checks import effective_checks
@@ -442,6 +442,17 @@ def _ignore_block_check(repo_root: Path) -> Check:
             id="ignore_block",
             ok=True,
             message="personal rules and .byor/local.yml are git-ignored",
+        )
+    outdated = outdated_ignore_blocks(repo_root)
+    if outdated:
+        listed = ", ".join(os.path.relpath(path, repo_root) for path in outdated)
+        return Check(
+            id="ignore_block",
+            ok=False,
+            message=(
+                f"the byor ignore block in {listed} is out of date, so some personal byor files"
+                " are committable; run `byor sync` to update it"
+            ),
         )
     return Check(
         id="ignore_block",

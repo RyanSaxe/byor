@@ -7,6 +7,7 @@ package, and self-heal flows.
 
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -39,7 +40,7 @@ from byor.rules.rules import (
     load_rules,
     require_unique_ids,
 )
-from byor.scaffold.ignore import write_rule_visibility_file
+from byor.scaffold.ignore import refresh_ignore_blocks, write_rule_visibility_file
 
 if TYPE_CHECKING:
     import argparse
@@ -496,6 +497,8 @@ def _sync_all(config_dir: Path, canonical: CanonicalRules, *, check: bool) -> in
 
 
 def _sync_and_report(repo_root: Path, canonical: CanonicalRules) -> None:
+    for path in refresh_ignore_blocks(repo_root):
+        sys.stdout.write(f"Updated the byor ignore block in {os.path.relpath(path, repo_root)}\n")
     plan, result = sync_repo(repo_root, canonical)
     # A steady-state sync (the post-merge/post-checkout shims run one on every
     # pull) must not narrate forever: silence is the unix success signal, so a

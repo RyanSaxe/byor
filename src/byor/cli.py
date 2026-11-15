@@ -20,7 +20,7 @@ from byor.agents.install import AGENT_CHOICES, run_hook
 from byor.commands.disable import run_disable, run_enable
 from byor.commands.doctor import run_doctor
 from byor.commands.gate import heal_gate
-from byor.commands.heal import heal_global, heal_repo
+from byor.commands.heal import heal_global, heal_ignore_blocks, heal_repo
 from byor.commands.init import run_init
 from byor.commands.install import run_install
 from byor.commands.listing import run_list
@@ -498,7 +498,7 @@ def _self_heal_preamble(args: argparse.Namespace) -> list[str]:
     mirror_line = heal_repo(repo_root, config_dir)
     if mirror_line is not None:
         messages.append(mirror_line)
-    return messages + heal_gate(repo_root)
+    return messages + heal_ignore_blocks(repo_root) + heal_gate(repo_root)
 
 
 def _force_utf8_stdio() -> None:
