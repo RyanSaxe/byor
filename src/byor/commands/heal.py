@@ -10,8 +10,15 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
-from byor.agents.install import install_agent
-from byor.config import global_rules_dir, load_global_config, load_machine_state, repo_config_path
+from byor.agents.install import install_agent, unrecorded_agents
+from byor.config import (
+    MachineState,
+    global_rules_dir,
+    load_global_config,
+    load_machine_state,
+    repo_config_path,
+    save_machine_state,
+)
 from byor.errors import ByorError, ConfigError
 from byor.rules.sync import load_canonical_rules, summarize_changes, sync_repo
 from byor.scaffold.ignore import refresh_ignore_blocks
@@ -35,25 +42,41 @@ def heal_global(config_dir: Path, state_dir: Path) -> list[str]:
     Runs on every command (even outside a repo): refreshes the global skill
     render so a byor upgrade is reflected without a reinstall, and reconverges
     recorded agent hooks/plugins plus `~/sgconfig.yml` so upgrades keep applying
-    everywhere. A broken agent config must not fail unrelated commands, so each
-    agent heals independently; the returned warnings name the agents skipped.
+    everywhere. An agent whose byor hooks or plugin file are installed but
+    unrecorded gets recorded first, so its integration is reconverged too. A
+    broken agent config must not fail unrelated commands, so each agent heals
+    independently; the returned lines name what was recorded and what was skipped.
     """
     config = load_global_config(config_dir)
     rules_dir = global_rules_dir(config_dir, config)
-    warnings: list[str] = []
+    messages: list[str] = []
     if rules_dir.is_dir():
         # A malformed ~/sgconfig.yml must degrade like a broken agent config:
         # crashing here would block every self-healing command.
         try:
             ensure_home_sgconfig(rules_dir)
         except ConfigError as error:
-            warnings.append(f"byor: skipping ~/sgconfig.yml self-heal: {error} (run 'byor doctor')")
-    for agent in load_machine_state(state_dir).agents:
+            messages.append(f"byor: skipping ~/sgconfig.yml self-heal: {error} (run 'byor doctor')")
+    state = load_machine_state(state_dir)
+    messages.extend(_record_unrecorded_agents(state, state_dir))
+    for agent in state.agents:
         try:
             install_agent(agent)
         except ConfigError as error:
-            warnings.append(f"byor: skipping {agent} self-heal: {error} (run 'byor doctor')")
-    return warnings
+            messages.append(f"byor: skipping {agent} self-heal: {error} (run 'byor doctor')")
+    return messages
+
+
+def _record_unrecorded_agents(state: MachineState, state_dir: Path) -> list[str]:
+    try:
+        unrecorded = unrecorded_agents(state.agents)
+    except ConfigError as error:
+        return [f"byor: skipping agent detection: {error} (run 'byor doctor')"]
+    if not unrecorded:
+        return []
+    state.agents.extend(unrecorded)
+    save_machine_state(state_dir, state)
+    return [f"byor: recorded {', '.join(unrecorded)}, whose byor integration was already installed"]
 
 
 def heal_repo(repo_root: Path, config_dir: Path) -> str | None:

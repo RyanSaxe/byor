@@ -9,6 +9,7 @@ the leftovers so the user can delete them.
 from pathlib import Path
 
 import pytest
+from support import make_repo
 
 from byor.cli import main
 from byor.config import (
@@ -18,6 +19,7 @@ from byor.config import (
     load_machine_state,
     load_repo_registry,
     save_global_config,
+    save_machine_state,
 )
 from byor.io.paths import global_config_dir, global_state_dir
 
@@ -112,3 +114,19 @@ def test_an_absolute_registry_path_is_live_not_a_leftover(home: Path, capsys: py
 
     assert load_repo_registry(registry) == [home.resolve()]
     assert "legacy_state" not in capsys.readouterr().out
+
+
+def test_any_byor_command_records_an_agent_whose_byor_hooks_are_installed(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo(home)
+    assert main(["install", "--agents", "claude-code", "--non-interactive"]) == 0
+    state = load_machine_state(global_state_dir())
+    state.agents.remove("claude-code")
+    save_machine_state(global_state_dir(), state)
+    capsys.readouterr()
+
+    assert main(["list", "--repo", str(repo)]) == 0
+
+    assert "claude-code" in load_machine_state(global_state_dir()).agents
+    assert "byor: recorded claude-code, whose byor integration was already installed" in capsys.readouterr().err

@@ -96,7 +96,7 @@ byor keeps your settings and its own records in separate directories:
 | Directory | Contains | Written by |
 | --------- | -------- | ---------- |
 | `~/.config/byor/` (`$XDG_CONFIG_HOME/byor`) | `config.yml`, `rules/`, `commands/`, `packages/`, `scripts/` | You. byor writes rules there only when you ask, as with `byor add`, and never writes `config.yml`, so a dotfiles repo can supply it. |
-| `~/.local/state/byor/` (`$XDG_STATE_HOME/byor`) | `state.yml` (installed agents, disabled paths) and `repos.yml` | byor: `install`, `hook`, `disable`, `enable` and `init`. |
+| `~/.local/state/byor/` (`$XDG_STATE_HOME/byor`) | `state.yml` (installed agents, disabled paths) and `repos.yml` | byor: `install`, `hook`, `disable`, `enable` and `init`. Any self-healing command also records an agent whose byor hooks or plugin file are installed but missing from `state.yml`. |
 
 Older byor versions kept `ai.agents` and `disabled_repos` in `config.yml` and
 wrote `repos.yml` beside it. The first run of this version copies all three
