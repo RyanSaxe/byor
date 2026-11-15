@@ -6,6 +6,7 @@ byor gets those three copied over on the first run, its old copies left in place
 the leftovers so the user can delete them.
 """
 
+import io
 import json
 import os
 import sys
@@ -200,3 +201,26 @@ def test_self_heal_warns_instead_of_failing_when_it_cannot_write_state(
         state_dir.chmod(0o700)
 
     assert "byor: skipping agent recording: cannot write byor's state" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("hook", ["agent-check", "command-check"])
+def test_a_hook_fails_open_when_the_state_move_fails(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+    hook: str,
+) -> None:
+    global_config_dir().mkdir(parents=True)
+    (global_config_dir() / "config.yml").write_text("version: 2\n")
+    monkeypatch.setattr(
+        sys, "stdin", io.StringIO(json.dumps({"tool_input": {"command": "ls", "file_path": str(home / "a.py")}}))
+    )
+    capsys.readouterr()
+
+    assert main([hook, "--stdin-hook", "claude-code"]) == 0
+
+    assert "byor: skipping the state move" in capsys.readouterr().err
+    assert main(["doctor", "--quick"]) != 0

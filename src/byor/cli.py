@@ -472,7 +472,14 @@ _HANDLERS = {
 
 def run(args: argparse.Namespace) -> int:
     # Before anything reads machine state, so hooks see it on the first run after an upgrade too.
-    migrate_machine_state(global_config_dir(), global_state_dir())
+    try:
+        migrate_machine_state(global_config_dir(), global_state_dir())
+    except ByorError as error:
+        if not _is_hook_invocation(args):
+            raise
+        # Hooks fail open: a broken config.yml or an unwritable state directory must
+        # never block an agent, so warn and let the hook run without the move.
+        sys.stderr.write(f"byor: skipping the state move: {error}\n")
     if _in_disabled_repo(args):
         # A human asked, so say why nothing happens; hook mode stays silent.
         sys.stderr.write(DISABLED_NOTICE)
