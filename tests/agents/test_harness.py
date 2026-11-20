@@ -329,6 +329,7 @@ def test_antigravity_reads_successful_edits_since_initial_num_steps(tmp_path: Pa
 
 
 def test_antigravity_resolves_relative_paths_and_handles_ide_tools_and_deletions(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
     artifact_dir = tmp_path / "artifacts"
     transcript = _write_transcript(
         tmp_path,
@@ -339,15 +340,15 @@ def test_antigravity_resolves_relative_paths_and_handles_ide_tools_and_deletions
                 "status": "DONE",
                 "tool_calls": [
                     {"name": "edit_file", "args": {"Path": "src/del.py", "Target": "x", "Replacement": ""}},
-                    {"name": "write_to_file", "args": {"TargetFile": "/repo/w.py", "CodeContent": "w = 1\n"}},
+                    {"name": "write_to_file", "args": {"TargetFile": str(repo / "w.py"), "CodeContent": "w = 1\n"}},
                     {
                         "name": "replace_file_content",
-                        "args": {"TargetFile": "/repo/r.py", "ReplacementContent": "r = 2\n"},
+                        "args": {"TargetFile": str(repo / "r.py"), "ReplacementContent": "r = 2\n"},
                     },
                     {
                         "name": "multi_replace_file_content",
                         "args": {
-                            "TargetFile": "/repo/m.py",
+                            "TargetFile": str(repo / "m.py"),
                             "ReplacementChunks": [{"ReplacementContent": "a"}, {"ReplacementContent": "b"}],
                         },
                     },
@@ -370,17 +371,17 @@ def test_antigravity_resolves_relative_paths_and_handles_ide_tools_and_deletions
         {
             "transcriptPath": str(transcript),
             "initialNumSteps": 0,
-            "cwd": "/repo",
+            "cwd": str(repo),
             "artifactDirectoryPath": str(artifact_dir),
         }
     )
 
     assert parse_payload("antigravity", raw) == EditPayload(
         edits={
-            Path("/repo/src/del.py"): [],
-            Path("/repo/w.py"): ["w = 1\n"],
-            Path("/repo/r.py"): ["r = 2\n"],
-            Path("/repo/m.py"): ["a", "b"],
+            repo / "src" / "del.py": [],
+            repo / "w.py": ["w = 1\n"],
+            repo / "r.py": ["r = 2\n"],
+            repo / "m.py": ["a", "b"],
         }
     )
 
@@ -428,11 +429,14 @@ def test_antigravity_emitter_injects_system_message() -> None:
     assert "\n" not in stdout
 
 
-def test_antigravity_parses_pre_command_payload_and_emits_deny() -> None:
+def test_antigravity_parses_pre_command_payload_and_emits_deny(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    outer = tmp_path / "outer"
+    inner = tmp_path / "inner"
     raw = json.dumps(
         {
             "hookEventName": "PreToolUse",
-            "cwd": "/repo",
+            "cwd": str(repo),
             "toolCall": {
                 "id": "call_1",
                 "name": "run_command",
@@ -442,25 +446,21 @@ def test_antigravity_parses_pre_command_payload_and_emits_deny() -> None:
     )
     with_arg_cwd = json.dumps(
         {
-            "cwd": "/outer",
-            "toolCall": {"name": "run_command", "args": {"CommandLine": "pip install x", "Cwd": "/inner"}},
+            "cwd": str(outer),
+            "toolCall": {"name": "run_command", "args": {"CommandLine": "pip install x", "Cwd": str(inner)}},
         }
     )
     with_relative_cwd = json.dumps(
         {
-            "cwd": "/outer",
+            "cwd": str(outer),
             "toolCall": {"name": "run_command", "args": {"CommandLine": "pip install x", "Cwd": "packages/app"}},
         }
     )
 
-    assert parse_command_payload("antigravity", raw) == CommandPayload(
-        command="pip install requests", cwd=Path("/repo")
-    )
-    assert parse_command_payload("antigravity", with_arg_cwd) == CommandPayload(
-        command="pip install x", cwd=Path("/inner")
-    )
+    assert parse_command_payload("antigravity", raw) == CommandPayload(command="pip install requests", cwd=repo)
+    assert parse_command_payload("antigravity", with_arg_cwd) == CommandPayload(command="pip install x", cwd=inner)
     assert parse_command_payload("antigravity", with_relative_cwd) == CommandPayload(
-        command="pip install x", cwd=Path("/outer/packages/app")
+        command="pip install x", cwd=outer / "packages" / "app"
     )
 
     stdout, code = emit_deny("antigravity", "use uv add")
