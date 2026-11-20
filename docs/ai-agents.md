@@ -101,15 +101,18 @@ lines a hook payload's edit touched, so it requires `--stdin-hook`, and falls
 back to `diff` then `file` when the edit contents cannot be located. Under
 `edit`/`diff` scope, files missing on disk are skipped silently.
 
-`--stdin-hook HARNESS` (claude-code|codex|copilot, instead of `--files`) reads
-that harness's post-edit JSON payload on stdin, normalizes it to the edited
-files and edit text, and replies in the harness's own feedback format:
-claude-code via stderr + exit 2, codex/copilot via a JSON envelope on stdout. A
-codex payload carries the patch text in `tool_input.command` as an
-`apply_patch` envelope, so byor reads the changed files and their added lines
-from its `*** Add File:` / `*** Update File:` sections, following `*** Move to:`
-renames to the destination path. A payload with no recognizable file, malformed
-ones included, exits 0 without scanning.
+`--stdin-hook HARNESS` (claude-code|codex|copilot|antigravity, instead of
+`--files`) reads that harness's post-edit JSON payload on stdin, normalizes it
+to the edited files and edit text, and replies in the harness's own feedback
+format: claude-code via stderr + exit 2, codex/copilot/antigravity via a JSON
+envelope on stdout. A codex payload carries the patch text in
+`tool_input.command` as an `apply_patch` envelope, so byor reads the changed
+files and their added lines from its `*** Add File:` / `*** Update File:`
+sections, following `*** Move to:` renames to the destination path. An
+antigravity `PostInvocation` payload carries `transcriptPath` and
+`initialNumSteps`, so byor reads the invocation's successful edit tool calls
+from the transcript and returns diagnostics via `injectSteps`. A payload with
+no recognizable file, malformed ones included, exits 0 without scanning.
 
 Hook mode resolves the repository from the edited file, not the session's
 working directory, so an agent editing a file in another repo gets that repo's
@@ -279,8 +282,9 @@ checks share their file discovery this way (`.byor/scripts/lib/pyfiles.py`).
 ## The pre-command gate
 
 The post-edit hook covers what agents write; the pre-command gate covers what
-they run. Claude Code, Codex, and Copilot expose a pre-execution hook
-(`PreToolUse` / `preToolUse`) that byor installs alongside the post-edit hook:
+they run. Claude Code, Codex, Copilot, and Antigravity expose a pre-execution
+hook (`PreToolUse` / `preToolUse`) that byor installs alongside the post-edit
+hook:
 
 ```bash
 byor command-check --stdin-hook HARNESS     # what the hook runs
@@ -335,7 +339,7 @@ byor hook install --agent AGENT
 byor hook uninstall --agent AGENT
 ```
 
-`AGENT` is one of `claude-code`, `codex`, `copilot`, `opencode`,
+`AGENT` is one of `claude-code`, `codex`, `copilot`, `antigravity`, `opencode`,
 `pi`, or `skill`. byor records the agents you install under `agents` in its
 state file, `~/.local/state/byor/state.yml`, which self-heal, `doctor` and
 `hook uninstall` read.
@@ -376,15 +380,17 @@ init:
 | `claude-code` | Real `PostToolUse` + `PreToolUse` hooks (`~/.claude/settings.json`) |
 | `codex` | Real `PostToolUse` + `PreToolUse` hooks (`~/.codex/hooks.json`); trust them via `/hooks` |
 | `copilot` | Real `postToolUse` + `preToolUse` hooks (`~/.copilot/hooks/byor.json`) |
+| `antigravity` | Real `PostInvocation` + `PreToolUse` hooks (`~/.gemini/config/hooks.json`) |
 | `opencode` | Real post-edit plugin for OpenCode 2 and 1 (`~/.config/opencode/plugin/byor.ts`) |
 | `pi` | Real `tool_result` extension (`~/.pi/agent/extensions/byor.ts`) |
-| `skill` | The `byor` skill (hub `SKILL.md` + `references/`) rendered into `~/.agents/skills/byor/` and `~/.claude/skills/byor/`; installed by `byor install` by default |
+| `skill` | The `byor` skill (hub `SKILL.md` + `references/`) rendered into `~/.agents/skills/byor/`, `~/.claude/skills/byor/`, and `~/.gemini/config/skills/byor/`; installed by `byor install` by default |
 
 Codex, Copilot, OpenCode, and Pi auto-discover the `byor` skill from
-`~/.agents/skills/byor/SKILL.md`, so they get the capture loop natively.
+`~/.agents/skills/byor/SKILL.md`, and Antigravity reads it from
+`~/.gemini/config/skills/byor/SKILL.md`, so they get the capture loop natively.
 
-Cursor and Antigravity are not supported: neither exposes a post-edit hook that
-byor can reliably integrate with, so byor omits them until that changes.
+Cursor is not supported: it does not expose a post-edit hook that byor can
+reliably integrate with, so byor omits it until that changes.
 
 ### skill
 
@@ -438,16 +444,17 @@ your instruction files unless you ask.
 
 ### The skill is byor-owned
 
-The skill is global, one render per machine, and lives at two paths because
+The skill is global, one render per machine, and lives at three paths because
 no single one is read by every harness:
 
 | Harness | Reads the skill from |
 | --- | --- |
 | Claude Code | `~/.claude/skills/byor/SKILL.md` |
+| Antigravity | `~/.gemini/config/skills/byor/SKILL.md` |
 | Codex, Pi | `~/.agents/skills/byor/SKILL.md` |
 | Copilot, OpenCode | `~/.agents/skills/byor/SKILL.md`; also read `~/.claude/skills/` |
 
-byor owns both renders, like the OpenCode plugin or the generated rule copies.
+byor owns all three renders, like the OpenCode plugin or the generated rule copies.
 It writes them from the packaged skill tree (`byor/data/skill/`) and keeps them
 current with the **same self-heal that runs on most byor commands**: any file
 (hub or reference) that drifts from the installed byor's skill is silently
@@ -494,6 +501,50 @@ for the `edit` and `write` tools, runs
 any diagnostics to the tool result the model sees. Pi already reads skills from
 `~/.agents/skills/`, so it discovers the rule-capture skill with no Pi-specific
 work.
+
+### antigravity
+
+Install writes a named `"byor"` entry into `~/.gemini/config/hooks.json`,
+preserving any sibling named hooks in that file:
+
+```json
+{
+  "byor": {
+    "PostInvocation": [
+      {
+        "type": "command",
+        "command": "byor agent-check --stdin-hook antigravity"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "byor command-check --stdin-hook antigravity"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Antigravity's `PostToolUse` hook discards stdout and stderr feedback (verified
+live against `agy` 1.5.13), so byor hooks `PostInvocation` instead.
+`PostInvocation` receives `transcriptPath` and `initialNumSteps`; byor reads
+the steps appended during that invocation, collects successful file-editing
+tool calls (`write_file`, `edit_file`, and Antigravity's IDE/app edit tools),
+and injects any diagnostics back into the loop as a `systemMessage` via
+`injectSteps`. Invocations without file edits exit 0 silently without running
+ast-grep.
+
+The pre-command gate matches `run_command` under `PreToolUse`, reading
+`toolCall.args.CommandLine` and `cwd`. A deny prints
+`{"decision": "deny", "reason": "..."}` and exits 0; an allowed command prints
+nothing (returning `{}` makes Antigravity deny the tool call, while
+`{"decision": "allow"}` would bypass Antigravity's own permission prompts).
 
 ### codex
 

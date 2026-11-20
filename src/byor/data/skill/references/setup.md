@@ -14,9 +14,9 @@ since the skill was installed by it, the user can repair with
 `uv tool install byor --with-executables-from ast-grep-cli && byor install`.)
 
 You are running **inside** a specific harness (Claude Code, Codex, Copilot,
-OpenCode, or Pi). Its post-edit hook is what feeds diagnostics back to you here,
-so always make sure it is installed for *this* harness. If doctor does not list
-it, offer to add it:
+Antigravity, OpenCode, or Pi). Its post-edit hook is what feeds diagnostics
+back to you here, so always make sure it is installed for *this* harness. If
+doctor does not list it, offer to add it:
 
 ```bash
 byor hook install --agent <this-harness>

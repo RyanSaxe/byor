@@ -173,11 +173,12 @@ byor hook install --agent copilot     # add one later
 | Claude Code | `PostToolUse` | `PreToolUse` |
 | Codex | `PostToolUse` | `PreToolUse` |
 | Copilot CLI | `postToolUse` | `preToolUse` |
+| Antigravity | `PostInvocation` | `PreToolUse` |
 | OpenCode | plugin | not yet |
 | Pi | extension | not yet |
 
 
-Cursor and Antigravity expose no reliable post-edit hook, so byor omits them.
+Cursor exposes no reliable post-edit hook, so byor omits it.
 Details in [docs/ai-agents.md](docs/ai-agents.md).
 
 ## Commands

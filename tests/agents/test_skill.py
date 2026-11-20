@@ -1,9 +1,9 @@
 """The byor skill: rendering the hub + references, global installation, self-heal.
 
-The skill is a rendered tree of marked files installed into both global agent locations, so these
-tests pin the render: frontmatter meeting the cross-agent standard, each reference actually teaching
-its topic. The lifecycle is covered too — uninstall removes marked files and prunes empty dirs, and
-self-heal refreshes a drifted reference but never touches a user-owned file.
+The skill is a rendered tree of marked files installed into all three global agent locations, so
+these tests pin the render: frontmatter meeting the cross-agent standard, each reference actually
+teaching its topic. The lifecycle is covered too — uninstall removes marked files and prunes empty
+dirs, and self-heal refreshes a drifted reference but never touches a user-owned file.
 """
 
 import re
@@ -40,13 +40,18 @@ def claude_dir(home: Path) -> Path:
     return global_skill_dirs(home)[1]
 
 
-def test_install_renders_the_whole_tree_into_both_global_locations(home: Path) -> None:
+def gemini_dir(home: Path) -> Path:
+    return global_skill_dirs(home)[2]
+
+
+def test_install_renders_the_whole_tree_into_all_global_locations(home: Path) -> None:
     install_agents()
 
     for relpath in ("SKILL.md", *REFERENCES):
         agents_copy = (agents_dir(home) / relpath).read_text()
         claude_copy = (claude_dir(home) / relpath).read_text()
-        assert agents_copy == claude_copy
+        gemini_copy = (gemini_dir(home) / relpath).read_text()
+        assert agents_copy == claude_copy == gemini_copy
     assert "skill" in global_agents()
 
     hub = (agents_dir(home) / "SKILL.md").read_text()
@@ -145,6 +150,7 @@ def test_uninstall_removes_marked_files_and_prunes_dirs(home: Path, capsys: pyte
     # Marked files (and the dirs they left empty) are gone; the user file stays.
     assert not (agents_dir(home) / "SKILL.md").exists()
     assert not agents_dir(home).exists()  # fully pruned
+    assert not gemini_dir(home).exists()  # fully pruned
     assert user_file.read_text() == "my own notes\n"
     assert "without the BYOR marker" in capsys.readouterr().out
     assert "skill" not in global_agents()

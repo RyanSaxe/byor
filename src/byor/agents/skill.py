@@ -25,18 +25,19 @@ __all__ = (
 _SKILL_RELPATH = "SKILL.md"
 
 
-def global_skill_dirs(home: Path | None = None) -> tuple[Path, Path]:
-    """Return the two global skill directories for the rendered BYOR skill.
+def global_skill_dirs(home: Path | None = None) -> tuple[Path, Path, Path]:
+    """Return the global skill directories for the rendered BYOR skill.
 
     `~/.agents/skills/byor/` is read by Codex, Copilot, opencode, and pi;
-    `~/.claude/skills/byor/` by Claude Code, which reads only its own directory.
-    The skill describes byor itself, not any repo, so a single render per machine
-    — kept current by self-heal — serves every repo.
+    `~/.claude/skills/byor/` by Claude Code; `~/.gemini/config/skills/byor/`
+    by Antigravity. The skill describes byor itself, not any repo, so a single
+    render per machine — kept current by self-heal — serves every repo.
     """
     base = home or Path.home()
     return (
         base / ".agents" / "skills" / "byor",
         base / ".claude" / "skills" / "byor",
+        base / ".gemini" / "config" / "skills" / "byor",
     )
 
 

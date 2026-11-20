@@ -57,11 +57,11 @@ class HookSpec:
     matcher: str | None
     """An entry's matcher value, or None for harnesses without matchers."""
     nests_command: bool
-    """True when the command lives in a nested hooks[] list (claude/codex)."""
+    """True when the command lives in a nested hooks[] list (claude/codex/antigravity)."""
     stderr_feedback: bool = False
     """True when the harness reads feedback from stderr + exit 2, not stdout JSON."""
     typed_entry: bool = False
-    """True when a flat entry must carry `"type": "command"` (copilot)."""
+    """True when a flat entry must carry `"type": "command"` (copilot/antigravity)."""
     root_fields: dict[str, JsonValue] = field(default_factory=dict)
     """Top-level keys the config file requires (e.g. `{"version": 1}`)."""
     owns_file: bool = False
@@ -138,6 +138,29 @@ HOOK_SPECS: dict[tuple[Harness, HookEvent], HookSpec] = {
         root_fields={"version": 1},
         owns_file=True,
     ),
+    ("antigravity", "post-edit"): HookSpec(
+        harness="antigravity",
+        event="post-edit",
+        signature=BYOR_COMMAND_SIGNATURE,
+        global_relpath="hooks.json",
+        # Antigravity's hooks.json keys each top-level entry by hook name
+        # (preserving sibling hooks like user notifications). PostToolUse
+        # ignores stdout/stderr feedback in agy 1.5.13, so post-edit hooks
+        # PostInvocation, which is a flat handler list and supports injectSteps.
+        key_path=("byor", "PostInvocation"),
+        matcher=None,
+        nests_command=False,
+        typed_entry=True,
+    ),
+    ("antigravity", "pre-command"): HookSpec(
+        harness="antigravity",
+        event="pre-command",
+        signature=BYOR_PRECOMMAND_SIGNATURE,
+        global_relpath="hooks.json",
+        key_path=("byor", "PreToolUse"),
+        matcher="run_command",
+        nests_command=True,
+    ),
 }
 
 
@@ -168,7 +191,8 @@ def _install_spec(spec: HookSpec) -> list[str]:
         return []
     _set_entries(config, spec, entries=[*kept, current])
     _save_config(path, config)
-    return [f"Installed a {spec.harness} {spec.event} hook in {relpath}"]
+    article = "an" if spec.harness[:1].lower() in "aeiou" else "a"
+    return [f"Installed {article} {spec.harness} {spec.event} hook in {relpath}"]
 
 
 def _install_owned_hooks(harness: Harness, specs: list[HookSpec]) -> list[str]:
@@ -322,6 +346,7 @@ _GLOBAL_DIRS: dict[Harness, str] = {
     "claude-code": ".claude",
     "codex": ".codex",
     "copilot": ".copilot",
+    "antigravity": ".gemini/config",
 }
 
 

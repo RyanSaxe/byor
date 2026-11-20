@@ -874,3 +874,85 @@ def test_hook_mode_fails_open_on_an_internal_error(
     assert captured.out == ""
     # Exit 0 never blocks, but a stderr breadcrumb keeps the failure visible.
     assert "skipped after an internal error" in captured.err
+
+
+def test_antigravity_post_invocation_injects_diagnostics_as_system_message(
+    check_repo: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = check_repo / "src.py"
+    source.write_text('x = cast(int, "1")\n')
+    transcript = check_repo / "transcript_full.jsonl"
+    transcript.write_text(
+        "\n".join(
+            json.dumps(step)
+            for step in [
+                {
+                    "step_index": 1,
+                    "type": "PLANNER_RESPONSE",
+                    "tool_calls": [
+                        {"name": "write_file", "args": {"Path": str(source), "Content": 'x = cast(int, "1")\n'}}
+                    ],
+                },
+                {"step_index": 2, "type": "GENERIC", "status": "DONE"},
+            ]
+        )
+        + "\n"
+    )
+    stdin(monkeypatch, {"transcriptPath": str(transcript), "initialNumSteps": 1, "cwd": str(check_repo)})
+
+    assert main(agent_check_args(check_repo, "--stdin-hook", "antigravity")) == 0
+
+    envelope = json.loads(capsys.readouterr().out)
+    message = envelope["injectSteps"][0]["systemMessage"]["systemMessage"]
+    assert "Rule: no-python-cast" in message
+    assert "BYOR found 1 issue in AI-written code." in message
+
+
+def test_antigravity_external_edit_before_repo_edit_still_applies_repo_rules(
+    check_repo: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    # A batched PostInvocation can write a scratch file outside the repo before
+    # editing repo code; grouping by repo root keeps the repo's rules active.
+    scratch = tmp_path / "outside" / "note.py"
+    scratch.parent.mkdir()
+    scratch.write_text("x = 1\n")
+    source = check_repo / "src.py"
+    source.write_text('x = cast(int, "1")\n')
+    transcript = tmp_path / "transcript_full.jsonl"
+    transcript.write_text(
+        "\n".join(
+            json.dumps(step)
+            for step in [
+                {
+                    "step_index": 1,
+                    "type": "PLANNER_RESPONSE",
+                    "status": "DONE",
+                    "tool_calls": [
+                        {"name": "write_file", "args": {"Path": str(scratch), "Content": "x = 1\n"}},
+                        {"name": "write_file", "args": {"Path": str(source), "Content": 'x = cast(int, "1")\n'}},
+                    ],
+                },
+                {"step_index": 2, "type": "GENERIC", "status": "DONE"},
+                {"step_index": 3, "type": "GENERIC", "status": "DONE"},
+            ]
+        )
+        + "\n"
+    )
+    stdin(monkeypatch, {"transcriptPath": str(transcript), "initialNumSteps": 1, "cwd": str(scratch.parent)})
+
+    assert main(["agent-check", "--stdin-hook", "antigravity"]) == 0
+
+    envelope = json.loads(capsys.readouterr().out)
+    message = envelope["injectSteps"][0]["systemMessage"]["systemMessage"]
+    assert "Rule: no-python-cast" in message
