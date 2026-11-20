@@ -20,6 +20,7 @@ from byor.agents.hookconfig import (
     BYOR_PRECOMMAND_SIGNATURE,
     HOOK_SPECS,
     global_hook_dir,
+    has_byor_hook,
     hook_command,
     hook_installed,
     hook_problem,
@@ -67,7 +68,7 @@ def test_claude_code_post_edit_command_redirects_to_stderr_but_the_gate_does_not
     assert hook_command(HOOK_SPECS[("claude-code", "pre-command")]) == f"{BYOR_PRECOMMAND_SIGNATURE} claude-code"
 
 
-@pytest.mark.parametrize("harness", ["codex", "copilot"])
+@pytest.mark.parametrize("harness", [h for h in HARNESS_CHOICES if h != "claude-code"])
 def test_non_claude_commands_are_bare(harness: Harness) -> None:
     assert hook_command(HOOK_SPECS[(harness, "post-edit")]) == f"{BYOR_COMMAND_SIGNATURE} {harness}"
 
@@ -338,3 +339,61 @@ def test_install_removes_an_old_byor_entry_beside_the_current_one(isolated_home:
     install_hook("claude-code")
 
     assert [entry["matcher"] for entry in json.loads(path.read_text())["hooks"]["PostToolUse"]] == [spec.matcher]
+
+
+def test_antigravity_install_and_uninstall_preserve_sibling_named_hooks(isolated_home: Path) -> None:
+    path = config_path(isolated_home, "antigravity")
+    assert path == isolated_home / ".gemini" / "config" / "hooks.json"
+    path.parent.mkdir(parents=True)
+    sibling = {"Stop": [{"type": "command", "command": "pushover-notify"}]}
+    path.write_text(json.dumps({"pushover-notify": sibling}))
+
+    install_hook("antigravity")
+
+    data = json.loads(path.read_text())
+    assert data == {
+        "pushover-notify": sibling,
+        "byor": {
+            "PostInvocation": [{"type": "command", "command": hook_command(HOOK_SPECS[("antigravity", "post-edit")])}],
+            "PreToolUse": [
+                {
+                    "matcher": "run_command",
+                    "hooks": [{"type": "command", "command": hook_command(HOOK_SPECS[("antigravity", "pre-command")])}],
+                }
+            ],
+        },
+    }
+    assert hook_installed("antigravity")
+
+    assert uninstall_hook("antigravity")
+
+    assert json.loads(path.read_text()) == {"pushover-notify": sibling}
+    assert not hook_installed("antigravity")
+
+
+def test_antigravity_keeps_user_edited_post_invocation_entry(isolated_home: Path) -> None:
+    install_hook("antigravity")
+    path = config_path(isolated_home, "antigravity")
+    data = json.loads(path.read_text())
+    data["byor"]["PostInvocation"][0]["timeout"] = 10
+    path.write_text(json.dumps(data))
+    before = path.read_text()
+
+    assert install_hook("antigravity") == []
+    assert path.read_text() == before
+    assert hook_problem("antigravity") is None
+
+    messages = uninstall_hook("antigravity")
+    assert any("entry you edited" in msg for msg in messages)
+    remaining = json.loads(path.read_text())
+    assert remaining["byor"]["PostInvocation"][0]["timeout"] == 10
+    assert "PreToolUse" not in remaining["byor"]
+    assert has_byor_hook("antigravity") is False
+
+
+def test_antigravity_uninstall_deletes_hooks_json_when_byor_was_the_only_hook(isolated_home: Path) -> None:
+    install_hook("antigravity")
+    path = config_path(isolated_home, "antigravity")
+
+    assert uninstall_hook("antigravity")
+    assert not path.exists()

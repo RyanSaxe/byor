@@ -293,3 +293,40 @@ def test_render_deny_caps_matches_and_keeps_the_rewrite_instruction() -> None:
     assert "... and 2 more not shown" in rendered
     assert "Do this instead: Use uv add." in rendered
     assert rendered.endswith("Rewrite the command as instructed and run it again.")
+
+
+def test_antigravity_pre_tool_use_denies_and_approves_silently(
+    home: Path,
+    # monkeypatch isolates process state (env, cwd, stdio): an external boundary
+    # ast-grep-ignore: python.question-mocks
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = make_repo(home)
+    write_command_rule(repo / ".byor" / "commands" / "project" / "no-pip.yml", "no-pip")
+    stdin(
+        monkeypatch,
+        {
+            "hookEventName": "PreToolUse",
+            "cwd": str(repo),
+            "toolCall": {"name": "run_command", "args": {"CommandLine": "pip install requests"}},
+        },
+    )
+    capsys.readouterr()
+
+    assert main(["command-check", "--stdin-hook", "antigravity"]) == 0
+    decision = json.loads(capsys.readouterr().out)
+    assert decision["decision"] == "deny"
+    assert "no-pip" in decision["reason"]
+
+    stdin(
+        monkeypatch,
+        {
+            "hookEventName": "PreToolUse",
+            "cwd": str(repo),
+            "toolCall": {"name": "run_command", "args": {"CommandLine": "uv add requests"}},
+        },
+    )
+    assert main(["command-check", "--stdin-hook", "antigravity"]) == 0
+    assert capsys.readouterr().out == ""

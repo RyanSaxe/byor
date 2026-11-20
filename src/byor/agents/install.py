@@ -64,6 +64,7 @@ AGENT_CHOICES = (
     "claude-code",
     "codex",
     "copilot",
+    "antigravity",
     "opencode",
     "pi",
     "skill",

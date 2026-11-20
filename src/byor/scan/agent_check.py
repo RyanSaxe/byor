@@ -135,43 +135,51 @@ def _hook_diagnostics(args: argparse.Namespace, *, harness: Harness) -> int:
     """Parse the payload, scan, and emit per harness.
 
     Global hooks fire in every repo, and an agent session can edit a file
-    outside its cwd's repository, so the repo is resolved from the payload's
-    edited file rather than the cwd. A byor-init'd repo scopes against its own
-    rules; any other repo applies your global rules via the home sgconfig and
-    any user-owned global checks. With none of those in play there is nothing
-    to check, so byor stays silent (exit 0) without shelling out.
+    outside its cwd's repository — or, in batched hooks like Antigravity's
+    PostInvocation, touch files in different directories in one turn — so edits
+    are grouped by the repo root resolved from each edited file. A byor-init'd
+    repo scopes against its own rules; any other repo applies your global rules
+    via the home sgconfig and any user-owned global checks. With none of those
+    in play there is nothing to check, so byor stays silent (exit 0) without
+    shelling out.
     """
     config_dir = global_config_dir()
     global_config = load_global_config(config_dir)
     payload = parse_payload(harness, sys.stdin.read())
     if not payload.edits:
         return 0
-    repo_root = _hook_repo_root(explicit=args.repo, payload=payload)
-    if worktree_disabled_entry(repo_root, load_current_machine_state(config_dir, global_state_dir())) is not None:
-        # `byor disable` covers this repo: silent exit, nothing is scanned.
-        return 0
-    try:
-        worktree_lines = heal_worktree(repo_root, config_dir)
-    except WorktreeCopyBusyError as error:
-        worktree_lines = [f"byor: {error}"]
-    for line in worktree_lines:
-        sys.stderr.write(f"{line}\n")
-    heal_repo_for_hook(repo_root, config_dir)
-    if not _has_any_rules(repo_root) and not global_config.checks:
-        return 0
-    payload = _resolved_payload(payload, repo_root)
-    diagnostics, outcome = _scan(
-        repo_root,
-        list(payload.edits),
-        scope=_resolve_scope(args, harness),
-        payload=payload,
-        global_config=global_config,
-        config_dir=config_dir,
-    )
+    state = load_current_machine_state(config_dir, global_state_dir())
+    scope = _resolve_scope(args, harness)
+    diagnostics: list[Diagnostic] = []
+    check_failures: list[str] = []
+    for repo_root, repo_payload in _edits_by_repo(payload, explicit=args.repo).items():
+        if worktree_disabled_entry(repo_root, state) is not None:
+            # `byor disable` covers this repo: skip scanning it.
+            continue
+        try:
+            worktree_lines = heal_worktree(repo_root, config_dir)
+        except WorktreeCopyBusyError as error:
+            worktree_lines = [f"byor: {error}"]
+        for line in worktree_lines:
+            sys.stderr.write(f"{line}\n")
+        heal_repo_for_hook(repo_root, config_dir)
+        if not _has_any_rules(repo_root) and not global_config.checks:
+            continue
+        resolved = _resolved_payload(repo_payload, repo_root)
+        repo_diags, outcome = _scan(
+            repo_root,
+            list(resolved.edits),
+            scope=scope,
+            payload=resolved,
+            global_config=global_config,
+            config_dir=config_dir,
+        )
+        diagnostics.extend(repo_diags)
+        check_failures.extend(outcome.failures)
     concise = args.concise or global_config.output_concise
     rendered = _render_feedback(
         diagnostics,
-        outcome,
+        CheckOutcome(failures=check_failures),
         concise=concise,
         limit=global_config.output_max_diagnostics,
     )
@@ -354,18 +362,22 @@ def _edit_ranges_for(file: Path, payload: EditPayload) -> list[Range] | None:
     return edit_ranges(file.read_text(encoding="utf-8"), contents)
 
 
-def _hook_repo_root(*, explicit: Path | None, payload: EditPayload) -> Path:
-    """Resolve the repo whose rules govern the edited file.
+def _edits_by_repo(payload: EditPayload, *, explicit: Path | None) -> dict[Path, EditPayload]:
+    """Group edited files by the repository root that governs each file.
 
     A hook fires with the session's cwd, which need not contain the file the
-    agent edited; starting from the first absolute edited path applies that
-    file's own repo rules and keeps the cwd repo's out. Codex patch paths
-    are anchored at the payload's cwd when it has one; paths still relative
-    fall back to cwd resolution, since only the invoking repo can anchor them.
-    An explicit --repo still wins inside resolve_repo_root.
+    agent edited, and a batched hook (Antigravity's PostInvocation, Codex
+    apply_patch) can edit files in more than one directory or repo in one turn.
+    Resolving per file keeps an external file (such as a `/tmp` scratch file)
+    from hiding a repository's rules. Relative paths fall back to cwd
+    resolution; an explicit `--repo` always puts every edit in one group.
     """
-    start = next((file.parent for file in payload.edits if file.is_absolute()), None)
-    return resolve_repo_root(explicit=explicit, start=start)
+    groups: dict[Path, EditPayload] = {}
+    for file, contents in payload.edits.items():
+        start = file.parent if file.is_absolute() else None
+        repo_root = resolve_repo_root(explicit=explicit, start=start)
+        groups.setdefault(repo_root, EditPayload()).edits[file] = contents
+    return groups
 
 
 def _resolved_payload(payload: EditPayload, repo_root: Path) -> EditPayload:

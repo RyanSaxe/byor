@@ -27,9 +27,9 @@ __all__ = (
 
 JsonValue: TypeAlias = "None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]"
 
-Harness = Literal["claude-code", "codex", "copilot"]
+Harness = Literal["claude-code", "codex", "copilot", "antigravity"]
 
-HARNESS_CHOICES: tuple[Harness, ...] = ("claude-code", "codex", "copilot")
+HARNESS_CHOICES: tuple[Harness, ...] = ("claude-code", "codex", "copilot", "antigravity")
 
 # Copilot caps additionalContext at 10KB; keep a margin for the JSON envelope.
 COPILOT_CONTEXT_CAP = 10_000
@@ -255,6 +255,144 @@ def _parse_copilot_command(payload: dict[str, JsonValue]) -> CommandPayload:
     return CommandPayload(command=_string(tool_args.get("command")), cwd=_directory(payload.get("cwd")))
 
 
+def _parse_antigravity(payload: dict[str, JsonValue]) -> EditPayload:
+    """Extract edited files from an Antigravity PostInvocation payload.
+
+    Antigravity's PostToolUse discards stdout/stderr feedback, so byor hooks
+    PostInvocation instead (verified live against agy 1.5.13). PostInvocation
+    carries `transcriptPath` and `initialNumSteps` rather than tool arguments,
+    so we read only steps written during this invocation (`step_index >=
+    initialNumSteps`), skip tool calls whose result step did not finish with
+    `DONE`, and ignore internal artifact files under `artifactDirectoryPath`.
+    """
+    transcript = _string(payload.get("transcriptPath"))
+    initial_steps = _non_negative_int(payload.get("initialNumSteps"))
+    if transcript is None or initial_steps is None:
+        return EditPayload()
+    recent = _antigravity_recent_steps(Path(transcript), since=initial_steps)
+    if not recent:
+        return EditPayload()
+    cwd = _directory(payload.get("cwd"))
+    base = cwd if cwd is not None and cwd.is_absolute() else None
+    artifact_dir = _directory(payload.get("artifactDirectoryPath"))
+    artifact_root = artifact_dir.resolve() if artifact_dir is not None and artifact_dir.is_absolute() else None
+    edits: dict[Path, list[str]] = {}
+    for step_pos, step in enumerate(recent):
+        if step.get("type") != "PLANNER_RESPONSE" or step.get("status") not in (None, "DONE"):
+            continue
+        tool_calls = step.get("tool_calls")
+        if not isinstance(tool_calls, list):
+            continue
+        results = _antigravity_tool_results(recent[step_pos + 1 :])
+        for idx, call in enumerate(tool_calls):
+            if results and (idx >= len(results) or results[idx].get("status") not in (None, "DONE")):
+                continue
+            extracted = _antigravity_tool_edit(call)
+            if extracted is None:
+                continue
+            raw_path, contents = extracted
+            path = base / raw_path if base is not None else Path(raw_path)
+            if artifact_root is not None and path.is_absolute() and path.resolve().is_relative_to(artifact_root):
+                continue
+            edits.setdefault(path, []).extend(contents)
+    return EditPayload(edits=edits)
+
+
+_ANTIGRAVITY_NON_TOOL_STEP_TYPES = frozenset({"PLANNER_RESPONSE", "SYSTEM_MESSAGE", "USER_INPUT"})
+
+
+def _antigravity_tool_results(following: list[dict[str, JsonValue]]) -> list[dict[str, JsonValue]]:
+    results: list[dict[str, JsonValue]] = []
+    for step in following:
+        step_type = step.get("type")
+        if step_type == "PLANNER_RESPONSE":
+            break
+        if step_type not in _ANTIGRAVITY_NON_TOOL_STEP_TYPES:
+            results.append(step)
+    return results
+
+
+def _antigravity_recent_steps(transcript: Path, *, since: int) -> list[dict[str, JsonValue]]:
+    try:
+        lines = transcript.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    # Transcripts append in ascending step_index order; walking from the tail
+    # limits JSON parsing to the current invocation's steps.
+    recent: list[dict[str, JsonValue]] = []
+    for line in reversed(lines):
+        if not line.strip():
+            continue
+        step = _load_object(line)
+        if step is None:
+            continue
+        step_index = _non_negative_int(step.get("step_index"))
+        if step_index is None:
+            continue
+        if step_index < since:
+            break
+        recent.append(step)
+    recent.reverse()
+    return recent
+
+
+_ANTIGRAVITY_EDIT_FIELDS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "write_file": ("Path", ("Content",)),
+    "edit_file": ("Path", ("Replacement",)),
+    "write_to_file": ("TargetFile", ("CodeContent",)),
+    "replace_file_content": ("TargetFile", ("ReplacementContent",)),
+}
+
+
+def _antigravity_tool_edit(call: JsonValue) -> tuple[str, list[str]] | None:
+    if not isinstance(call, dict):
+        return None
+    name = _string(call.get("name"))
+    args = call.get("args")
+    if name is None or not isinstance(args, dict):
+        return None
+    if (spec := _ANTIGRAVITY_EDIT_FIELDS.get(name)) is not None:
+        path_key, content_keys = spec
+        file_path = _string(args.get(path_key))
+        return None if file_path is None else (file_path, _strings(args, content_keys))
+    if name == "multi_replace_file_content":
+        file_path = _string(args.get("TargetFile"))
+        return (
+            None if file_path is None else (file_path, _antigravity_chunk_replacements(args.get("ReplacementChunks")))
+        )
+    return None
+
+
+def _antigravity_chunk_replacements(chunks: JsonValue) -> list[str]:
+    if not isinstance(chunks, list):
+        return []
+    return [
+        value
+        for chunk in chunks
+        if isinstance(chunk, dict) and (value := _string(chunk.get("ReplacementContent"))) is not None
+    ]
+
+
+def _parse_antigravity_command(payload: dict[str, JsonValue]) -> CommandPayload:
+    tool_call = payload.get("toolCall")
+    if not isinstance(tool_call, dict):
+        return CommandPayload()
+    args = tool_call.get("args")
+    if not isinstance(args, dict):
+        return CommandPayload()
+    session_cwd = _directory(payload.get("cwd"))
+    arg_cwd = _directory(args.get("Cwd"))
+    if arg_cwd is not None and not arg_cwd.is_absolute() and session_cwd is not None and session_cwd.is_absolute():
+        cwd: Path | None = session_cwd / arg_cwd
+    else:
+        cwd = arg_cwd or session_cwd
+    return CommandPayload(command=_string(args.get("CommandLine")), cwd=cwd)
+
+
+def _non_negative_int(value: JsonValue) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
 def _directory(value: JsonValue) -> Path | None:
     text = _string(value)
     return Path(text) if text is not None else None
@@ -285,6 +423,11 @@ def _copilot_context_envelope(text: str) -> dict[str, JsonValue]:
     return {"additionalContext": text}
 
 
+def _emit_antigravity(rendered: str) -> tuple[str, int]:
+    envelope: dict[str, JsonValue] = {"injectSteps": [{"systemMessage": {"systemMessage": rendered}}]}
+    return json.dumps(envelope, separators=(",", ":")), 0
+
+
 def _deny_claude_code(rendered: str) -> tuple[str, int]:
     envelope: dict[str, JsonValue] = {
         "hookSpecificOutput": {
@@ -307,6 +450,14 @@ def _deny_copilot(rendered: str) -> tuple[str, int]:
 
 def _copilot_deny_envelope(text: str) -> dict[str, JsonValue]:
     return {"permissionDecision": "deny", "permissionDecisionReason": text}
+
+
+def _deny_antigravity(rendered: str) -> tuple[str, int]:
+    # An approved command stays silent (handled in emit_deny): returning `{}`
+    # makes Antigravity deny the tool call, while `{"decision": "allow"}` would
+    # bypass the user's own permission policy.
+    envelope: dict[str, JsonValue] = {"decision": "deny", "reason": rendered}
+    return json.dumps(envelope, separators=(",", ":")), 0
 
 
 def _truncate_to_cap(rendered: str, *, envelope: Callable[[str], dict[str, JsonValue]]) -> str:
@@ -367,22 +518,26 @@ _PARSERS: dict[Harness, _Parser] = {
     "claude-code": _parse_claude_code,
     "codex": _parse_codex,
     "copilot": _parse_copilot,
+    "antigravity": _parse_antigravity,
 }
 
 _COMMAND_PARSERS: dict[Harness, _CommandParser] = {
     "claude-code": _parse_claude_code_command,
     "codex": _parse_codex_command,
     "copilot": _parse_copilot_command,
+    "antigravity": _parse_antigravity_command,
 }
 
 _EMITTERS: dict[Harness, _Emitter] = {
     "claude-code": _emit_claude_code,
     "codex": _emit_codex,
     "copilot": _emit_copilot,
+    "antigravity": _emit_antigravity,
 }
 
 _DENY_EMITTERS: dict[Harness, _Emitter] = {
     "claude-code": _deny_claude_code,
     "codex": _deny_codex,
     "copilot": _deny_copilot,
+    "antigravity": _deny_antigravity,
 }

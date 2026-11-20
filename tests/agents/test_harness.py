@@ -12,6 +12,7 @@ from pathlib import Path
 
 from byor.agents.harness import (
     COPILOT_CONTEXT_CAP,
+    HARNESS_CHOICES,
     CommandPayload,
     EditPayload,
     emit,
@@ -151,7 +152,7 @@ def test_apply_patch_merges_repeated_update_sections_for_one_file() -> None:
 
 
 def test_malformed_payloads_fail_open_to_an_empty_result() -> None:
-    for harness in ("claude-code", "codex", "copilot"):
+    for harness in HARNESS_CHOICES:
         assert parse_payload(harness, "{not json") == EditPayload()
         assert parse_payload(harness, "[]") == EditPayload()
         assert parse_payload(harness, "{}") == EditPayload()
@@ -198,7 +199,7 @@ def test_copilot_emitter_keeps_multibyte_diagnostics_near_the_cap() -> None:
 
 
 def test_empty_diagnostics_emit_plain_exit_zero_everywhere() -> None:
-    for harness in ("claude-code", "codex", "copilot"):
+    for harness in HARNESS_CHOICES:
         assert emit(harness, "") == ("", 0)
 
 
@@ -243,12 +244,16 @@ def test_copilot_parses_the_command_from_stringified_tool_args() -> None:
 
 
 def test_malformed_command_payloads_fail_open_to_no_command() -> None:
-    for harness in ("claude-code", "codex", "copilot"):
+    for harness in HARNESS_CHOICES:
         assert parse_command_payload(harness, "{not json") == CommandPayload()
         assert parse_command_payload(harness, "{}") == CommandPayload()
     # A different tool's hook firing (no command in tool_input) also approves.
     assert parse_command_payload("claude-code", json.dumps({"tool_input": {"file_path": "x"}})) == CommandPayload()
     assert parse_command_payload("codex", json.dumps({"tool_input": {"command": ["ls", 5]}})) == CommandPayload()
+    assert (
+        parse_command_payload("antigravity", json.dumps({"toolCall": {"name": "write_file", "args": {"Path": "x"}}}))
+        == CommandPayload()
+    )
 
 
 def test_deny_emitters_wrap_the_reason_in_each_harness_envelope() -> None:
@@ -280,5 +285,185 @@ def test_copilot_deny_reason_respects_the_ten_kb_cap() -> None:
 
 
 def test_an_empty_decision_approves_with_no_output_everywhere() -> None:
-    for harness in ("claude-code", "codex", "copilot"):
+    for harness in HARNESS_CHOICES:
         assert emit_deny(harness, "") == ("", 0)
+
+
+def _write_transcript(tmp_path: Path, steps: list[dict[str, object]]) -> Path:
+    transcript = tmp_path / "transcript_full.jsonl"
+    transcript.write_text("\n".join(json.dumps(step) for step in steps) + "\n", encoding="utf-8")
+    return transcript
+
+
+def test_antigravity_reads_successful_edits_since_initial_num_steps(tmp_path: Path) -> None:
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "step_index": 0,
+                "type": "PLANNER_RESPONSE",
+                "tool_calls": [{"name": "write_file", "args": {"Path": "/repo/old.py", "Content": "stale = 1\n"}}],
+            },
+            {"step_index": 1, "type": "GENERIC", "status": "DONE"},
+            {
+                "step_index": 2,
+                "type": "PLANNER_RESPONSE",
+                "tool_calls": [
+                    {"name": "write_file", "args": {"Path": "/repo/a.py", "Content": "x = 1\n"}},
+                    {"name": "edit_file", "args": {"Path": "/repo/b.py", "Target": "old", "Replacement": "new"}},
+                    {"name": "edit_file", "args": {"Path": "/repo/failed.py", "Target": "missing", "Replacement": "z"}},
+                    {"name": "read_file", "args": {"Path": "/repo/readme.md"}},
+                ],
+            },
+            {"step_index": 3, "type": "GENERIC", "status": "DONE"},
+            {"step_index": 4, "type": "GENERIC", "status": "DONE"},
+            {"step_index": 5, "type": "GENERIC", "status": "ERROR"},
+            {"step_index": 6, "type": "GENERIC", "status": "DONE"},
+        ],
+    )
+    raw = json.dumps({"transcriptPath": str(transcript), "initialNumSteps": 2, "cwd": "/repo"})
+
+    assert parse_payload("antigravity", raw) == EditPayload(
+        edits={Path("/repo/a.py"): ["x = 1\n"], Path("/repo/b.py"): ["new"]}
+    )
+
+
+def test_antigravity_resolves_relative_paths_and_handles_ide_tools_and_deletions(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    artifact_dir = tmp_path / "artifacts"
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "step_index": 0,
+                "type": "PLANNER_RESPONSE",
+                "status": "DONE",
+                "tool_calls": [
+                    {"name": "edit_file", "args": {"Path": "src/del.py", "Target": "x", "Replacement": ""}},
+                    {"name": "write_to_file", "args": {"TargetFile": str(repo / "w.py"), "CodeContent": "w = 1\n"}},
+                    {
+                        "name": "replace_file_content",
+                        "args": {"TargetFile": str(repo / "r.py"), "ReplacementContent": "r = 2\n"},
+                    },
+                    {
+                        "name": "multi_replace_file_content",
+                        "args": {
+                            "TargetFile": str(repo / "m.py"),
+                            "ReplacementChunks": [{"ReplacementContent": "a"}, {"ReplacementContent": "b"}],
+                        },
+                    },
+                    {
+                        "name": "write_file",
+                        "args": {"Path": str(artifact_dir / "plan.md"), "Content": "# Plan\n"},
+                    },
+                ],
+            },
+            # An intervening system message must not shift tool-result matching.
+            {"step_index": 1, "type": "SYSTEM_MESSAGE", "status": "DONE"},
+            {"step_index": 2, "type": "GENERIC", "status": "DONE"},
+            {"step_index": 3, "type": "GENERIC", "status": "DONE"},
+            {"step_index": 4, "type": "GENERIC", "status": "DONE"},
+            {"step_index": 5, "type": "GENERIC", "status": "DONE"},
+            {"step_index": 6, "type": "GENERIC", "status": "DONE"},
+        ],
+    )
+    raw = json.dumps(
+        {
+            "transcriptPath": str(transcript),
+            "initialNumSteps": 0,
+            "cwd": str(repo),
+            "artifactDirectoryPath": str(artifact_dir),
+        }
+    )
+
+    assert parse_payload("antigravity", raw) == EditPayload(
+        edits={
+            repo / "src" / "del.py": [],
+            repo / "w.py": ["w = 1\n"],
+            repo / "r.py": ["r = 2\n"],
+            repo / "m.py": ["a", "b"],
+        }
+    )
+
+
+def test_antigravity_skips_canceled_and_unexecuted_tool_calls(tmp_path: Path) -> None:
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "step_index": 0,
+                "type": "PLANNER_RESPONSE",
+                "status": "DONE",
+                "tool_calls": [
+                    {"name": "write_file", "args": {"Path": "/repo/ok.py", "Content": "a = 1\n"}},
+                    {"name": "write_file", "args": {"Path": "/repo/canceled.py", "Content": "b = 2\n"}},
+                    {"name": "write_file", "args": {"Path": "/repo/aborted.py", "Content": "c = 3\n"}},
+                ],
+            },
+            {"step_index": 1, "type": "GENERIC", "status": "DONE"},
+            {"step_index": 2, "type": "GENERIC", "status": "CANCELED"},
+        ],
+    )
+    raw = json.dumps({"transcriptPath": str(transcript), "initialNumSteps": 0})
+
+    assert parse_payload("antigravity", raw) == EditPayload(edits={Path("/repo/ok.py"): ["a = 1\n"]})
+
+
+def test_antigravity_missing_transcript_fails_open(tmp_path: Path) -> None:
+    raw = json.dumps({"transcriptPath": str(tmp_path / "missing.jsonl"), "initialNumSteps": 1})
+
+    assert parse_payload("antigravity", raw) == EditPayload()
+    assert parse_payload("antigravity", json.dumps({"transcriptPath": str(tmp_path), "initialNumSteps": 0})) == (
+        EditPayload()
+    )
+    assert parse_payload("antigravity", json.dumps({"transcriptPath": str(tmp_path), "initialNumSteps": True})) == (
+        EditPayload()
+    )
+
+
+def test_antigravity_emitter_injects_system_message() -> None:
+    stdout, code = emit("antigravity", "diag text")
+
+    assert code == 0
+    assert json.loads(stdout) == {"injectSteps": [{"systemMessage": {"systemMessage": "diag text"}}]}
+    assert "\n" not in stdout
+
+
+def test_antigravity_parses_pre_command_payload_and_emits_deny(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    outer = tmp_path / "outer"
+    inner = tmp_path / "inner"
+    raw = json.dumps(
+        {
+            "hookEventName": "PreToolUse",
+            "cwd": str(repo),
+            "toolCall": {
+                "id": "call_1",
+                "name": "run_command",
+                "args": {"CommandLine": "pip install requests", "WaitMsBeforeAsync": 5000},
+            },
+        }
+    )
+    with_arg_cwd = json.dumps(
+        {
+            "cwd": str(outer),
+            "toolCall": {"name": "run_command", "args": {"CommandLine": "pip install x", "Cwd": str(inner)}},
+        }
+    )
+    with_relative_cwd = json.dumps(
+        {
+            "cwd": str(outer),
+            "toolCall": {"name": "run_command", "args": {"CommandLine": "pip install x", "Cwd": "packages/app"}},
+        }
+    )
+
+    assert parse_command_payload("antigravity", raw) == CommandPayload(command="pip install requests", cwd=repo)
+    assert parse_command_payload("antigravity", with_arg_cwd) == CommandPayload(command="pip install x", cwd=inner)
+    assert parse_command_payload("antigravity", with_relative_cwd) == CommandPayload(
+        command="pip install x", cwd=outer / "packages" / "app"
+    )
+
+    stdout, code = emit_deny("antigravity", "use uv add")
+    assert code == 0
+    assert json.loads(stdout) == {"decision": "deny", "reason": "use uv add"}
+    assert "\n" not in stdout
