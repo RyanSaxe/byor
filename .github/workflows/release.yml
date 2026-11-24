@@ -33,16 +33,16 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
-      contents: write  # push the version-bump commit and create the release
-      id-token: write  # Trusted Publishing exchanges this OIDC token with PyPI
+      contents: write # push the version-bump commit and create the release
+      id-token: write # Trusted Publishing exchanges this OIDC token with PyPI
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # full history and tags for notes and idempotent tagging
+          fetch-depth: 0 # full history and tags for notes and idempotent tagging
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: uv sync --locked  # ast-grep ships as the ast-grep-cli dependency
+      - run: uv sync --locked # ast-grep ships as the ast-grep-cli dependency
 
       - run: uv run ruff format --check .
       - run: uv run ruff check .

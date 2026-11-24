@@ -11,8 +11,8 @@
 
 Custom code rules for the conventions your linter won't enforce.
 
-byor lets you write the checks a general linter leaves out: rules specific
-to your team, your codebase, and your taste. It runs them in your editor, in CI,
+byor lets you write the checks a general linter leaves out: rules specific to
+your team, your codebase, and your taste. It runs them in your editor, in CI,
 and inside your AI agent's loop as it writes.
 
 The recommended practice for getting AI Agents to follow a styleguide is putting
@@ -27,16 +27,17 @@ breaks a rule, so the required correction is always in context.
 ## A Simple Example
 
 When I was recently reviewing code from `codex`, it was completely littered with
-pass-through wrappers: functions that existed to route arguments to other functions.
+pass-through wrappers: functions that existed to route arguments to other
+functions.
 
 ```python
 def get_user(user_id: int) -> User:
     return fetch_user(user_id)
 ```
 
-Whether a pass-through wrapper is worth banning is a matter of taste, and personally
-I think they just make code harder to read. So I built a rule that bans writing code
-like this, and now my agents never commit the mistake again.
+Whether a pass-through wrapper is worth banning is a matter of taste, and
+personally I think they just make code harder to read. So I built a rule that
+bans writing code like this, and now my agents never commit the mistake again.
 
 ```yaml
 # .byor/rules/project/no-routing-functions.yml
@@ -73,25 +74,29 @@ uv tool install byor --with-executables-from ast-grep-cli   # byor, plus ast-gre
 byor install                                               # editor + agent integrations, once per machine
 ```
 
-byor bundles ast-grep and finds it either way. `--with-executables-from ast-grep-cli`
-also puts it on your PATH, for the `ast-grep scan` and `ast-grep lsp` uses below.
+byor bundles ast-grep and finds it either way.
+`--with-executables-from ast-grep-cli` also puts it on your PATH, for the
+`ast-grep scan` and `ast-grep lsp` uses below.
 
-The above commands will set up byor globally. After doing so, open up your coding agent
-and ask it to help set you up. It will likely read your markdown files for rules it can
-codify, as well as offer to run `byor init` if you would like to separate the rules of
-your repository from your global config.
+The above commands will set up byor globally. After doing so, open up your
+coding agent and ask it to help set you up. It will likely read your markdown
+files for rules it can codify, as well as offer to run `byor init` if you would
+like to separate the rules of your repository from your global config.
 
 ## Where rules run
 
 A rule you write once runs in four places:
 
-- **Editor:** a diagnostic while you type ([`ast-grep lsp`](https://ast-grep.github.io/guide/tools/editors.html)).
+- **Editor:** a diagnostic while you type
+  ([`ast-grep lsp`](https://ast-grep.github.io/guide/tools/editors.html)).
 - **Terminal:** `ast-grep scan`.
-- **CI:** committed rules run with plain `ast-grep`. `byor init --gate` creates the `.github` workflow.
-- **AI agents:** a post-edit hook corrects each edit as it lands, and a pre-command gate corrects shell commands before they run, scoped to what changed.
+- **CI:** committed rules run with plain `ast-grep`. `byor init --gate` creates
+  the `.github` workflow.
+- **AI agents:** a post-edit hook corrects each edit as it lands, and a
+  pre-command gate corrects shell commands before they run, scoped to what
+  changed.
 
 ## What a rule can be
-
 
 | Kind | Catches | Example |
 | --- | --- | --- |
@@ -99,8 +104,8 @@ A rule you write once runs in four places:
 | **Check** | whatever a linter, type checker, or script decides | [dependency-gate](examples/config/scripts/dependency-gate.sh) |
 | **Command** | a shell command, before it runs | [no-pip-install](examples/command-rules/no-pip-install.yml) |
 
-
-Every example runs in CI. More in [examples/](examples/) and [docs/rules.md](docs/rules.md).
+Every example runs in CI. More in [examples/](examples/) and
+[docs/rules.md](docs/rules.md).
 
 ## Scopes
 
@@ -108,13 +113,11 @@ A rule can be yours alone or committed for the whole team. Committing it turns a
 preference into a standard: the rule is version-controlled, reviewed like any
 other change, and applied the same way for everyone, human or agent.
 
-
 | Scope | Lives in | Shared with |
 | --- | --- | --- |
 | `project` | `.byor/rules/project/` | Your team (committed) |
 | `local` | `.byor/rules/personal/local/` | You, this repo |
 | `global` | `~/.config/byor/rules/` | You, every repo |
-
 
 A project or local rule overrides a global rule with the same ID. Command rules
 follow the same scopes under `.byor/commands/`. Packages and profiles tune which
@@ -125,12 +128,14 @@ rules apply where; see [docs/rules.md](docs/rules.md).
 ### Another Quick Example
 
 Agents are good at making an error disappear instead of fixing them. I ran into
-this a lot with pre-commit hooks. There would be a large number of errors it would
-have to resolve, and it would resolve many, but often would choose to silence some.
+this a lot with pre-commit hooks. There would be a large number of errors it
+would have to resolve, and it would resolve many, but often would choose to
+silence some.
 
-Moving from `pre-commit` to `byor` hooks improved this because the agent wouldn't
-get lazy as a function of having so many diagnostics at once. However, it didn't
-solve the problem. Luckily, we can create rules that tell the agent not to silence!
+Moving from `pre-commit` to `byor` hooks improved this because the agent
+wouldn't get lazy as a function of having so many diagnostics at once. However,
+it didn't solve the problem. Luckily, we can create rules that tell the agent
+not to silence!
 
 ```yaml
 # .byor/rules/project/no-type-suppression.yml
@@ -167,7 +172,6 @@ byor install --agents claude-code,codex
 byor hook install --agent copilot     # add one later
 ```
 
-
 | Harness | Post-edit hook | Pre-command gate |
 | --- | --- | --- |
 | Claude Code | `PostToolUse` | `PreToolUse` |
@@ -177,9 +181,8 @@ byor hook install --agent copilot     # add one later
 | OpenCode | plugin | not yet |
 | Pi | extension | not yet |
 
-
-Cursor exposes no reliable post-edit hook, so byor omits it.
-Details in [docs/ai-agents.md](docs/ai-agents.md).
+Cursor exposes no reliable post-edit hook, so byor omits it. Details in
+[docs/ai-agents.md](docs/ai-agents.md).
 
 ## Commands
 
@@ -196,7 +199,8 @@ byor package   list, install or remove opt-in rule bundles
 
 ### Rule Management
 
-These are mostly run by your agent as it captures feedback ([docs/rules.md](docs/rules.md)):
+These are mostly run by your agent as it captures feedback
+([docs/rules.md](docs/rules.md)):
 
 ```text
 byor add       create a rule (--command for a command rule)
@@ -208,9 +212,10 @@ byor exclude   turn off a global rule in this repo
 byor include   turn a previously excluded rule back on
 ```
 
-byor runs the rest itself: `byor agent-check` (the post-edit hook), `byor
-command-check` (the pre-command gate), and `byor sync` (mirror global rules into
-a repo). Every command takes `--help`; repo commands take `--repo PATH`.
+byor runs the rest itself: `byor agent-check` (the post-edit hook),
+`byor command-check` (the pre-command gate), and `byor sync` (mirror global
+rules into a repo). Every command takes `--help`; repo commands take
+`--repo PATH`.
 
 ## Documentation
 

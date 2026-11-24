@@ -1,20 +1,20 @@
 # ast-grep Patterns and a Worked Example
 
-The syntax a rule's `rule.pattern` uses, plus a complete worked example.
-Before drafting tags for a new rule, run `byor list --scope all --tags` and
-reuse fitting user-defined labels where possible.
+The syntax a rule's `rule.pattern` uses, plus a complete worked example. Before
+drafting tags for a new rule, run `byor list --scope all --tags` and reuse
+fitting user-defined labels where possible.
 
 ## Pattern Primer
 
 - A pattern is real code with holes. `$X` matches exactly one node:
   `cast($TYPE, $VALUE)` matches any two-argument call to `cast`.
-- `$$$ARGS` matches zero or more nodes: `print($$$ARGS)` matches every call
-  to `print`, whatever its arguments.
-- Metavariables are `$UPPERCASE`; repeating a name requires the occurrences
-  to match identical code.
+- `$$$ARGS` matches zero or more nodes: `print($$$ARGS)` matches every call to
+  `print`, whatever its arguments.
+- Metavariables are `$UPPERCASE`; repeating a name requires the occurrences to
+  match identical code.
 - Patterns match syntax, not semantics: `print($$$ARGS)` cannot tell logging
-  from CLI output. Prefer a slightly broad pattern with a precise
-  `agent_prompt` over a clever rule that misses cases.
+  from CLI output. Prefer a slightly broad pattern with a precise `agent_prompt`
+  over a clever rule that misses cases.
 - Test a pattern before committing to the full rule:
 
 ```bash
@@ -63,8 +63,8 @@ Verify: write `print("debug")` to `/tmp/byor-rule-check.py`, run
 
 Rules accept ast-grep's `files:` and `ignores:` glob lists at the top level,
 which is the right tool when a rule is correct for most of the repo but wrong
-for one directory — a CLI's `bin/` legitimately printing while `src/` must
-not, or generated code exempt from style rules:
+for one directory — a CLI's `bin/` legitimately printing while `src/` must not,
+or generated code exempt from style rules:
 
 ```yaml
 id: no-console-log-in-src
@@ -75,6 +75,6 @@ rule:
   pattern: console.log($$$ARGS)
 ```
 
-Prefer this over `byor exclude`, which disables a rule for the whole repo.
-When an installed package's rule needs path scoping, exclude it and capture a
+Prefer this over `byor exclude`, which disables a rule for the whole repo. When
+an installed package's rule needs path scoping, exclude it and capture a
 path-scoped project rule in its place — say so in the rule's rationale.

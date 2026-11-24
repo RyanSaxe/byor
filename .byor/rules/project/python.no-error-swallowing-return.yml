@@ -74,7 +74,7 @@ metadata:
       `# ast-grep-ignore: python.no-error-swallowing-return` on its own line
       directly above the return, with a short comment above it explaining why.
     tags:
-    - python
-    - error-handling
-    - style-guide
-    - greenfield
+      - python
+      - error-handling
+      - style-guide
+      - greenfield

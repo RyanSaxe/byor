@@ -25,13 +25,13 @@ rule:
         - kind: import_from_statement
         - has:
             field: module_name
-            regex: '^importlib$'
+            regex: "^importlib$"
         - any:
             - has:
                 stopBy: end
                 kind: dotted_name
                 not:
-                  regex: '^(importlib|resources|metadata)$'
+                  regex: "^(importlib|resources|metadata)$"
             - has:
                 kind: wildcard_import
 metadata:

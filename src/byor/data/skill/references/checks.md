@@ -28,9 +28,9 @@ duplicating it as an ast-grep rule.
 When the user's feedback fits one of these better than ast-grep, say so, and
 offer to set it up: configure the tool, then wire it in so it runs everywhere
 the user wants — as a byor `check` (so it rides the same agent feedback
-channel), in CI, and/or as a pre-commit hook. That setup is a normal
-engineering task you perform directly; it does not go through the byor rule
-commands. Keep ast-grep for the syntax patterns it is uniquely good at.
+channel), in CI, and/or as a pre-commit hook. That setup is a normal engineering
+task you perform directly; it does not go through the byor rule commands. Keep
+ast-grep for the syntax patterns it is uniquely good at.
 
 ## Author a check script
 
@@ -46,18 +46,19 @@ script:
 
 - accepts a list of file paths as its arguments;
 - treats an empty argument list as "scan the whole repository", using the
-  repository's normal ignored-file rules (for git repos, `git ls-files -co
-  --exclude-standard` is the right shape). This is required, not optional:
-  generated CI gates run checks with no filenames, so a script that quietly
-  no-ops without arguments passes every CI run while enforcing nothing;
+  repository's normal ignored-file rules (for git repos,
+  `git ls-files -co --exclude-standard` is the right shape). This is required,
+  not optional: generated CI gates run checks with no filenames, so a script
+  that quietly no-ops without arguments passes every CI run while enforcing
+  nothing;
 - exits nonzero, with concise plain-text output, when any file still violates —
   that output is fed verbatim into the agent's context, so keep it short and
   free of ANSI color;
 - may autofix in place first and then report only what it could not fix, so the
   next agent spends tokens only on the remainder. When it does autofix, it must
-  also say what it changed and exit nonzero on any change — the harness tells the
-  agent "a hook modified the file," and without a reason the agent is surprised
-  its code changed.
+  also say what it changed and exit nonzero on any change — the harness tells
+  the agent "a hook modified the file," and without a reason the agent is
+  surprised its code changed.
 
 Put it where it is callable and matches the policy's scope: a personal standard
 near the global config (`~/.config/byor/scripts/`, referenced in `run` with
@@ -78,17 +79,17 @@ checks:
 ```
 
 Some checks police the agent, not the code: an ask-first gate on dependency
-changes, a "use the CLI, not the file" guard on a lockfile. Add `gate: false`
-to such a check — the post-edit hook still runs it, but `byor init --gate`
-leaves it out of the generated pre-commit and CI files, where it would block a
-human doing the same thing deliberately. Ask yourself when authoring: would
-this check be wrong in CI? If yes, it needs `gate: false`.
+changes, a "use the CLI, not the file" guard on a lockfile. Add `gate: false` to
+such a check — the post-edit hook still runs it, but `byor init --gate` leaves
+it out of the generated pre-commit and CI files, where it would block a human
+doing the same thing deliberately. Ask yourself when authoring: would this check
+be wrong in CI? If yes, it needs `gate: false`.
 
 A check that outgrows one file shares code as a path-referenced subprocess,
 never a Python import — there is no package to import from, and `sys.path`
-tricks break when scripts move between the two homes. A repo script resolves
-its helper relative to itself (`Path(__file__).parent / "lib" / "helper.py"`).
-A `~/` script must instead spell out the literal
+tricks break when scripts move between the two homes. A repo script resolves its
+helper relative to itself (`Path(__file__).parent / "lib" / "helper.py"`). A
+`~/` script must instead spell out the literal
 `~/.config/byor/scripts/lib/helper.py` string, because `byor init --gate`
 vendors scripts by following exactly those literal references — copying the
 helper to `.byor/scripts/lib/helper.py` and rewriting the string in place — and

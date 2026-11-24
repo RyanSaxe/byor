@@ -50,8 +50,8 @@ metadata:
       python.prefer-functions-over-namespace-class` on its own line directly
       above the class, with a short comment above it explaining why.
     tags:
-    - python
-    - design
-    - oop
-    - style-guide
-    - greenfield
+      - python
+      - design
+      - oop
+      - style-guide
+      - greenfield

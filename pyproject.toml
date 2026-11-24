@@ -3,13 +3,18 @@ name = "byor"
 version = "0.5.2"
 description = "Build Your Own Rules: define code checks (ast-grep rules, linters, type checkers, scripts) once, and enforce them inside your AI agent's loop as well as your terminal and editor"
 readme = "README.md"
-authors = [
-    { name = "Ryan Saxe", email = "ryancsaxe+1@gmail.com" }
-]
+authors = [{ name = "Ryan Saxe", email = "ryancsaxe+1@gmail.com" }]
 requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-keywords = ["ast-grep", "linter", "ai", "coding-agent", "diagnostics", "static-analysis"]
+keywords = [
+    "ast-grep",
+    "linter",
+    "ai",
+    "coding-agent",
+    "diagnostics",
+    "static-analysis",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
@@ -21,10 +26,7 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Quality Assurance",
 ]
-dependencies = [
-    "ast-grep-cli>=0.42.3",
-    "ruamel-yaml>=0.18",
-]
+dependencies = ["ast-grep-cli>=0.42.3", "ruamel-yaml>=0.18"]
 
 [project.urls]
 Homepage = "https://github.com/RyanSaxe/byor"
@@ -39,12 +41,7 @@ requires = ["uv_build>=0.11.16,<0.12.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
-dev = [
-    "pytest>=9.0.3",
-    "pytest-cov>=7.1.0",
-    "ruff>=0.15.17",
-    "ty>=0.0.49",
-]
+dev = ["pytest>=9.0.3", "pytest-cov>=7.1.0", "ruff>=0.15.17", "ty>=0.0.49"]
 
 [tool.ruff]
 line-length = 120
