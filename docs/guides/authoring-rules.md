@@ -1,13 +1,13 @@
 # Authoring rules
 
-byor enforces three kinds of checks: `ast-grep` YAML rules for code shape,
+byor runs three kinds of checks: `ast-grep` YAML rules for code shape,
 `language: Bash` command rules for shell commands, and external `checks` /
-`command_checks` for linters, type checkers, or custom scripts.
+`command_checks` for linters, type checkers, or scripts.
 
 ## `ast-grep` rules
 
-A rule file is standard `ast-grep` YAML plus an optional `metadata.byor` block
-that AI hooks read:
+Use standard `ast-grep` YAML with an optional `metadata.byor` block for AI
+hooks:
 
 ```yaml
 # .byor/rules/project/python.no-typing-cast.yml
@@ -27,38 +27,30 @@ rule:
 metadata:
   byor:
     rationale: >
-      Casting hides type-model problems and can make invalid assumptions
-      invisible to reviewers and type checkers.
+      Casting hides type-model problems and hides invalid assumptions from
+      reviewers and type checkers.
     agent_prompt: >
       Do not use typing.cast here. Fix the type by narrowing, changing the
       signature, introducing a protocol, or restructuring the value flow.
-    tags:
-      - python
-      - typing
+    tags: [python, typing]
 ```
 
-Required `ast-grep` fields are `id`, `language`, `rule`, and `message`
-(`severity` is recommended). See
-[Configuration reference](../reference/configuration.md#rule-metadata) for all
+Required fields: `id`, `language`, `rule`, `message` (`severity` recommended).
+See [Configuration reference](../reference/configuration.md#rule-metadata) for
 `metadata.byor` fields.
 
 ### Rule IDs
 
-Rule IDs must be unique within each scope (`project`, `local`, and canonical
-`global`). Recommended format:
-
-```text
-[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*
-```
-
-`byor add` and `byor edit` warn on IDs outside that pattern and reject path
-separators, backslashes, or `..` components because rules are stored as
-`<rule-id>.yml`. Duplicate IDs are rejected before `ast-grep` sees them.
+IDs must be unique within each scope (`project`, `local`, canonical `global`).
+Recommended pattern: `[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*`. `byor add` and
+`byor edit` warn outside that pattern and reject `/`, `\`, or `..` because files
+are named `<rule-id>.yml`.
 
 ### Exceptions
 
-Exception policy belongs in `agent_prompt` prose using `ast-grep`'s native
-suppression comment placed on the line directly above the violation:
+Put `# ast-grep-ignore: <rule-id>` on the line directly above the violation so
+formatters cannot relocate it; always name the rule ID so other rules stay
+active:
 
 ```python
 # External library returns untyped dict; validated at boundary.
@@ -66,44 +58,31 @@ suppression comment placed on the line directly above the violation:
 value = cast(dict[str, str], raw)
 ```
 
-Putting `# ast-grep-ignore: <rule-id>` on its own line above the violation keeps
-formatters from relocating it if they wrap the code line. Always name the rule
-ID; a bare `ast-grep-ignore` silences every rule on that line.
-
 Pass `--allow-exceptions` to `byor add` to append the standard suppression
-sentence to `agent_prompt` (seeding `agent_prompt` from `message` if absent).
-
-In a repository with a committed gate, only suppress rules the repository
-commits. `ast-grep` treats a suppression naming an unknown rule as an
-`unused-suppression` error, so suppressing a personal global or package rule
-fails CI by design. Promote the rule to `project` scope first.
+instruction to `agent_prompt` (seeding from `message` if absent). In gated
+repos, only suppress committed `project` rules because `ast-grep` flags
+suppressions for unknown rules as `unused-suppression` in CI.
 
 ## Managing rules with the CLI
 
 ```sh
-byor add --scope project --from draft.yml            # copy, validate, sync, and run quick doctor
-byor add --scope global --id no-print --edit         # open template in $EDITOR (saves draft on failure)
+byor add --scope project --from draft.yml            # validate, copy, sync, quick doctor
+byor add --scope global --id no-print --edit         # open template in $EDITOR (saves draft on error)
 byor add --scope project --from draft.yml --allow-exceptions
-byor edit python.no-typing-cast                      # resolve project -> local -> canonical global in $EDITOR
+byor edit python.no-typing-cast                      # resolve project -> local -> canonical global
 byor remove python.no-typing-cast                    # delete from resolved scope and re-sync
-byor list --scope all                                # show active, skipped, and excluded rules + checks
+byor list --scope all                                # active, skipped, and excluded rules + checks
 ```
 
-Global-scope `add`, `edit`, and `remove` always operate on canonical files under
-`~/.config/byor/rules/` (never generated mirrors) and fan out to every
-registered repository. Leaving `$EDITOR` unchanged exits `0` with
-`No changes to '<rule-id>'`.
+Global `add`, `edit`, and `remove` operate on `~/.config/byor/rules/` and fan
+out to registered repositories. Closing `$EDITOR` unchanged exits `0`.
 
 ## Command rules
 
-Command rules use the same YAML shape with `language: Bash` and live under
-`.byor/commands/` (or `~/.config/byor/commands/` for global scope). They never
-appear in `sgconfig.yml` `ruleDirs`, so file scans never pick them up and
-`.sh`-file rules never block interactive commands. Command rules have their own
-ID namespace, though `byor exclude RULE_ID` and tag exclusions apply to both
-trees.
-
-Create and verify a command rule in both directions:
+Command rules use `language: Bash` under `.byor/commands/` or
+`~/.config/byor/commands/`. They never enter `sgconfig.yml` `ruleDirs`, so file
+scans ignore them and `.sh` rules never block interactive commands. They share
+`byor exclude` / tag exclusions but keep a separate ID namespace.
 
 ```sh
 byor add --scope project --command --from no-pip-install.yml
@@ -111,14 +90,14 @@ byor command-check --command 'pip install requests'   # denied, exit 2
 byor command-check --command 'uv add requests'        # clean, exit 0
 ```
 
-`byor list`, `byor edit`, `byor remove`, and `byor promote` do not manage
-command rules yet; edit or move the YAML files directly and run `byor sync`. See
-[examples/command-rules/](../../examples/command-rules/) for CI-tested patterns.
+`list`, `edit`, `remove`, and `promote` do not manage command rules yet; edit
+the YAML files directly and run `byor sync`. See
+[examples/command-rules/](../../examples/command-rules/).
 
 ## Extra checks
 
-Declare external linters, type checkers, or scripts under `checks:` in
-`.byor/config.yml` (shared) or `~/.config/byor/config.yml` (personal):
+Declare linters, type checkers, or scripts under `checks:` in `.byor/config.yml`
+or `~/.config/byor/config.yml`:
 
 ```yaml
 checks:
@@ -128,33 +107,22 @@ checks:
     tags: [format]
 ```
 
-Contract for `checks`:
+- **Shell-free.** `run` splits via `shlex` without a shell (no `&&`, pipes,
+  redirects, or aliases). Leading `~` expands to `$HOME`.
+- **File args and whole-repo fallback.** `extensions` (no dots; empty matches
+  all) filters in-scope paths appended as trailing args. With no args (such as
+  CI), the command must scan the whole repo respecting `.gitignore`.
+- **Precedence and output.** Merges by `name` (`repo > package > global`).
+  Nonzero exit appends stdout/stderr under `### <name>` and causes `agent-check`
+  to exit `2`. Missing executables warn once on stderr and skip.
+- **Agent-only (`gate: false`).** Promoted into `.byor/config.yml` for every
+  contributor's agent, but omitted from `.pre-commit-config.yaml` and CI.
 
-- **Shell-free execution.** `run` is split with `shlex` and executed directly
-  without a shell, preventing shell injection from committed configs (no `&&`,
-  pipes, redirects, or shell aliases). Leading `~` / `~/` expands to your home
-  directory.
-- **File arguments and whole-repo fallback.** `extensions` (without dots)
-  filters in-scope files; empty `extensions` matches every in-scope file. byor
-  appends matching paths as trailing arguments. When invoked with no paths (such
-  as in generated CI workflows), the command must scan the whole repository
-  while respecting `.gitignore`.
-- **Precedence and output.** Checks merge by `name` (`repo` > `package` >
-  `global`). Any nonzero exit appends stdout and stderr under `### <name>` and
-  causes `agent-check` to exit `2`. A missing executable prints one stderr
-  warning and is skipped without crashing the hook.
-- **Agent-only checks (`gate: false`).** Set `gate: false` for checks that
-  police agents rather than humans (for example, failing when `pyproject.toml`
-  dependencies change so the agent asks first). `byor init --gate` still
-  promotes `gate: false` checks into `.byor/config.yml` so every contributor's
-  agent sees them, but omits them from `.pre-commit-config.yaml` and CI.
+## Check scripts
 
-## Writing check scripts
-
-Multi-step logic (such as autofixing before reporting) belongs in a script. An
-autofixing script must tell the agent what it changed and exit nonzero whenever
-it modified a file, even if no issues remain, so the agent knows why the file on
-disk changed:
+Use a script for multi-step checks (such as autofix-then-report). An autofixing
+script must report what it changed and exit nonzero whenever it edits a file so
+the agent sees why disk changed:
 
 ```sh
 #!/bin/sh
@@ -170,7 +138,7 @@ EOF
   [ "$#" -eq 0 ] && exit 0
 fi
 
-# Keep F401 unfixable so autofix does not delete an import before the next edit uses it.
+# Keep F401 unfixable so autofix does not drop an import before the next edit uses it.
 fixed=$(uvx ruff check --fix-only --show-fixes --unfixable F401 "$@" 2>/dev/null)
 reformatted=""
 case "$(uvx ruff format "$@" 2>&1)" in
@@ -185,28 +153,24 @@ remaining=$(uvx ruff check --quiet --output-format concise "$@" 2>/dev/null)
 exit 1
 ```
 
-Place personal scripts under `~/.config/byor/scripts/` (referenced with `~/`)
-and repository scripts under `.byor/scripts/` (referenced by repo-relative
-path). Either make the script executable or invoke its interpreter in `run` (for
-example, `sh ~/.config/byor/scripts/ruff.sh`).
+Put personal scripts in `~/.config/byor/scripts/` (`~/`) and repo scripts in
+`.byor/scripts/`. Make scripts executable or prefix an interpreter in `run`
+(`sh ~/.config/byor/scripts/ruff.sh`).
 
-### Sharing helper scripts
+### Shared helpers
 
-When multiple check scripts share logic, invoke the helper as a subprocess by
-path rather than mutating `sys.path`:
+Invoke helper scripts as subprocesses by path rather than mutating `sys.path`:
 
-- Inside a repository script, resolve the helper relative to `__file__` (for
-  example, `Path(__file__).parent / "lib" / "helper.py"`). byor's own Python
-  checks share file discovery via `.byor/scripts/lib/pyfiles.py`.
-- Inside a `~/` script that may be vendored by `byor init --gate`, spell out the
-  literal `~/.config/byor/scripts/lib/helper.py` path. Gate vendoring scans for
-  literal home-script paths, copies transitive helpers into `.byor/scripts/`,
-  and rewrites those strings in place.
+- **Repo scripts:** resolve relative to `__file__` (for example,
+  `Path(__file__).parent / "lib" / "helper.py"`).
+- **Personal scripts (`~/`):** write the literal
+  `~/.config/byor/scripts/lib/helper.py` path so `byor init --gate` detects,
+  vendors, and rewrites transitive helpers into `.byor/scripts/`.
 
 ## Testing rules
 
-Write `valid:` and `invalid:` cases alongside your rules and run `ast-grep test`
-(see [examples/](../../examples/README.md) for the full fixture layout):
+Pair rules with `valid:` / `invalid:` fixtures (see
+[examples/](../../examples/README.md)) and run:
 
 ```sh
 ast-grep test -c examples/sgconfig.yml --skip-snapshot-tests

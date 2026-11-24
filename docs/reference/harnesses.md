@@ -1,10 +1,8 @@
 # Harnesses
 
-`byor install` registers your selected AI coding harnesses and the shared `byor`
-skill once per machine; `byor hook install --agent AGENT` and
-`byor hook uninstall --agent AGENT` add or remove individual integrations
-afterward. Integrations live under your home directory and apply in every
-repository.
+`byor install` registers selected harnesses and the `byor` skill globally under
+`$HOME`. Add or remove one later with `byor hook install --agent AGENT` /
+`byor hook uninstall --agent AGENT`.
 
 ## Support matrix
 
@@ -18,34 +16,26 @@ repository.
 | `pi` | Extension (`tool_result`) | Not yet | `~/.pi/agent/extensions/byor.ts` |
 | `skill` | — | — | `~/.agents/skills/byor/`, `~/.claude/skills/byor/`, `~/.gemini/config/skills/byor/` |
 
-Cursor exposes no reliable post-edit hook, so byor omits it.
+Cursor exposes no reliable post-edit hook and is omitted.
 
 ## Ownership and self-healing
 
-byor records installed agents in `~/.local/state/byor/state.yml`. Self-heal
-keeps disk files and `state.yml` aligned: it refreshes missing or drifted
-integrations for recorded agents and records agents whose unmodified byor hooks
-or plugins it finds on disk. Use `byor hook uninstall --agent AGENT` to remove
-both sides cleanly.
+Self-heal keeps disk files and `~/.local/state/byor/state.yml` aligned. User
+edits are preserved:
 
-User edits are preserved:
-
-- **JSON hook entries (`claude-code`, `codex`, `antigravity`):** Any hook entry
-  you modify (chained command, added `timeout`, changed matcher) becomes
-  user-owned. byor never overwrites or removes it, and `byor doctor` treats it
-  as healthy.
-- **Copilot (`~/.copilot/hooks/byor.json`):** Owned wholesale by byor; keep
-  custom Copilot hooks in a separate file under `~/.copilot/hooks/`.
-- **Managed files (`opencode`, `pi`, `skill`):** Carry the marker
-  `Managed by BYOR. Manual edits may be overwritten.` (`<!-- ... -->` in
-  Markdown, `// ...` in TypeScript). Removing the marker hands ownership to you;
-  `uninstall` and self-heal leave unmarked files alone.
+- **JSON hooks (`claude-code`, `codex`, `antigravity`):** modifying a hook entry
+  (chained command, `timeout`, matcher) hands ownership to you; byor never
+  overwrites or removes it, and `byor doctor` marks it healthy.
+- **Copilot (`~/.copilot/hooks/byor.json`):** owned wholesale; put custom hooks
+  in another file under `~/.copilot/hooks/`.
+- **Managed files (`opencode`, `pi`, `skill`):** carry
+  `Managed by BYOR. Manual edits may be overwritten.` (`<!-- ... -->` or
+  `// ...`). Removing the marker hands ownership to you.
 
 ## `claude-code`
 
-Merges `PostToolUse` (matcher `Write|Edit|MultiEdit`) and `PreToolUse` (matcher
-`Bash`) groups into `~/.claude/settings.json`, preserving all existing keys and
-hook groups:
+Merges `PostToolUse` (`Write|Edit|MultiEdit`) and `PreToolUse` (`Bash`) into
+`~/.claude/settings.json`, preserving existing keys:
 
 ```json
 {
@@ -76,39 +66,37 @@ hook groups:
 }
 ```
 
-- Post-edit feedback uses stderr plus exit code `2` (hence `>&2`), so Claude
-  Code injects diagnostics into the model's context only when issues exist.
-- Pre-command denials write `hookSpecificOutput.permissionDecision: "deny"` and
-  `permissionDecisionReason` on stdout and exit `0`; approvals stay silent.
+- Post-edit writes diagnostics to stderr (`>&2`) with exit `2` on findings.
+- Pre-command writes `hookSpecificOutput.permissionDecision: "deny"` +
+  `permissionDecisionReason` on stdout (exit `0`); approvals are silent.
 
 ## `codex`
 
-Installs `PostToolUse` (matcher `apply_patch|Edit|Write`) and `PreToolUse`
-(matcher `Bash`) hooks into `~/.codex/hooks.json`:
+Installs `PostToolUse` (`apply_patch|Edit|Write`) and `PreToolUse` (`Bash`) in
+`~/.codex/hooks.json`:
 
 - Parses `apply_patch` envelopes (`*** Add File:`, `*** Update File:`,
-  `*** Move to:`) from `tool_input.command` to scope diagnostics to added lines.
-- Emits `hookSpecificOutput` JSON on stdout (exit `0`) for both post-edit
-  `additionalContext` and pre-command `permissionDecision: "deny"`.
-- **Manual trust step:** Codex does not execute new or updated hooks until you
-  approve them. Run `/hooks` in a Codex session after installing or upgrading
-  byor hooks. Codex must be recent enough to fire `PostToolUse` for
-  `apply_patch` (older builds through ~0.118 fired only for Bash).
+  `*** Move to:`) from `tool_input.command` to scope to added lines.
+- Emits `hookSpecificOutput` JSON on stdout (exit `0`) for both
+  `additionalContext` and `permissionDecision: "deny"`.
+- **Trust step:** run `/hooks` in Codex after installing or upgrading hooks.
+  Requires a Codex build that fires `PostToolUse` for `apply_patch` (builds
+  through ~0.118 fired only for Bash).
 
 ## `copilot`
 
-Writes `~/.copilot/hooks/byor.json` with `postToolUse` and `preToolUse` entries:
+Writes `~/.copilot/hooks/byor.json` (`postToolUse`, `preToolUse`):
 
-- Ignores read-only Copilot tools (`view`, `glob`, `grep`, `rg`, and
-  `str_replace_editor` with `command: "view"`).
-- Emits `{"additionalContext": "..."}` for post-edit findings and
-  `{"permissionDecision": "deny", "permissionDecisionReason": "..."}` for
-  pre-command denials, truncating cleanly to fit Copilot's 10 KB context cap.
+- Ignores read-only tools (`view`, `glob`, `grep`, `rg`, `str_replace_editor`
+  with `command: "view"`).
+- Emits `{"additionalContext": "..."}` or
+  `{"permissionDecision": "deny", "permissionDecisionReason": "..."}`,
+  truncating to fit Copilot's 10 KB cap.
 
 ## `antigravity`
 
-Writes a named `"byor"` entry in `~/.gemini/config/hooks.json`, preserving
-sibling named hook groups:
+Writes a named `"byor"` group in `~/.gemini/config/hooks.json`, preserving
+sibling groups:
 
 ```json
 {
@@ -134,23 +122,19 @@ sibling named hook groups:
 }
 ```
 
-- Hooks `PostInvocation` (because Antigravity's `PostToolUse` discards feedback
-  output), reading completed edit tool calls (`write_file`, `edit_file`,
-  `write_to_file`, `replace_file_content`, `multi_replace_file_content`) since
-  `initialNumSteps` from `transcriptPath`, skipping internal artifact files, and
-  returning diagnostics via `injectSteps`.
-- Gates `run_command` under `PreToolUse`, emitting
-  `{"decision": "deny", "reason": "..."}` on match and printing nothing on allow
-  (returning `{}` denies the call, while `{"decision": "allow"}` would bypass
-  Antigravity's own permission prompts).
+- Hooks `PostInvocation` (Antigravity's `PostToolUse` discards feedback), reads
+  edit calls (`write_file`, `edit_file`, `write_to_file`,
+  `replace_file_content`, `multi_replace_file_content`) since `initialNumSteps`
+  from `transcriptPath`, skips internal artifacts, and returns `injectSteps`.
+- Gates `run_command` via `{"decision": "deny", "reason": "..."}` on match and
+  prints nothing on allow (`{}` denies; `{"decision": "allow"}` bypasses
+  Antigravity's permission prompts).
 
 ## `opencode`
 
-Writes `~/.config/opencode/plugin/byor.ts`. After a file-editing tool finishes,
-runs `byor agent-check --scope diff --files <file>` and appends diagnostics to
-the tool result on exit `2` (other exit codes fail open).
-
-The default export supports both OpenCode major versions:
+Writes `~/.config/opencode/plugin/byor.ts`. Runs
+`byor agent-check --scope diff --files <file>` after edit tools and appends
+diagnostics on exit `2` (other codes fail open). Supports both major versions:
 
 | Mechanism | OpenCode 2 | OpenCode 1 (1.3.4+) |
 | --- | --- | --- |
@@ -161,15 +145,14 @@ The default export supports both OpenCode major versions:
 
 ## `pi`
 
-Writes `~/.pi/agent/extensions/byor.ts`. Hooks the `tool_result` event for
-`edit` and `write`, runs `byor agent-check --scope diff --files <file>`, and
-appends diagnostics to the tool result on exit `2`.
+Writes `~/.pi/agent/extensions/byor.ts`. Hooks `tool_result` for `edit` and
+`write`, runs `byor agent-check --scope diff --files <file>`, and appends
+diagnostics on exit `2`.
 
 ## `skill`
 
-`byor install` always installs the bundled `byor` skill (`SKILL.md` plus six
-reference files under `references/`) into three locations so every supported
-harness discovers it:
+`byor install` renders `SKILL.md` + six `references/` files into three paths
+(frontmatter keeps only `name` and `description`):
 
 | Harness | Skill directory |
 | --- | --- |
@@ -178,8 +161,6 @@ harness discovers it:
 | Codex, Pi | `~/.agents/skills/byor/` |
 | Copilot CLI, OpenCode | `~/.agents/skills/byor/` (also reads `~/.claude/skills/`) |
 
-Frontmatter contains only `name` and `description` for cross-harness
-compatibility. Self-heal keeps all three renders current and prunes stale
-marker-bearing files after byor upgrades; `byor doctor` reports drifted renders
-under `agent_files`. Remove the marker from a file to maintain it manually, or
-run `byor hook uninstall --agent skill` to remove managed renders.
+Self-heal updates all three renders and prunes stale managed files after
+upgrades (`byor doctor` reports drift under `agent_files`). Remove the marker to
+own a file manually, or run `byor hook uninstall --agent skill`.
