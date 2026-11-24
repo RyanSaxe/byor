@@ -59,9 +59,11 @@ Do not use typing.cast here. Fix the type by narrowing, changing the signature, 
 
 Every in-scope diagnostic is rendered: the agent sees the full set, never a
 truncated sample it could mistake for the whole job. `--format json` prints all
-diagnostics as
-`{"issues": [{"file", "line", "column", "rule_id", "severity", "message", "code", "instruction"}, ...]}`
-with 1-based positions and repo-relative paths.
+diagnostics with 1-based positions and repo-relative paths:
+
+```json
+{"issues": [{"file": "...", "line": 1, "column": 1, "rule_id": "...", "severity": "...", "message": "...", "code": "...", "instruction": "..."}]}
+```
 
 `--concise` trims each diagnostic to its location and fix instruction, dropping
 the code block and the redundant `Message` line. It injects fewer tokens per

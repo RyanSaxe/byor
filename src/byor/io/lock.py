@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator
     from pathlib import Path
 
 __all__ = (
@@ -51,7 +51,7 @@ def acquire_lock(lock: Path, *, wait_seconds: float, stale_seconds: float) -> bo
 
 
 @contextmanager
-def file_lock(lock: Path, *, wait_seconds: float, stale_seconds: float) -> Iterator[bool]:
+def file_lock(lock: Path, *, wait_seconds: float, stale_seconds: float) -> Generator[bool, None, None]:
     """Hold `lock` for the body of a `with` block, and delete it afterwards even on error.
 
     Yields True when `acquire_lock` took the lock and False when the wait ran out, in which case

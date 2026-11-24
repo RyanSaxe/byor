@@ -25,7 +25,7 @@ __all__ = (
     "parse_payload",
 )
 
-JsonValue: TypeAlias = "None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]"
+JsonValue: TypeAlias = "bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None"
 
 Harness = Literal["claude-code", "codex", "copilot", "antigravity"]
 

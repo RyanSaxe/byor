@@ -550,36 +550,49 @@ def _ignore_block_check(repo_root: Path) -> Check:
     cases: list[tuple[bool, str | None]] = [
         (
             bool(stuck),
-            f"the byor ignore block in {listed(stuck)} is out of date and the file is not writable;"
-            " make it writable, then run `byor sync`",
+            (
+                f"the byor ignore block in {listed(stuck)} is out of date and the file is not writable;"
+                " make it writable, then run `byor sync`"
+            ),
         ),
         (
             bool(outdated),
-            f"the byor ignore block in {listed(outdated)} is out of date"
-            f"{'' if covered else ', so some personal byor files are committable'}; run `byor sync` to update it",
+            (
+                f"the byor ignore block in {listed(outdated)} is out of date"
+                f"{'' if covered else ', so some personal byor files are committable'}; run `byor sync` to update it"
+            ),
         ),
         (
             bool(tracked),
-            f"git already tracks personal byor files, which no ignore block can hide: {shown};"
-            " untrack them with `git rm --cached` and commit",
+            (
+                f"git already tracks personal byor files, which no ignore block can hide: {shown};"
+                " untrack them with `git rm --cached` and commit"
+            ),
         ),
         (covered, None),
         (
             # `byor init` would replace everything from the first begin marker on, so it is not the fix.
             bool(having("damaged")),
-            f"the byor ignore block in {listed(having('damaged'))} is damaged: it needs exactly one begin marker"
-            " and one end marker after it; fix the markers by hand, and byor then keeps the block current",
+            (
+                f"the byor ignore block in {listed(having('damaged'))} is damaged: it needs exactly one begin marker"
+                " and one end marker after it; fix the markers by hand, and byor then keeps the block current"
+            ),
         ),
         (
             bool(having("edited")),
-            f"the byor ignore block in {listed(having('edited'))} was edited, and its lines no longer say whether"
-            " it is for a shared or a private setup, so byor leaves it alone; restore byor's lines between the markers",
+            (
+                f"the byor ignore block in {listed(having('edited'))} was edited, and its lines no longer say whether"
+                " it is for a shared or a private setup, so byor leaves it alone;"
+                " restore byor's lines between the markers"
+            ),
         ),
         (bool(reasons), f"byor cannot read an ignore file, so it cannot check the byor block there ({reasons})"),
         (
             True,
-            "the byor ignore block is gone, so personal rules and .byor/local.yml are committable;"
-            " run `byor init` to restore it",
+            (
+                "the byor ignore block is gone, so personal rules and .byor/local.yml are committable;"
+                " run `byor init` to restore it"
+            ),
         ),
     ]
     message = next(message for applies, message in cases if applies)

@@ -167,7 +167,7 @@ before continuing, and `byor doctor` lists the disabled paths. Enabling a repo
 covered by a prefix entry names that entry rather than removing it, since
 lifting the prefix would re-enable every repo under it.
 
-## What happens when...
+## What happens on changes
 
 **A global rule changes.** `byor add`/`byor edit` with global scope sync the
 current repo *and* all registered repos immediately. After out-of-band edits

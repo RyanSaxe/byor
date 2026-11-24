@@ -298,8 +298,10 @@ def _drop_private_block(repo_root: Path) -> list[str]:
         return [removed]
     if result == "damaged":
         return [
-            "warning: .git/info/exclude has a damaged byor block; remove it by hand so .byor/ and "
-            "sgconfig.yml can be committed"
+            (
+                "warning: .git/info/exclude has a damaged byor block; remove it by hand so .byor/ and "
+                "sgconfig.yml can be committed"
+            )
         ]
     return []
 

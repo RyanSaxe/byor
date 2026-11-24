@@ -44,6 +44,6 @@ reflow-mode = "normalize"
 # A command or a line of code can't wrap.
 code-blocks = false
 
-# The README uses HTML elements for its centered banner and badge header.
+# The README uses HTML elements for its centered banner heading and badge row.
 [MD033]
-allowed-elements = ["picture", "source", "img", "p", "a"]
+allowed-elements = ["picture", "source", "img", "h1", "p", "a"]

@@ -1,6 +1,6 @@
 // Dev-only ambient types for the harness APIs the packaged agent sources use.
-// CI runs `tsc --noEmit` over the .ts sources against these stubs so a type
-// break fails the build; the stubs are never installed anywhere.
+// CI runs `oxlint --type-aware --type-check` over the .ts sources against these
+// stubs so a type break fails the build; the stubs are never installed anywhere.
 
 // opencode 1's plugin package.
 declare module "@opencode-ai/plugin" {
