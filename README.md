@@ -3,7 +3,7 @@
 </h1>
 
 <p align="center">
-  <a href="https://github.com/RyanSaxe/byor/actions/workflows/ci.yml"><img src="https://github.com/RyanSaxe/byor/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/RyanSaxe/byor/actions/workflows/check.yml"><img src="https://github.com/RyanSaxe/byor/actions/workflows/check.yml/badge.svg" alt="CI"></a>
   <a href="https://pypi.org/project/byor/"><img src="https://img.shields.io/pypi/v/byor" alt="PyPI"></a>
   <a href="https://pypi.org/project/byor/"><img src="https://img.shields.io/pypi/pyversions/byor" alt="Python versions"></a>
   <a href="LICENSE"><img src="https://img.shields.io/pypi/l/byor" alt="License"></a>
@@ -152,8 +152,8 @@ rule:
 metadata:
   byor:
     agent_prompt: >
-      Silencing a type checker is a last resort, and only acceptable when 
-      the type system genuinely cannot express a shape. Prioritize fixing 
+      Silencing a type checker is a last resort, and only acceptable when
+      the type system genuinely cannot express a shape. Prioritize fixing
       the issue at the signature if you can do so without `Any` or `object`.
       Be open to resolving the issue by modifying other methods or redesigning
       the interface in a way that is still consistent with the implementation.

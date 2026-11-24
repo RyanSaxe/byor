@@ -1,0 +1,54 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/prek
+          key: prek-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      # Web: the oxfmt and oxlint hooks run from node_modules.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+
+      # Sync the locked Python environment so ty and repo rule tests resolve
+      # project dependencies cleanly.
+      - run: uv sync --locked
+      - run: uvx prek@0.5.11 run --all-files --show-diff-on-failure
+      - run: uv run --locked scripts/sync_version.py --check
+      # Enforce committed project rules at error level in CI, and pin both
+      # project and example rule behavior against their sample suites.
+      - run: uv run --locked ast-grep scan --error
+      - run: uv run --locked ast-grep test -c sgconfig.yml --skip-snapshot-tests
+      - run: uv run --locked ast-grep test -c examples/sgconfig.yml --skip-snapshot-tests
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.14"]
+    runs-on: ${{ matrix.os }}
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      # Coverage runs on one cell so the threshold is deterministic: byor has
+      # platform-specific branches that skew per-OS coverage.
+      - if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        run: uv run --locked pytest --cov=byor --cov-report=term-missing --cov-fail-under=90
+      - if: matrix.os != 'ubuntu-latest' || matrix.python-version != '3.14'
+        run: uv run --locked pytest
