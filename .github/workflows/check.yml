@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.4.0
       - uses: actions/cache@v6
         with:
           path: ~/.cache/prek
@@ -45,7 +45,7 @@ jobs:
       UV_PYTHON: ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.4.0
       # Coverage runs on one cell so the threshold is deterministic: byor has
       # platform-specific branches that skew per-OS coverage.
       - if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
