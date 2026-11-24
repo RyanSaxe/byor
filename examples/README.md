@@ -1,81 +1,74 @@
 # Examples
 
-Reference rules and configuration for byor, written to teach the mechanics. Copy
-what fits; nothing here is an enabled default.
+Starter rules, command rules, and check scripts demonstrating byor mechanics.
+Copy what fits; nothing here is enabled by default.
 
-Everything in this directory is exercised in CI: the rules are validated with
-`ast-grep test` against the samples in [`rule-tests/`](rule-tests), so the
-examples cannot silently drift from the tool.
+Every rule in this directory is tested in CI against its `valid:` and `invalid:`
+fixtures:
 
-## Rules library
-
-A rule is an ordinary ast-grep YAML file (see
-[docs/rules.md](../docs/rules.md)). These are ordered from the simplest
-mechanism to the most expressive:
-
-| Rule | Demonstrates |
-| --- | --- |
-| [`no-print`](rules/no-print.yml) | A bare `pattern` with a variadic metavariable (`$$$ARGS`). |
-| [`no-requests`](rules/no-requests.yml) | Banning a library at its import choke point — a `dotted_name` clause covers every plain-import form (aliased, submodule, comma-combined) and two patterns cover from-imports. A rule that names your choice (httpx over requests), which no general linter ships. |
-| [`python.no-typing-cast`](rules/python.no-typing-cast.yml) | A small `any` rule combining import patterns and call patterns with named metavariables (`$TYPE`, `$VALUE`). |
-| [`no-routing-functions`](rules/no-routing-functions.yml) | Relational rules — `any`/`all`, `inside`, `follows`, and `nthChild` with `reverse`, to match pass-through calls or `yield from` as a function's only statement. |
-| [`keyword-only-args`](rules/keyword-only-args.yml) | `utils` rules composed with nested `follows` to count sibling nodes — flagging a third positional parameter while exempting `self`/`cls` and anything after a bare `*` or `*args`. |
-| [`no-console-log`](rules/no-console-log.yml) | The same bare `pattern` mechanism in a non-Python language (`language: typescript`). |
-| [`no-type-suppression`](rules/no-type-suppression.yml) | One rule across two node kinds: a call pattern for `cast(...)` and a `kind: comment` regex for `# type: ignore`, catching both ways to silence the type checker. |
-
-Each file's `metadata.byor.agent_prompt` is the directive byor hands an AI agent
-when the rule trips; the leading comment explains the ast-grep technique.
-
-The matching files in [`rule-tests/`](rule-tests) are also documentation: each
-lists `valid:` code that must not match and `invalid:` code that must. To run
-them:
-
-```bash
+```sh
 ast-grep test -c examples/sgconfig.yml --skip-snapshot-tests
 ```
 
-## Command rules library
+## Real-world personal setup
 
-Command rules are the same YAML with `language: Bash`; byor's pre-command gate
-denies a matching shell command before an agent runs it and hands back the
-`agent_prompt` as the correction. In a repo they live under `.byor/commands/`
-(never in sgconfig `ruleDirs`); here they sit in
-[`command-rules/`](command-rules) with `valid:`/`invalid:` command lines in
-[`command-rule-tests/`](command-rule-tests), run by the same `ast-grep test`
-invocation above.
+The files in this folder are intentionally small, self-contained teaching
+examples. For a full production setup across many repositories, see
+[RyanSaxe/dotfiles `config/byor`](https://github.com/RyanSaxe/dotfiles/tree/main/config/byor):
+
+- **Global layer (`config.yml`, `commands/`, `scripts/`):** concise agent output
+  (`output.concise: true`), private init defaults, seven Bash command rules plus
+  `guard-commands.py` for high-blast-radius safety checks, and
+  `run-repo-linters.py`, a read-only multi-language post-edit linter runner
+  (Python, JS/TS, Markdown, Go, Lua, Shell, Nix) with a 5-second per-tool
+  timeout.
+- **Committed repository layer:** project-specific linters and `ast-grep` rules
+  run in `prek` and CI.
+- **Opt-in packages (`packages/`):** `craft` (seven cross-language design-craft
+  checks for module headers, thin docstrings, routing wrappers, file length,
+  directory sprawl, suppression reasons, and manifest dependencies), `python`
+  (PEP 723 script check, `sys.path` mutation ban, `monkeypatch` prompt), and
+  `web` (JS/TS/TSX mock prompts and React Compiler `try ... finally` rules).
+
+## Rules library
+
+Each file is an ordinary `ast-grep` YAML rule with `metadata.byor.agent_prompt`
+(see [Authoring rules](../docs/guides/authoring-rules.md)). Ordered from
+simplest pattern to relational rules:
 
 | Rule | Demonstrates |
 | --- | --- |
-| [`prefer-rg`](command-rules/prefer-rg.yml) | The one-line command rule: a bare pattern matches `grep` anywhere in a pipeline or compound command, never inside a quoted string. |
-| [`no-pip-install`](command-rules/no-pip-install.yml) | Covering a command's spellings with `any:` (`pip`, `pip3`, `python -m pip`) while `uv pip install` stays legal — the command name is the choke point. |
-| [`no-force-push`](command-rules/no-force-push.yml) | A relational rule: `has:` with an anchored `regex` matches `--force`/`-f` at any argument position while keeping `--force-with-lease` legal. |
+| [`no-print`](rules/no-print.yml) | Bare `pattern` with a variadic metavariable (`$$$ARGS`) |
+| [`no-requests`](rules/no-requests.yml) | Banning a library at import choke points (`dotted_name` + from-import patterns) |
+| [`python.no-typing-cast`](rules/python.no-typing-cast.yml) | `any` combining import and call patterns with named metavariables (`$TYPE`, `$VALUE`) |
+| [`no-routing-functions`](rules/no-routing-functions.yml) | Relational rules (`any`/`all`, `inside`, `follows`, `nthChild` with `reverse`) matching pass-through wrappers |
+| [`keyword-only-args`](rules/keyword-only-args.yml) | Composed `utils` rules counting positional parameters while exempting `self`/`cls` and `*`/`*args` |
+| [`no-console-log`](rules/no-console-log.yml) | Bare `pattern` in TypeScript (`language: typescript`) |
+| [`no-type-suppression`](rules/no-type-suppression.yml) | Combining two node kinds (`cast(...)` calls and `# type: ignore` comments) in one rule |
 
-## Config setup
+Matching fixtures live in [`rule-tests/`](rule-tests/).
 
-byor wires external linters and type checkers into the same loop as ast-grep and
-feeds their output to AI agents.
+## Command rules library
 
-- [`config/config.yml`](config/config.yml) — an annotated global config
-  (`~/.config/byor/config.yml`): the `checks` and `command_checks` blocks and a
-  profile. The agents byor installs are recorded in its state file, not here.
-- [`config/scripts/ruff.sh`](config/scripts/ruff.sh) — a `check` script that
-  autofixes what is safe, tells the agent exactly what changed, then reports
-  only the issues it could not fix. It accepts explicit file arguments for hook
-  mode, and scans non-ignored repo Python files when no files are passed.
-- [`config/scripts/dependency-gate.sh`](config/scripts/dependency-gate.sh) — an
-  agent-only check (`gate: false`): it fails whenever the dependency list in
-  `pyproject.toml` differs from the last commit, so an agent must ask before
-  adding or removing a package. Version bumps and other pyproject edits pass.
-- [`config/scripts/uv-lock-guard.sh`](config/scripts/uv-lock-guard.sh) — an
-  agent-only check that rejects hand-edits to `uv.lock`. The post-edit hook
-  fires only on the agent's own file edits, so `uv add` run in a terminal never
-  trips it.
-- [`config/scripts/protect-ssh.sh`](config/scripts/protect-ssh.sh) — a
-  `command_check`, the pre-command gate's script escape hatch: byor pipes the
-  pending shell command to stdin and a nonzero exit denies it. A script fits
-  here because the match depends on `$HOME` expansion, which a static pattern
-  cannot see.
+Command rules use `language: Bash` to steer shell commands in the pre-command
+gate. In a repository they live under `.byor/commands/` (never in `sgconfig.yml`
+`ruleDirs`). Fixtures live in [`command-rule-tests/`](command-rule-tests/) and
+run with the same `ast-grep test` command above.
 
-The scripts are exercised by the test suite (`tests/test_check_scripts.py`) in
-both directions: the failure they exist to catch, and the ordinary changes they
-must let through.
+| Rule | Demonstrates |
+| --- | --- |
+| [`prefer-rg`](command-rules/prefer-rg.yml) | Bare pattern matching `grep` inside pipelines or compound commands without matching quoted strings |
+| [`no-pip-install`](command-rules/no-pip-install.yml) | `any` covering `pip`, `pip3`, and `python -m pip` while allowing `uv pip install` |
+| [`no-force-push`](command-rules/no-force-push.yml) | Relational `has` with anchored regex matching `--force`/`-f` at any position while keeping `--force-with-lease` legal |
+
+## Global config and check scripts
+
+Starter global configuration and check scripts under [`config/`](config/):
+
+| File | Purpose |
+| --- | --- |
+| [`config/config.yml`](config/config.yml) | Annotated `~/.config/byor/config.yml` with `checks`, `command_checks`, `output`, `worktrees`, and a sample profile |
+| [`config/scripts/ruff.sh`](config/scripts/ruff.sh) | Autofix-then-report check script that tells the agent what changed and scans the whole repo when given no args |
+| [`config/scripts/dependency-gate.sh`](config/scripts/dependency-gate.sh) | Agent-only check (`gate: false`) that fails when `pyproject.toml` dependencies change from `HEAD` |
+| [`config/scripts/uv-lock-guard.sh`](config/scripts/uv-lock-guard.sh) | Agent-only check (`gate: false`) rejecting hand edits to `uv.lock` |
+| [`config/scripts/protect-ssh.sh`](config/scripts/protect-ssh.sh) | `command_check` script using `$HOME` expansion to block commands targeting `~/.ssh` |
