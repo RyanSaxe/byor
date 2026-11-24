@@ -3,7 +3,7 @@ language: Python
 severity: warning
 message: Prefer a module-level function over @staticmethod.
 rule:
-  pattern: '@staticmethod'
+  pattern: "@staticmethod"
 metadata:
   byor:
     rationale: >
@@ -17,7 +17,7 @@ metadata:
       its own line directly above the offending line, with a short comment
       above it explaining why.
     tags:
-    - python
-    - oop
-    - style-guide
-    - greenfield
+      - python
+      - oop
+      - style-guide
+      - greenfield

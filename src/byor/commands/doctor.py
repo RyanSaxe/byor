@@ -170,23 +170,31 @@ def _repo_checks(
         _ignore_block_check(repo_root),
     ]
     if not quick and repo_check.ok:
-        checks.extend(_rule_checks(repo_root, repo_config.paths, config_dir=config_dir, global_config=global_config))
-        checks.append(_command_rules_check(repo_root, repo_config.paths, global_config=global_config))
-        gate_check = _gate_check(repo_root, repo_config)
-        if gate_check is not None:
-            checks.append(gate_check)
-        gate_hook_check = _gate_hook_check(repo_root, repo_config)
-        if gate_hook_check is not None:
-            checks.append(gate_hook_check)
-        vendored_check = _vendored_scripts_check(repo_root, repo_config)
-        if vendored_check is not None:
-            checks.append(vendored_check)
-        shims_check = _git_shims_check(repo_root)
-        if shims_check is not None:
-            checks.append(shims_check)
+        checks.extend(_full_repo_checks(repo_root, repo_config, config_dir=config_dir, global_config=global_config))
     extra = _extra_checks_check(repo_root, repo_config, global_config=global_config, config_dir=config_dir)
     if extra is not None:
         checks.append(extra)
+    return checks
+
+
+def _full_repo_checks(
+    repo_root: Path,
+    repo_config: RepoConfig,
+    *,
+    config_dir: Path,
+    global_config: GlobalConfig,
+) -> list[Check]:
+    checks = [
+        *_rule_checks(repo_root, repo_config.paths, config_dir=config_dir, global_config=global_config),
+        _command_rules_check(repo_root, repo_config.paths, global_config=global_config),
+    ]
+    optional = (
+        _gate_check(repo_root, repo_config),
+        _gate_hook_check(repo_root, repo_config),
+        _vendored_scripts_check(repo_root, repo_config),
+        _git_shims_check(repo_root),
+    )
+    checks.extend(check for check in optional if check is not None)
     return checks
 
 
@@ -550,36 +558,49 @@ def _ignore_block_check(repo_root: Path) -> Check:
     cases: list[tuple[bool, str | None]] = [
         (
             bool(stuck),
-            f"the byor ignore block in {listed(stuck)} is out of date and the file is not writable;"
-            " make it writable, then run `byor sync`",
+            (
+                f"the byor ignore block in {listed(stuck)} is out of date and the file is not writable;"
+                " make it writable, then run `byor sync`"
+            ),
         ),
         (
             bool(outdated),
-            f"the byor ignore block in {listed(outdated)} is out of date"
-            f"{'' if covered else ', so some personal byor files are committable'}; run `byor sync` to update it",
+            (
+                f"the byor ignore block in {listed(outdated)} is out of date"
+                f"{'' if covered else ', so some personal byor files are committable'}; run `byor sync` to update it"
+            ),
         ),
         (
             bool(tracked),
-            f"git already tracks personal byor files, which no ignore block can hide: {shown};"
-            " untrack them with `git rm --cached` and commit",
+            (
+                f"git already tracks personal byor files, which no ignore block can hide: {shown};"
+                " untrack them with `git rm --cached` and commit"
+            ),
         ),
         (covered, None),
         (
             # `byor init` would replace everything from the first begin marker on, so it is not the fix.
             bool(having("damaged")),
-            f"the byor ignore block in {listed(having('damaged'))} is damaged: it needs exactly one begin marker"
-            " and one end marker after it; fix the markers by hand, and byor then keeps the block current",
+            (
+                f"the byor ignore block in {listed(having('damaged'))} is damaged: it needs exactly one begin marker"
+                " and one end marker after it; fix the markers by hand, and byor then keeps the block current"
+            ),
         ),
         (
             bool(having("edited")),
-            f"the byor ignore block in {listed(having('edited'))} was edited, and its lines no longer say whether"
-            " it is for a shared or a private setup, so byor leaves it alone; restore byor's lines between the markers",
+            (
+                f"the byor ignore block in {listed(having('edited'))} was edited, and its lines no longer say whether"
+                " it is for a shared or a private setup, so byor leaves it alone;"
+                " restore byor's lines between the markers"
+            ),
         ),
         (bool(reasons), f"byor cannot read an ignore file, so it cannot check the byor block there ({reasons})"),
         (
             True,
-            "the byor ignore block is gone, so personal rules and .byor/local.yml are committable;"
-            " run `byor init` to restore it",
+            (
+                "the byor ignore block is gone, so personal rules and .byor/local.yml are committable;"
+                " run `byor init` to restore it"
+            ),
         ),
     ]
     message = next(message for applies, message in cases if applies)

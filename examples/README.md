@@ -1,7 +1,7 @@
 # Examples
 
-Reference rules and configuration for byor, written to teach the mechanics.
-Copy what fits; nothing here is an enabled default.
+Reference rules and configuration for byor, written to teach the mechanics. Copy
+what fits; nothing here is an enabled default.
 
 Everything in this directory is exercised in CI: the rules are validated with
 `ast-grep test` against the samples in [`rule-tests/`](rule-tests), so the
@@ -9,8 +9,9 @@ examples cannot silently drift from the tool.
 
 ## Rules library
 
-A rule is an ordinary ast-grep YAML file (see [docs/rules.md](../docs/rules.md)).
-These are ordered from the simplest mechanism to the most expressive:
+A rule is an ordinary ast-grep YAML file (see
+[docs/rules.md](../docs/rules.md)). These are ordered from the simplest
+mechanism to the most expressive:
 
 | Rule | Demonstrates |
 | --- | --- |
@@ -51,13 +52,12 @@ invocation above.
 
 ## Config setup
 
-byor wires external linters and type checkers into the same loop as ast-grep
-and feeds their output to AI agents.
+byor wires external linters and type checkers into the same loop as ast-grep and
+feeds their output to AI agents.
 
 - [`config/config.yml`](config/config.yml) — an annotated global config
-  (`~/.config/byor/config.yml`): the `checks` and `command_checks` blocks
-  and a profile. The agents byor installs are recorded in its state file, not
-  here.
+  (`~/.config/byor/config.yml`): the `checks` and `command_checks` blocks and a
+  profile. The agents byor installs are recorded in its state file, not here.
 - [`config/scripts/ruff.sh`](config/scripts/ruff.sh) — a `check` script that
   autofixes what is safe, tells the agent exactly what changed, then reports
   only the issues it could not fix. It accepts explicit file arguments for hook
@@ -68,8 +68,8 @@ and feeds their output to AI agents.
   adding or removing a package. Version bumps and other pyproject edits pass.
 - [`config/scripts/uv-lock-guard.sh`](config/scripts/uv-lock-guard.sh) — an
   agent-only check that rejects hand-edits to `uv.lock`. The post-edit hook
-  fires only on the agent's own file edits, so `uv add` run in a terminal
-  never trips it.
+  fires only on the agent's own file edits, so `uv add` run in a terminal never
+  trips it.
 - [`config/scripts/protect-ssh.sh`](config/scripts/protect-ssh.sh) — a
   `command_check`, the pre-command gate's script escape hatch: byor pipes the
   pending shell command to stdin and a nonzero exit denies it. A script fits
@@ -77,5 +77,5 @@ and feeds their output to AI agents.
   cannot see.
 
 The scripts are exercised by the test suite (`tests/test_check_scripts.py`) in
-both directions: the failure they exist to catch, and the ordinary changes
-they must let through.
+both directions: the failure they exist to catch, and the ordinary changes they
+must let through.

@@ -1,8 +1,11 @@
 {
   "name": "byor-dev",
   "private": true,
-  "description": "Dev-only manifest: prettier config for the packaged agent TypeScript sources.",
-  "prettier": {
-    "semi": false
+  "type": "module",
+  "description": "Dev-only manifest: oxfmt and oxlint for the packaged agent TypeScript sources.",
+  "devDependencies": {
+    "oxfmt": "0.80.0",
+    "oxlint": "1.95.0",
+    "oxlint-tsgolint": "7.0.2008"
   }
 }

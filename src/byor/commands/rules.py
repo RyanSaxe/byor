@@ -158,22 +158,7 @@ def run_add(args: argparse.Namespace) -> int:
             msg = "Aborted: the template was left unedited."
             raise ByorError(msg)
     try:
-        if draft is not None:
-            rule = load_rule(draft)
-        else:
-            rule = _load_source_rule(args.from_file)
-            if args.allow_exceptions:
-                rule = replace(rule, content=_append_exception_sentence(rule.content))
-        destination = _scope_dir(context, scope, command=command) / f"{rule.id}.yml"
-        if destination.exists():
-            msg = (
-                f"{display_path(destination, context.repo_root)} already exists; "
-                f"use `byor edit {rule.id}` to change it."
-            )
-            raise UnsafeOverwriteError(msg)
-        rule = replace(rule, path=destination)
-        _check_conflicts(context, scope, rule=rule, removed=set(), command=command)
-        _require_loadable_by_ast_grep(context, rule)
+        rule, destination = _prepare_added_rule(args, context, draft=draft)
     except ByorError as error:
         raise _with_draft_hint(error, draft) from error
     if draft is not None:
@@ -185,6 +170,30 @@ def run_add(args: argparse.Namespace) -> int:
     write_line(f"Added {scope} {kind} '{rule.id}' at {display_path(destination, context.repo_root)}")
     _finish(context, fan_out=scope == "global")
     return 0
+
+
+def _prepare_added_rule(
+    args: argparse.Namespace,
+    context: RepoContext,
+    *,
+    draft: Path | None,
+) -> tuple[Rule, Path]:
+    command: bool = args.command_rule
+    scope: RuleScope = args.scope
+    if draft is not None:
+        rule = load_rule(draft)
+    else:
+        rule = _load_source_rule(args.from_file)
+        if args.allow_exceptions:
+            rule = replace(rule, content=_append_exception_sentence(rule.content))
+    destination = _scope_dir(context, scope, command=command) / f"{rule.id}.yml"
+    if destination.exists():
+        msg = f"{display_path(destination, context.repo_root)} already exists; use `byor edit {rule.id}` to change it."
+        raise UnsafeOverwriteError(msg)
+    rule = replace(rule, path=destination)
+    _check_conflicts(context, scope, rule=rule, removed=set(), command=command)
+    _require_loadable_by_ast_grep(context, rule)
+    return rule, destination
 
 
 def _add_template(args: argparse.Namespace) -> str:

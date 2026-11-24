@@ -4,60 +4,60 @@ severity: warning
 message: Do not create functions whose only behavior is routing to another call.
 rule:
   all:
-  - any:
-    - pattern: return $CALLEE($$$ARGS)
-    - pattern: return await $CALLEE($$$ARGS)
-    - pattern:
-        context: $CALLEE($$$ARGS)
-        selector: expression_statement
-    - pattern:
-        context: await $CALLEE($$$ARGS)
-        selector: expression_statement
-    - pattern:
-        context: yield from $CALLEE($$$ARGS)
-        selector: expression_statement
-  # Positions ignore comment nodes so a comment cannot hide the delegation.
-  - any:
-    - all:
-      - nthChild:
-          position: 1
-          ofRule:
-            not:
-              kind: comment
-      - nthChild:
-          position: 1
-          reverse: true
-          ofRule:
-            not:
-              kind: comment
-    - all:
-      - nthChild:
-          position: 2
-          ofRule:
-            not:
-              kind: comment
-      - nthChild:
-          position: 1
-          reverse: true
-          ofRule:
-            not:
-              kind: comment
-      - follows:
-          stopBy: end
-          kind: expression_statement
-          has:
-            kind: string
-  - inside:
-      kind: block
-      inside:
-        kind: function_definition
-        field: body
-        # Dunder methods are exempt: `def __len__(self): return len(self._items)`
-        # is the only legal implementation of the protocol.
-        not:
-          has:
-            field: name
-            regex: ^__.*__$
+    - any:
+        - pattern: return $CALLEE($$$ARGS)
+        - pattern: return await $CALLEE($$$ARGS)
+        - pattern:
+            context: $CALLEE($$$ARGS)
+            selector: expression_statement
+        - pattern:
+            context: await $CALLEE($$$ARGS)
+            selector: expression_statement
+        - pattern:
+            context: yield from $CALLEE($$$ARGS)
+            selector: expression_statement
+    # Positions ignore comment nodes so a comment cannot hide the delegation.
+    - any:
+        - all:
+            - nthChild:
+                position: 1
+                ofRule:
+                  not:
+                    kind: comment
+            - nthChild:
+                position: 1
+                reverse: true
+                ofRule:
+                  not:
+                    kind: comment
+        - all:
+            - nthChild:
+                position: 2
+                ofRule:
+                  not:
+                    kind: comment
+            - nthChild:
+                position: 1
+                reverse: true
+                ofRule:
+                  not:
+                    kind: comment
+            - follows:
+                stopBy: end
+                kind: expression_statement
+                has:
+                  kind: string
+    - inside:
+        kind: block
+        inside:
+          kind: function_definition
+          field: body
+          # Dunder methods are exempt: `def __len__(self): return len(self._items)`
+          # is the only legal implementation of the protocol.
+          not:
+            has:
+              field: name
+              regex: ^__.*__$
 metadata:
   byor:
     rationale: >
@@ -75,7 +75,7 @@ metadata:
       no-routing-functions` on its own line directly above the offending line,
       with a short comment above it explaining why.
     tags:
-    - python
-    - design
-    - style-guide
-    - greenfield
+      - python
+      - design
+      - style-guide
+      - greenfield

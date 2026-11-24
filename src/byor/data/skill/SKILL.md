@@ -2,12 +2,13 @@
 name: byor
 description: Capture durable, mechanically checkable feedback as enforced rules and checks — ast-grep patterns, linters, type checkers, custom scripts, and command rules that gate shell commands — and set up or onboard byor. Trigger to capture when the user states a lasting preference about code ("never use X", "always do Y", "stop doing Z") or about commands ("never run X", "use uv, not pip") that a mechanical check can verify. Trigger to set up when the user wants to get started with byor, install it, or import existing preferences from CLAUDE.md / AGENTS.md. Do not trigger on one-off requests about the current change or vague philosophy.
 ---
+
 # BYOR Rule Capture
 
 This repository uses BYOR to enforce custom diagnostics mechanically. When the
 user gives feedback that *any* mechanical check can verify, capture it — as a
-rule or a check — so every future session enforces it automatically; do not
-just remember it.
+rule or a check — so every future session enforces it automatically; do not just
+remember it.
 
 For getting started, repairing the install, or importing the user's existing
 preferences from their instruction files, follow **references/setup.md**.
@@ -19,8 +20,8 @@ commands you run — that some mechanical check can verify:
 
 - "never use X" / "always do Y" / "stop doing Z"
 - Policy phrasing about lasting behavior ("in this repo we don't ...")
-- Command corrections ("never run pip install", "use rg, not grep",
-  "stop force-pushing")
+- Command corrections ("never run pip install", "use rg, not grep", "stop
+  force-pushing")
 
 Do not act on:
 
@@ -35,9 +36,9 @@ byor enforces more than ast-grep. Match the preference to the check that fits:
 
 - **Code shape** — a forbidden call, banned import, required construct: an
   ast-grep rule, drafted below.
-- **A shell command** — a banned or redirected command ("use uv, not pip"):
-  a command rule, the same YAML with `language: Bash`, denied *before* the
-  command runs with your correction. See **references/commands.md**.
+- **A shell command** — a banned or redirected command ("use uv, not pip"): a
+  command rule, the same YAML with `language: Bash`, denied *before* the command
+  runs with your correction. See **references/commands.md**.
 - **Formatting, types, or a known lint class** — a formatter, type checker, or
   linter that already owns it. See **references/checks.md**.
 - **Bespoke logic over the file** — a small custom check script. See
@@ -120,9 +121,9 @@ byor add --scope SCOPE --from FILE
 ```
 
 This validates the rule, syncs it into place, and runs doctor. Then prove the
-rule catches the violation: write a minimal offending snippet to a clearly
-named scratch file in /tmp, scan it **from the repo root** so ast-grep applies
-this project's config, confirm the rule id appears, and delete it:
+rule catches the violation: write a minimal offending snippet to a clearly named
+scratch file in /tmp, scan it **from the repo root** so ast-grep applies this
+project's config, confirm the rule id appears, and delete it:
 
 ```bash
 ast-grep scan /tmp/byor-rule-check.py
@@ -130,11 +131,10 @@ ast-grep scan /tmp/byor-rule-check.py
 
 ## Capture a command rule
 
-A command rule uses the same YAML shape with `language: Bash` and a pattern
-over the command line; the pre-command gate denies matching commands and hands
-back the `agent_prompt`, so it must always name the replacement command.
-Create it with the `--command` flag, then prove it fires and that innocent
-commands pass:
+A command rule uses the same YAML shape with `language: Bash` and a pattern over
+the command line; the pre-command gate denies matching commands and hands back
+the `agent_prompt`, so it must always name the replacement command. Create it
+with the `--command` flag, then prove it fires and that innocent commands pass:
 
 ```bash
 byor add --scope SCOPE --command --from FILE
@@ -142,8 +142,8 @@ byor command-check --command 'pip install requests'   # expect the rule id, exit
 byor command-check --command 'uv add requests'        # expect silence, exit 0
 ```
 
-Pattern guidance, the command-check script escape hatch, and what command
-rules cannot do are in **references/commands.md**.
+Pattern guidance, the command-check script escape hatch, and what command rules
+cannot do are in **references/commands.md**.
 
 ## When to Decline
 
@@ -156,7 +156,8 @@ it in the harness's instruction file instead (CLAUDE.md, AGENTS.md, or
 ## References
 
 - **references/patterns.md** — ast-grep pattern primer and a worked example.
-- **references/commands.md** — command rules and command checks: gate shell commands.
+- **references/commands.md** — command rules and command checks: gate shell
+  commands.
 - **references/checks.md** — pick the right tool, or author a check script.
 - **references/packages.md** — author a reusable, opt-in bundle of rules/checks.
 - **references/profiles.md** — tune which rules apply: exclusions and profiles.

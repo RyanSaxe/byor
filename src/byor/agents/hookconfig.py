@@ -360,8 +360,9 @@ def _display_relpath(spec: HookSpec) -> str:
 
 def _byor_entry(spec: HookSpec) -> dict[str, JsonValue]:
     command = hook_command(spec)
+    entry: dict[str, JsonValue]
     if spec.nests_command:
-        entry: dict[str, JsonValue] = {"hooks": [{"type": "command", "command": command}]}
+        entry = {"hooks": [{"type": "command", "command": command}]}
     elif spec.typed_entry:
         entry = {"type": "command", "command": command}
     else:

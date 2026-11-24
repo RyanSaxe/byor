@@ -161,18 +161,22 @@ def copy_from_main_checkout(repo_root: Path) -> PendingCopy | None:
         pending = _pending_in_scope(repo_root, scope)
         if pending is None:
             return None
-        _remove_partials(repo_root)
-        refreshed = time.monotonic()
-        for relpath in [*pending.byor_relpaths, *pending.other_relpaths]:
-            _copy_whole(pending.main_root / relpath, repo_root / relpath)
-            if time.monotonic() - refreshed > LOCK_REFRESH_SECONDS:
-                os.utime(lock)
-                refreshed = time.monotonic()
+        _copy_pending_files(repo_root, pending, lock=lock)
         if scope.copy_ignored:
             (scope.git_dir / IGNORED_DONE_NAME).touch()
     finally:
         lock.unlink(missing_ok=True)
     return pending
+
+
+def _copy_pending_files(repo_root: Path, pending: PendingCopy, *, lock: Path) -> None:
+    _remove_partials(repo_root)
+    refreshed = time.monotonic()
+    for relpath in [*pending.byor_relpaths, *pending.other_relpaths]:
+        _copy_whole(pending.main_root / relpath, repo_root / relpath)
+        if time.monotonic() - refreshed > LOCK_REFRESH_SECONDS:
+            os.utime(lock)
+            refreshed = time.monotonic()
 
 
 @dataclass(frozen=True)

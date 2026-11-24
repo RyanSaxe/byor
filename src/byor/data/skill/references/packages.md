@@ -1,7 +1,7 @@
 # Author an Opt-In Package
 
-A **package** is a named bundle of rules (and optional checks) that repos install
-deliberately, instead of being applied everywhere. Reach for one when a
+A **package** is a named bundle of rules (and optional checks) that repos
+install deliberately, instead of being applied everywhere. Reach for one when a
 preference is not a single rule for *this* repo, but a reusable set that only
 *some* repos should enforce.
 
@@ -22,8 +22,8 @@ rules too situational to force on every repo but worth reusing.
 
 ## Author the package
 
-A package is just a directory under the global config; each is a subdirectory
-of `~/.config/byor/packages/`. It holds ordinary rule files (same format as any
+A package is just a directory under the global config; each is a subdirectory of
+`~/.config/byor/packages/`. It holds ordinary rule files (same format as any
 other rule) and an optional `checks.yml`:
 
 ```text
@@ -60,9 +60,9 @@ byor list --scope package         # the installed package rules ast-grep now rea
 
 Installing is personal and per-repo: it records the opt-in in the untracked
 `.byor/local.yml` and mirrors the package's rules into
-`.byor/rules/personal/packages/`, so the rules apply for you in this repo but are
-**not** committed. To share a package's rules or checks with the team, promote
-them into tracked config:
+`.byor/rules/personal/packages/`, so the rules apply for you in this repo but
+are **not** committed. To share a package's rules or checks with the team,
+promote them into tracked config:
 
 ```bash
 byor promote RULE_ID --from package   # a package rule -> .byor/rules/project/

@@ -72,7 +72,7 @@ const diagnosticsFor = (
 
 export default {
   id: "byor",
-  async setup(ctx) {
+  async setup(ctx): Promise<void> {
     await ctx.tool.hook("execute.after", async (event) => {
       if (event.status !== "completed") return
       const diagnostics = await diagnosticsFor(
@@ -92,8 +92,8 @@ export default {
       }
     })
   },
-  server: async ({ directory }) => ({
-    "tool.execute.after": async (input, output) => {
+  server: async ({ directory }): ReturnType<PluginModule["server"]> => ({
+    "tool.execute.after": async (input, output): Promise<void> => {
       const diagnostics = await diagnosticsFor(
         directory,
         input.tool,

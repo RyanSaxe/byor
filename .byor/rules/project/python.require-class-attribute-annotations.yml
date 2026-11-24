@@ -4,27 +4,27 @@ severity: warning
 message: Class attributes should have explicit type annotations.
 rule:
   all:
-  - pattern:
-      context: |
-        class C:
-            $FIELD = $VALUE
-      selector: expression_statement
-  - inside:
-      kind: block
-      inside:
-        kind: class_definition
-        field: body
-        # Enum members must not be annotated: ty flags an annotated member as
-        # invalid-enum-member-annotation, so enum class bodies are exempt.
-        not:
-          has:
-            field: superclasses
+    - pattern:
+        context: |
+          class C:
+              $FIELD = $VALUE
+        selector: expression_statement
+    - inside:
+        kind: block
+        inside:
+          kind: class_definition
+          field: body
+          # Enum members must not be annotated: ty flags an annotated member as
+          # invalid-enum-member-annotation, so enum class bodies are exempt.
+          not:
             has:
-              regex: ^(enum\.)?(Enum|IntEnum|StrEnum|Flag|IntFlag)$
-  - not:
-      inside:
-        kind: function_definition
-        stopBy: end
+              field: superclasses
+              has:
+                regex: ^(enum\.)?(Enum|IntEnum|StrEnum|Flag|IntFlag)$
+    - not:
+        inside:
+          kind: function_definition
+          stopBy: end
 metadata:
   byor:
     rationale: >
@@ -40,7 +40,7 @@ metadata:
       (a = b = 0), need restructuring into separate annotated assignments
       instead.
     tags:
-    - python
-    - typing
-    - style-guide
-    - greenfield
+      - python
+      - typing
+      - style-guide
+      - greenfield

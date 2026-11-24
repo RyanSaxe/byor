@@ -14,9 +14,9 @@ since the skill was installed by it, the user can repair with
 `uv tool install byor --with-executables-from ast-grep-cli && byor install`.)
 
 You are running **inside** a specific harness (Claude Code, Codex, Copilot,
-Antigravity, OpenCode, or Pi). Its post-edit hook is what feeds diagnostics
-back to you here, so always make sure it is installed for *this* harness. If
-doctor does not list it, offer to add it:
+Antigravity, OpenCode, or Pi). Its post-edit hook is what feeds diagnostics back
+to you here, so always make sure it is installed for *this* harness. If doctor
+does not list it, offer to add it:
 
 ```bash
 byor hook install --agent <this-harness>
@@ -27,9 +27,9 @@ adds them; re-running it is safe and idempotent.
 
 ## 2. Initialize the repo (only if needed)
 
-`byor init` is **optional**. It is only needed for rules scoped to *this* repo or
-shared with a team — global/personal rules work everywhere without it. Ask once
-whether the user wants repo-scoped or team-shared rules; if not, skip init.
+`byor init` is **optional**. It is only needed for rules scoped to *this* repo
+or shared with a team — global/personal rules work everywhere without it. Ask
+once whether the user wants repo-scoped or team-shared rules; if not, skip init.
 
 When the user wants repo-scoped rules but the team has not adopted byor, offer
 `byor init --private`: it hides byor's whole footprint from git (untracked
@@ -37,8 +37,8 @@ When the user wants repo-scoped rules but the team has not adopted byor, offer
 lands in the team's history.
 
 If profiles are configured, offer to initialize with one. Profiles are
-user-defined templates that write repo-local rule/check exclusions; they are
-not runtime modes. List them before asking:
+user-defined templates that write repo-local rule/check exclusions; they are not
+runtime modes. List them before asking:
 
 ```bash
 byor profile list
@@ -75,9 +75,10 @@ mechanism that fits (see "Choose the mechanism" in `SKILL.md`):
 - **ast-grep rule** — a syntax shape, e.g. a forbidden call or banned import
   (see `references/patterns.md`)
 - **formatter / linter / type checker** — see `references/checks.md`
-- **byor check script** — bespoke logic over the file; see `references/checks.md`
-- **not checkable** — naming taste, architecture: leave it in prose, do not force
-  a check
+- **byor check script** — bespoke logic over the file; see
+  `references/checks.md`
+- **not checkable** — naming taste, architecture: leave it in prose, do not
+  force a check
 
 When drafting rule tags, inspect the existing vocabulary with
 `byor list --scope all --tags`, reuse fitting tags, and create new tags only for
@@ -106,6 +107,7 @@ Adopting byor on an existing repo can surface a wall of violations. Offer a
 single isolated cleanup so the user starts clean instead of fighting the tool:
 
 1. Create a dedicated branch, e.g. `byor/initial-cleanup`.
+
 2. Run every rule **and check** across the whole repo and capture the output to
    a tmp file so it is referenceable and does not flood context. With no
    `--files`, `byor agent-check` scans the whole repo and runs the configured
@@ -117,12 +119,12 @@ single isolated cleanup so the user starts clean instead of fighting the tool:
    ```
 
 3. Work through that file, fixing each violation per its rule's `agent_prompt`,
-   committing in small atomic chunks. Leave the branch for the user to review and
-   merge.
+   committing in small atomic chunks. Leave the branch for the user to review
+   and merge.
 
 ## 8. Offer to tidy the prose (optional, never automatic)
 
 byor writes no instruction files, so leave CLAUDE.md / AGENTS.md untouched by
-default. After rules exist, you may offer: "These are now enforced
-mechanically — want me to remove or annotate the matching lines in your
-instruction files?" Make each edit only on explicit confirmation.
+default. After rules exist, you may offer: "These are now enforced mechanically
+— want me to remove or annotate the matching lines in your instruction files?"
+Make each edit only on explicit confirmation.

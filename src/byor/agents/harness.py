@@ -25,7 +25,7 @@ __all__ = (
     "parse_payload",
 )
 
-JsonValue: TypeAlias = "None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]"
+JsonValue: TypeAlias = "bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None"
 
 Harness = Literal["claude-code", "codex", "copilot", "antigravity"]
 
@@ -272,10 +272,9 @@ def _parse_antigravity(payload: dict[str, JsonValue]) -> EditPayload:
     recent = _antigravity_recent_steps(Path(transcript), since=initial_steps)
     if not recent:
         return EditPayload()
-    cwd = _directory(payload.get("cwd"))
-    base = cwd if cwd is not None and cwd.is_absolute() else None
-    artifact_dir = _directory(payload.get("artifactDirectoryPath"))
-    artifact_root = artifact_dir.resolve() if artifact_dir is not None and artifact_dir.is_absolute() else None
+    base = _absolute_directory(payload.get("cwd"))
+    artifact_dir = _absolute_directory(payload.get("artifactDirectoryPath"))
+    artifact_root = artifact_dir.resolve() if artifact_dir is not None else None
     edits: dict[Path, list[str]] = {}
     for step_pos, step in enumerate(recent):
         if step.get("type") != "PLANNER_RESPONSE" or step.get("status") not in (None, "DONE"):
@@ -283,19 +282,40 @@ def _parse_antigravity(payload: dict[str, JsonValue]) -> EditPayload:
         tool_calls = step.get("tool_calls")
         if not isinstance(tool_calls, list):
             continue
-        results = _antigravity_tool_results(recent[step_pos + 1 :])
-        for idx, call in enumerate(tool_calls):
-            if results and (idx >= len(results) or results[idx].get("status") not in (None, "DONE")):
-                continue
-            extracted = _antigravity_tool_edit(call)
-            if extracted is None:
-                continue
-            raw_path, contents = extracted
-            path = base / raw_path if base is not None else Path(raw_path)
-            if artifact_root is not None and path.is_absolute() and path.resolve().is_relative_to(artifact_root):
-                continue
-            edits.setdefault(path, []).extend(contents)
+        _collect_antigravity_tool_edits(
+            edits,
+            tool_calls,
+            results=_antigravity_tool_results(recent[step_pos + 1 :]),
+            base=base,
+            artifact_root=artifact_root,
+        )
     return EditPayload(edits=edits)
+
+
+def _absolute_directory(value: JsonValue) -> Path | None:
+    directory = _directory(value)
+    return directory if directory is not None and directory.is_absolute() else None
+
+
+def _collect_antigravity_tool_edits(
+    edits: dict[Path, list[str]],
+    tool_calls: list[JsonValue],
+    *,
+    results: list[dict[str, JsonValue]],
+    base: Path | None,
+    artifact_root: Path | None,
+) -> None:
+    for idx, call in enumerate(tool_calls):
+        if results and (idx >= len(results) or results[idx].get("status") not in (None, "DONE")):
+            continue
+        extracted = _antigravity_tool_edit(call)
+        if extracted is None:
+            continue
+        raw_path, contents = extracted
+        path = base / raw_path if base is not None else Path(raw_path)
+        if artifact_root is not None and path.is_absolute() and path.resolve().is_relative_to(artifact_root):
+            continue
+        edits.setdefault(path, []).extend(contents)
 
 
 _ANTIGRAVITY_NON_TOOL_STEP_TYPES = frozenset({"PLANNER_RESPONSE", "SYSTEM_MESSAGE", "USER_INPUT"})

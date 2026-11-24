@@ -20,11 +20,11 @@ const editedPath = (input: unknown): string | undefined => {
   return undefined
 }
 
-export default function (pi: ExtensionAPI) {
+export default function (pi: ExtensionAPI): void {
   pi.on("tool_result", (event) => {
-    if (!FILE_EDITING_TOOLS.has(event.toolName)) return
+    if (!FILE_EDITING_TOOLS.has(event.toolName)) return undefined
     const filePath = editedPath(event.input)
-    if (filePath === undefined) return
+    if (filePath === undefined) return undefined
     const result = spawnSync(
       "byor",
       ["agent-check", "--scope", "diff", "--files", filePath],
@@ -32,7 +32,7 @@ export default function (pi: ExtensionAPI) {
     )
     // Any exit code other than 2 (e.g. a byor config error) is ignored so it
     // never breaks the agent loop.
-    if (result.status !== DIAGNOSTICS_EXIT_CODE) return
+    if (result.status !== DIAGNOSTICS_EXIT_CODE) return undefined
     const feedback = { type: "text", text: `\n\n${result.stdout ?? ""}` }
     return { content: [...(event.content ?? []), feedback] }
   })

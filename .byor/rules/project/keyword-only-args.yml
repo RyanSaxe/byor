@@ -6,43 +6,43 @@ message: Parameters after the first two must be keyword-only. Two positional
 utils:
   positional-param:
     any:
-    - kind: identifier
-    # A typed splat (`*args: str`, `**kw: int`) parses as a typed_parameter
-    # wrapping the splat pattern; it is not a positional slot.
-    - kind: typed_parameter
-      not:
-        has:
-          any:
-          - kind: list_splat_pattern
-          - kind: dictionary_splat_pattern
-    - kind: default_parameter
-    - kind: typed_default_parameter
+      - kind: identifier
+      # A typed splat (`*args: str`, `**kw: int`) parses as a typed_parameter
+      # wrapping the splat pattern; it is not a positional slot.
+      - kind: typed_parameter
+        not:
+          has:
+            any:
+              - kind: list_splat_pattern
+              - kind: dictionary_splat_pattern
+      - kind: default_parameter
+      - kind: typed_default_parameter
   counted-param:
     all:
-    - matches: positional-param
-    - not:
-        regex: ^(self|cls)$
-    - not:
-        follows:
-          stopBy: end
-          any:
-          - kind: keyword_separator
-          - kind: list_splat_pattern
-          - kind: typed_parameter
-            has:
-              kind: list_splat_pattern
+      - matches: positional-param
+      - not:
+          regex: ^(self|cls)$
+      - not:
+          follows:
+            stopBy: end
+            any:
+              - kind: keyword_separator
+              - kind: list_splat_pattern
+              - kind: typed_parameter
+                has:
+                  kind: list_splat_pattern
 rule:
   kind: parameters
   has:
     all:
-    - matches: counted-param
-    - follows:
-        stopBy: end
-        all:
-        - matches: counted-param
-        - follows:
-            stopBy: end
-            matches: counted-param
+      - matches: counted-param
+      - follows:
+          stopBy: end
+          all:
+            - matches: counted-param
+            - follows:
+                stopBy: end
+                matches: counted-param
 metadata:
   byor:
     rationale: >
@@ -60,6 +60,6 @@ metadata:
       same type belong after the `*` even when a positional slot is free.
       Update call sites to pass keyword arguments by name.
     tags:
-    - python
-    - style-guide
-    - greenfield
+      - python
+      - style-guide
+      - greenfield

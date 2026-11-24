@@ -4,13 +4,13 @@ severity: warning
 message: Avoid typing.cast in Python code.
 rule:
   any:
-  - pattern: from typing import cast
-  - pattern: from typing import cast as $ALIAS
-  - pattern: from typing_extensions import cast
-  - pattern: from typing_extensions import cast as $ALIAS
-  - pattern: typing.cast($TYPE, $VALUE)
-  - pattern: typing_extensions.cast($TYPE, $VALUE)
-  - pattern: cast($TYPE, $VALUE)
+    - pattern: from typing import cast
+    - pattern: from typing import cast as $ALIAS
+    - pattern: from typing_extensions import cast
+    - pattern: from typing_extensions import cast as $ALIAS
+    - pattern: typing.cast($TYPE, $VALUE)
+    - pattern: typing_extensions.cast($TYPE, $VALUE)
+    - pattern: cast($TYPE, $VALUE)
 metadata:
   byor:
     rationale: >
@@ -25,7 +25,7 @@ metadata:
       python.no-typing-cast` on its own line directly above the offending line,
       with a short comment above it explaining the type-system limitation.
     tags:
-    - python
-    - typing
-    - style-guide
-    - greenfield
+      - python
+      - typing
+      - style-guide
+      - greenfield
