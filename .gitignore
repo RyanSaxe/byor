@@ -217,6 +217,9 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# Node
+node_modules/
+
 # >>> Managed by BYOR. Manual edits may be overwritten. >>>
 .byor/local.yml
 .byor/rules/personal/local/**/*.yml

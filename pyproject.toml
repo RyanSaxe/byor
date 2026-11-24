@@ -40,7 +40,6 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "pre-commit>=4.6.0",
     "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
     "ruff>=0.15.17",
@@ -84,12 +83,24 @@ ignore = [
     "S603",
 ]
 
+[tool.ruff.lint.pylint]
+# PLR0917 caps positional arguments at two; pass any further parameters as
+# keyword-only arguments after `*`.
+max-positional-args = 2
+
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
 
-# Positional-argument limits are enforced by the byor rule
-# .byor/rules/project/keyword-only-args.yml; ruff's own PLR0917 is
-# preview-only, so a [tool.ruff.lint.pylint] max-positional-args here is dead.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"typing.cast".msg = "Narrow or fix the types instead of casting."
+"typing_extensions.cast".msg = "Narrow or fix the types instead of casting."
+"unittest".msg = "Use pytest and plain fakes instead of unittest."
+"unittest.mock".msg = "Inject small dependencies and test with fakes instead of mocks."
+"importlib.import_module".msg = "Use explicit static imports instead of dynamic loading."
+"importlib.util".msg = "Use explicit static imports instead of dynamic loading."
+"importlib.machinery".msg = "Use explicit static imports instead of dynamic loading."
+"importlib.reload".msg = "Avoid module reloading; structure state explicitly instead."
+"importlib.abc".msg = "Use explicit static imports instead of custom import hooks."
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
