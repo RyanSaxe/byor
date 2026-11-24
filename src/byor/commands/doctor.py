@@ -170,23 +170,31 @@ def _repo_checks(
         _ignore_block_check(repo_root),
     ]
     if not quick and repo_check.ok:
-        checks.extend(_rule_checks(repo_root, repo_config.paths, config_dir=config_dir, global_config=global_config))
-        checks.append(_command_rules_check(repo_root, repo_config.paths, global_config=global_config))
-        gate_check = _gate_check(repo_root, repo_config)
-        if gate_check is not None:
-            checks.append(gate_check)
-        gate_hook_check = _gate_hook_check(repo_root, repo_config)
-        if gate_hook_check is not None:
-            checks.append(gate_hook_check)
-        vendored_check = _vendored_scripts_check(repo_root, repo_config)
-        if vendored_check is not None:
-            checks.append(vendored_check)
-        shims_check = _git_shims_check(repo_root)
-        if shims_check is not None:
-            checks.append(shims_check)
+        checks.extend(_full_repo_checks(repo_root, repo_config, config_dir=config_dir, global_config=global_config))
     extra = _extra_checks_check(repo_root, repo_config, global_config=global_config, config_dir=config_dir)
     if extra is not None:
         checks.append(extra)
+    return checks
+
+
+def _full_repo_checks(
+    repo_root: Path,
+    repo_config: RepoConfig,
+    *,
+    config_dir: Path,
+    global_config: GlobalConfig,
+) -> list[Check]:
+    checks = [
+        *_rule_checks(repo_root, repo_config.paths, config_dir=config_dir, global_config=global_config),
+        _command_rules_check(repo_root, repo_config.paths, global_config=global_config),
+    ]
+    optional = (
+        _gate_check(repo_root, repo_config),
+        _gate_hook_check(repo_root, repo_config),
+        _vendored_scripts_check(repo_root, repo_config),
+        _git_shims_check(repo_root),
+    )
+    checks.extend(check for check in optional if check is not None)
     return checks
 
 

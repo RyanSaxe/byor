@@ -80,10 +80,17 @@ ignore = [
     "S603",
 ]
 
+[tool.ruff.lint.mccabe]
+# Complexity budget: 6 is human-ideal, >10 is tangled, and 8 is the
+# cross-language agent benchmark for Python.
+max-complexity = 8
+
 [tool.ruff.lint.pylint]
 # PLR0917 caps positional arguments at two; pass any further parameters as
 # keyword-only arguments after `*`.
 max-positional-args = 2
+max-branches = 10
+max-nested-blocks = 4
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"

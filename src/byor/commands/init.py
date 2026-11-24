@@ -139,32 +139,11 @@ def _require_enabled(repo_root: Path, state_dir: Path, *, interactive: bool) -> 
 
 
 def initialize_repo(repo_root: Path, config_dir: Path, *, options: InitOptions) -> list[str]:
-    messages: list[str] = []
     global_config = load_global_config(config_dir)
     state_dir = global_state_dir()
     _check_named_selections(config_dir, global_config, options=options)
     _bootstrap_global_dir(config_dir, state_dir, config=global_config)
-    # The ignore block goes first, so a file byor cannot rewrite stops init
-    # before it creates any personal file that git would then offer to commit.
-    wrote_block = write_ignore_block(repo_root, private=options.private)
-    repo_config = _ensure_repo_layout(repo_root, private=options.private)
-    sgconfig_message = ensure_rule_dirs(
-        repo_root / repo_config.paths.sgconfig,
-        rule_dir_relpaths(repo_config.paths),
-        replace=options.replace_sgconfig,
-    )
-    if sgconfig_message is not None:
-        messages.append(sgconfig_message)
-    if wrote_block:
-        target = display_path(ignore_file(repo_root, private=options.private), repo_root)
-        messages.append(f"Wrote ignore block to {target}")
-    if not options.private:
-        messages.extend(_drop_private_block(repo_root))
-    sgconfig = repo_config.paths.sgconfig
-    if options.private and git_output(repo_root, "ls-files", "--", sgconfig):
-        messages.append(
-            f"warning: {sgconfig} is already tracked; git will still show byor's changes to it despite private mode"
-        )
+    messages = _setup_repo_files(repo_root, options=options)
     if options.git_hooks:
         messages.extend(install_git_shims(repo_root))
     # A linked worktree of a byor repo stays out of the registry, so a removed worktree never
@@ -186,6 +165,32 @@ def initialize_repo(repo_root: Path, config_dir: Path, *, options: InitOptions) 
             messages.append(note)
     # Run doctor --quick, surfacing only the problems it finds.
     messages.extend(quick_doctor_problems(repo_root, config_dir))
+    return messages
+
+
+def _setup_repo_files(repo_root: Path, *, options: InitOptions) -> list[str]:
+    messages: list[str] = []
+    # The ignore block goes first, so a file byor cannot rewrite stops init
+    # before it creates any personal file that git would then offer to commit.
+    wrote_block = write_ignore_block(repo_root, private=options.private)
+    repo_config = _ensure_repo_layout(repo_root, private=options.private)
+    sgconfig_message = ensure_rule_dirs(
+        repo_root / repo_config.paths.sgconfig,
+        rule_dir_relpaths(repo_config.paths),
+        replace=options.replace_sgconfig,
+    )
+    if sgconfig_message is not None:
+        messages.append(sgconfig_message)
+    if wrote_block:
+        target = display_path(ignore_file(repo_root, private=options.private), repo_root)
+        messages.append(f"Wrote ignore block to {target}")
+    if not options.private:
+        messages.extend(_drop_private_block(repo_root))
+    sgconfig = repo_config.paths.sgconfig
+    if options.private and git_output(repo_root, "ls-files", "--", sgconfig):
+        messages.append(
+            f"warning: {sgconfig} is already tracked; git will still show byor's changes to it despite private mode"
+        )
     return messages
 
 

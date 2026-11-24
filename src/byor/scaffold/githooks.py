@@ -16,6 +16,7 @@ from byor.io.fsio import MANAGED_NOTICE, marked_text_status, write_marked_text
 from byor.io.gitio import git_output
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
 
 __all__ = (
@@ -127,13 +128,40 @@ def shim_findings(repo_root: Path) -> ShimFindings | None:
     if not sync_marked and precommit_status not in marked and not displaced:
         return None
     problems: list[str] = []
-    notes: list[str] = []
     if sync_marked:
-        problems.extend(
-            f".git/hooks/{name} is {'missing' if status == 'missing' else 'outdated'}; run `byor init --git-hooks`"
-            for name, status in sync_statuses.items()
-            if status in ("missing", "drifted")
-        )
+        problems.extend(_sync_shim_problems(sync_statuses))
+    precommit_problems, notes = _precommit_shim_findings(
+        precommit_status,
+        legacy_status,
+        displaced=displaced,
+    )
+    problems.extend(precommit_problems)
+    statuses = {**sync_statuses, "pre-commit": precommit_status}
+    if displaced and legacy_status == "unchanged":
+        # pre-commit runs the chained .legacy hook only when os.access(X_OK)
+        # passes and silently skips it otherwise, so the bit is part of health.
+        statuses["pre-commit.legacy"] = legacy_status
+    problems.extend(_exec_bit_problems(hooks_dir, statuses, marked=marked))
+    return ShimFindings(problems=problems, notes=notes)
+
+
+def _sync_shim_problems(sync_statuses: Mapping[str, str]) -> list[str]:
+    problems: list[str] = []
+    for name, status in sync_statuses.items():
+        if status in ("missing", "drifted"):
+            state = "missing" if status == "missing" else "outdated"
+            problems.append(f".git/hooks/{name} is {state}; run `byor init --git-hooks`")
+    return problems
+
+
+def _precommit_shim_findings(
+    precommit_status: str,
+    legacy_status: str,
+    *,
+    displaced: bool,
+) -> tuple[list[str], list[str]]:
+    problems: list[str] = []
+    notes: list[str] = []
     if precommit_status == "drifted":
         problems.append(".git/hooks/pre-commit is outdated; run `byor init --private --gate`")
     if displaced and legacy_status == "unchanged":
@@ -150,23 +178,21 @@ def shim_findings(repo_root: Path) -> ShimFindings | None:
         )
     elif precommit_status == "unmarked":
         notes.append("pre-commit hook is user-owned; byor is not managing a commit gate here")
+    return problems, notes
+
+
+def _exec_bit_problems(hooks_dir: Path, statuses: Mapping[str, str], *, marked: set[str]) -> list[str]:
     # Git silently skips a hook without the exec bit, so a chmod -x'd shim is
     # as broken as a deleted one; reinstall restores the bit.
     remedies = dict.fromkeys(SHIM_HOOK_NAMES, "byor init --git-hooks") | {
         "pre-commit": "byor init --private --gate",
         "pre-commit.legacy": "chmod +x .git/hooks/pre-commit.legacy",
     }
-    statuses = {**sync_statuses, "pre-commit": precommit_status}
-    if displaced and legacy_status == "unchanged":
-        # pre-commit runs the chained .legacy hook only when os.access(X_OK)
-        # passes and silently skips it otherwise, so the bit is part of health.
-        statuses["pre-commit.legacy"] = legacy_status
-    problems.extend(
+    return [
         f".git/hooks/{name} is not executable; run `{remedies[name]}`"
         for name, status in statuses.items()
         if status in marked and not os.access(hooks_dir / name, os.X_OK)
-    )
-    return ShimFindings(problems=problems, notes=notes)
+    ]
 
 
 def _install_shim(hook: Path, content: str, *, line: str) -> list[str]:

@@ -20,7 +20,7 @@ const editedPath = (input: unknown): string | undefined => {
   return undefined
 }
 
-export default function (pi: ExtensionAPI) {
+export default function (pi: ExtensionAPI): void {
   pi.on("tool_result", (event) => {
     if (!FILE_EDITING_TOOLS.has(event.toolName)) return undefined
     const filePath = editedPath(event.input)

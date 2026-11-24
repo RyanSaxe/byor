@@ -1,21 +1,38 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "unicorn", "oxc"],
+  "plugins": ["typescript", "unicorn", "oxc", "import"],
   "categories": {
     "correctness": "error",
     "suspicious": "error",
     "perf": "error"
   },
   "rules": {
+    // Complexity budget: 6 is human-ideal, >10 is tangled, and 8 is the
+    // cross-language agent benchmark (10 in JS/TS for ESLint-style counting).
+    "complexity": ["error", 10],
+    "max-depth": ["error", 4],
+    "max-nested-callbacks": ["error", 3],
     // Pass an options object when a function needs more than three inputs.
-    "max-params": ["error", { "max": 3 }],
+    "max-params": ["error", 3],
+    "curly": ["error", "multi-line"],
+    "import/no-cycle": "error",
+    "eqeqeq": ["error", "always"],
+    "no-var": "error",
+    "prefer-const": "error",
+    "no-param-reassign": "error",
+    "no-nested-ternary": "error",
+    "no-else-return": "error",
+    "no-lonely-if": "error",
+    "unicorn/no-negated-condition": "error",
     // Narrow with type guards or runtime checks instead of casting with `as`.
     "typescript/consistent-type-assertions": [
       "error",
       { "assertionStyle": "never" }
     ],
+    "typescript/explicit-function-return-type": "error",
     // Use `unknown` and narrow instead of turning off checks with `any`.
     "typescript/no-explicit-any": "error",
+    "typescript/no-misused-promises": "error",
     // Handle null and undefined explicitly instead of using `!`.
     "typescript/no-non-null-assertion": "error",
     // Cover every member of a discriminated union in switch statements.

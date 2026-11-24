@@ -262,21 +262,16 @@ def write_checks(data: CommentedMap, checks: list[CheckDef]) -> None:
 
 
 def write_init_defaults(data: CommentedMap, init: InitDefaults) -> None:
-    values: dict[str, SectionValue] = {}
-    if init.private is not None:
-        values["private"] = init.private
-    if init.git_hooks is not None:
-        values["git_hooks"] = init.git_hooks
-    if init.gate is not None:
-        values["gate"] = init.gate
-    if init.profile is not None:
-        values["profile"] = init.profile
-    if init.profiles:
-        values["profiles"] = list(init.profiles)
-    if init.package is not None:
-        values["package"] = init.package
-    if init.packages:
-        values["packages"] = list(init.packages)
+    entries: tuple[tuple[str, SectionValue | None], ...] = (
+        ("private", init.private),
+        ("git_hooks", init.git_hooks),
+        ("gate", init.gate),
+        ("profile", init.profile),
+        ("profiles", list(init.profiles) if init.profiles else None),
+        ("package", init.package),
+        ("packages", list(init.packages) if init.packages else None),
+    )
+    values: dict[str, SectionValue] = {key: value for key, value in entries if value is not None}
     if values:
         update_section(data, "init", values=values)
 

@@ -294,15 +294,10 @@ def _docstring_findings(path: Path, module: ast.Module) -> list[_Finding]:
                 f"module docstring required: one-sentence summary plus substantial detail paragraph; {DETAIL_ADVICE}",
             )
         ]
-    findings: list[_Finding] = []
     lines = docstring.strip("\n").splitlines()
     if not lines or not lines[0].strip():
         return [_Finding(path, line, "module docstring needs a summary sentence")]
-    summary = lines[0].strip()
-    if not summary.endswith("."):
-        findings.append(_Finding(path, line, "summary sentence must end with a period"))
-    if len(SENTENCE_END.findall(ABBREVIATION.sub("", summary))) != 1:
-        findings.append(_Finding(path, line, "summary must be a single sentence"))
+    findings = _summary_findings(path, line, summary=lines[0].strip())
     if len(lines) == 1:
         findings.append(
             _Finding(
@@ -312,6 +307,23 @@ def _docstring_findings(path: Path, module: ast.Module) -> list[_Finding]:
             )
         )
         return findings
+    findings.extend(_detail_findings(path, line, lines=lines))
+    if any(part.strip() == "Exports:" for part in lines):
+        findings.append(_Finding(path, line, "remove Exports: from the docstring; __all__ owns exports"))
+    return findings
+
+
+def _summary_findings(path: Path, line: int, *, summary: str) -> list[_Finding]:
+    findings: list[_Finding] = []
+    if not summary.endswith("."):
+        findings.append(_Finding(path, line, "summary sentence must end with a period"))
+    if len(SENTENCE_END.findall(ABBREVIATION.sub("", summary))) != 1:
+        findings.append(_Finding(path, line, "summary must be a single sentence"))
+    return findings
+
+
+def _detail_findings(path: Path, line: int, *, lines: list[str]) -> list[_Finding]:
+    findings: list[_Finding] = []
     if len(lines) < MIN_DOCSTRING_LINES or lines[1].strip():
         findings.append(_Finding(path, line, "summary must be followed by a blank line"))
     detail = _first_detail_paragraph(lines)
@@ -329,8 +341,6 @@ def _docstring_findings(path: Path, module: ast.Module) -> list[_Finding]:
                 f"{MIN_DETAIL_WORDS} words and {MIN_DETAIL_SENTENCES} sentences; {DETAIL_ADVICE}",
             )
         )
-    if any(part.strip() == "Exports:" for part in lines):
-        findings.append(_Finding(path, line, "remove Exports: from the docstring; __all__ owns exports"))
     return findings
 
 
@@ -430,20 +440,29 @@ def _conditional_blocks(statement: ast.stmt) -> tuple[list[ast.stmt], ...]:
 def _top_level_names(module: ast.Module) -> set[str]:
     names: set[str] = set()
     for statement in _statements_with_conditional_blocks(module.body):
-        if isinstance(statement, DEFINITION_NODES):
-            names.add(statement.name)
-        elif isinstance(statement, ast.Import):
-            names.update(alias.asname or alias.name.split(".", maxsplit=1)[0] for alias in statement.names)
-        elif isinstance(statement, ast.ImportFrom):
-            names.update(alias.asname or alias.name for alias in statement.names if alias.name != "*")
-        elif isinstance(statement, ast.Assign):
-            for target in statement.targets:
-                _add_target_names(names, target)
-        elif isinstance(statement, ast.AnnAssign):
-            _add_target_names(names, statement.target)
-        elif (name := _type_alias_name(statement)) is not None:
-            names.add(name)
+        _add_statement_names(names, statement)
     return names
+
+
+def _add_statement_names(names: set[str], statement: ast.stmt) -> None:
+    if isinstance(statement, DEFINITION_NODES):
+        names.add(statement.name)
+    elif isinstance(statement, (ast.Import, ast.ImportFrom)):
+        _add_import_names(names, statement)
+    elif isinstance(statement, ast.Assign):
+        for target in statement.targets:
+            _add_target_names(names, target)
+    elif isinstance(statement, ast.AnnAssign):
+        _add_target_names(names, statement.target)
+    elif (name := _type_alias_name(statement)) is not None:
+        names.add(name)
+
+
+def _add_import_names(names: set[str], statement: ast.Import | ast.ImportFrom) -> None:
+    if isinstance(statement, ast.Import):
+        names.update(alias.asname or alias.name.split(".", maxsplit=1)[0] for alias in statement.names)
+    else:
+        names.update(alias.asname or alias.name for alias in statement.names if alias.name != "*")
 
 
 def _type_alias_name(statement: ast.stmt) -> str | None:
