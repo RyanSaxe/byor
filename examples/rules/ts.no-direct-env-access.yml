@@ -1,0 +1,23 @@
+# Demonstrates: enforcing an architectural boundary. Standard linters allow
+# `process.env` anywhere; this rule funnels all environment reads through a
+# single validated config module (for example `src/env.ts`, which you can
+# exclude with `ignores` or a line-level `// ast-grep-ignore: ts.no-direct-env-access`).
+id: ts.no-direct-env-access
+language: TypeScript
+severity: error
+message: Do not read `process.env` directly; import validated settings from your env config module.
+rule:
+  pattern: process.env
+metadata:
+  byor:
+    rationale: >
+      Scattered `process.env` reads hide required runtime configuration, bypass
+      schema validation, and make environment dependencies impossible to trace.
+    agent_prompt: >
+      Import typed settings from your centralized env module (such as `src/env.ts`)
+      instead of reading `process.env` directly. Only the env config module itself
+      should access `process.env`, with `// ast-grep-ignore: ts.no-direct-env-access`
+      on the line above.
+    tags:
+      - typescript
+      - architecture

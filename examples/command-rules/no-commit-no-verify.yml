@@ -1,0 +1,50 @@
+# Demonstrates: blocking commit-hook bypasses across flags and env vars.
+# Matches `git commit --no-verify`, `-n`, combined short flags like `-anm`,
+# and `SKIP=` / `PREK_SKIP=` prefixes on `git commit`, `prek`, or `pre-commit`
+# without false-positives on `git log -n 5` or quoted strings.
+id: no-commit-no-verify
+language: Bash
+severity: error
+message: Skipping commit hooks (`--no-verify`, `-n`, `SKIP`, or `PREK_SKIP`) bypasses repository checks.
+rule:
+  any:
+    - kind: command
+      all:
+        - has:
+            field: name
+            regex: (^|/)git$
+        - has:
+            kind: word
+            regex: ^commit$
+        - has:
+            kind: word
+            regex: ^(--no-verify|-[A-Za-z]*n[A-Za-z]*)$
+    - kind: command
+      all:
+        - has:
+            kind: variable_assignment
+            has:
+              field: name
+              regex: ^(SKIP|PREK_SKIP)$
+        - any:
+            - all:
+                - has:
+                    field: name
+                    regex: (^|/)git$
+                - has:
+                    kind: word
+                    regex: ^commit$
+            - has:
+                field: name
+                regex: (^|/)(prek|pre-commit)$
+metadata:
+  byor:
+    rationale: >
+      Commit hooks run the repository's fast checks; bypassing them lands
+      unchecked code and shifts failures onto reviewers and CI.
+    agent_prompt: >
+      Fix what the hooks report and commit again. If a hook itself is broken,
+      stop and tell the user instead of bypassing it.
+    tags:
+      - commands
+      - git

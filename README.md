@@ -9,11 +9,12 @@
   <a href="LICENSE"><img src="https://img.shields.io/pypi/l/byor" alt="License"></a>
 </p>
 
-Prose rules in `AGENTS.md` and `CLAUDE.md` drift out of context. byor turns
-durable code and command conventions into mechanical checks that feed exact
-corrections back the moment an AI coding agent writes violating code or runs a
-disallowed command, while enforcing the same rules in your editor, terminal, and
-CI.
+Stop repeating the same code review feedback in `AGENTS.md` and chat. **byor**
+(*Build Your Own Rules*) turns your engineering taste, codebase conventions, and
+shell safety boundaries into fast mechanical checks that steer AI coding agents
+the moment they edit a file or run a command, and enforce the same rules in your
+editor, pre-commit, and CI. Tell an agent a preference once; byor enforces it
+everywhere.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/overview-dark.svg">

@@ -1,4 +1,4 @@
-id: no-requests
+id: python.no-requests
 valid:
   - import httpx
   - from httpx import AsyncClient

@@ -241,10 +241,10 @@ def test_no_suppression_comments_still_scans_broken_files(tmp_path: Path) -> Non
 
 
 RUFF_SCRIPT_COMMAND = (sys.executable, str(SCRIPTS_DIR / "ruff.py"))
-EXAMPLE_RUFF_SH = Path(__file__).resolve().parents[1] / "examples" / "config" / "scripts" / "ruff.sh"
+EXAMPLE_RUFF_SH = Path(__file__).resolve().parents[1] / "examples" / "config" / "scripts" / "ruff-readonly.sh"
 
 
-def test_example_ruff_sh_whole_repo_scan_survives_space_containing_filenames(tmp_path: Path) -> None:
+def test_example_ruff_readonly_whole_repo_scan_survives_space_containing_filenames(tmp_path: Path) -> None:
     # The old unquoted $(git ls-files ...) fallback word-split "my report.py"
     # into two bogus paths, failing the check on a clean repo.
     sh = shutil.which("sh")
@@ -268,9 +268,9 @@ def test_example_ruff_sh_whole_repo_scan_survives_space_containing_filenames(tmp
     assert completed.stdout == ""
 
 
-def test_example_ruff_sh_reports_an_unused_import_without_deleting_it(tmp_path: Path) -> None:
-    # The fix pass must never autofix F401: at hook time it deleted a
-    # just-added import before the agent's next edit added its usage.
+def test_example_ruff_readonly_reports_lint_and_format_without_mutating(tmp_path: Path) -> None:
+    # Read-only forwarding reports both lint and formatting issues while
+    # leaving the file untouched on disk.
     sh = shutil.which("sh")
     if sh is None:
         pytest.skip("running the example check script requires an `sh` on PATH")
@@ -278,7 +278,7 @@ def test_example_ruff_sh_reports_an_unused_import_without_deleting_it(tmp_path: 
     repo.mkdir()
     git(repo, "init", "--quiet")
     (repo / "ruff.toml").write_text("")
-    content = "import os\n"
+    content = "import os\nx=1\n"
     (repo / "code.py").write_text(content)
 
     completed = subprocess.run(
@@ -291,6 +291,7 @@ def test_example_ruff_sh_reports_an_unused_import_without_deleting_it(tmp_path: 
 
     assert completed.returncode == 1
     assert "F401" in completed.stdout
+    assert "uvx ruff format" in completed.stdout
     assert (repo / "code.py").read_text() == content
 
 
@@ -392,14 +393,60 @@ def test_dependency_gate_passes_quietly_without_history_to_compare(tmp_path: Pat
     assert _run_example_script("dependency-gate.sh", "pyproject.toml", cwd=plain).returncode == 0
 
 
-def test_uv_lock_guard_fails_only_on_a_hand_edited_lockfile(tmp_path: Path) -> None:
-    assert _run_example_script("uv-lock-guard.sh", "uv.lock", cwd=tmp_path).returncode == 1
-    completed = _run_example_script("uv-lock-guard.sh", "sub/uv.lock", cwd=tmp_path)
-    assert completed.returncode == 1
-    assert "uv add" in completed.stdout
+def test_check_suppression_reason_requires_explanation_on_new_suppressions(tmp_path: Path) -> None:
+    script = EXAMPLE_SCRIPTS / "check-suppression-reason.py"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
 
-    assert _run_example_script("uv-lock-guard.sh", "poetry.lock", cwd=tmp_path).returncode == 0
-    assert _run_example_script("uv-lock-guard.sh", cwd=tmp_path).returncode == 0
+    # An existing suppression already committed in HEAD is left untouched.
+    existing = repo / "existing.py"
+    existing.write_text("legacy = 1  # noqa: F841\n")
+    git(repo, "add", "existing.py")
+    git(repo, "commit", "--quiet", "-m", "init")
+
+    completed = subprocess.run(
+        (sys.executable, str(script), str(existing)),
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+    # Newly added suppressions without a reason fail across Python and TS.
+    py_bad = repo / "new_bad.py"
+    py_bad.write_text("x = 1  # type: ignore\n")
+    ts_bad = repo / "new_bad.ts"
+    ts_bad.write_text("// oxlint-disable-next-line no-explicit-any\nconst v: any = 1;\n")
+    failed = subprocess.run(
+        (sys.executable, str(script), str(py_bad), str(ts_bad)),
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert failed.returncode == 1
+    assert "type: ignore" in failed.stdout
+    assert "oxlint-disable-next-line" in failed.stdout
+
+    # Inline or preceding-line reasons pass.
+    py_good = repo / "new_good.py"
+    py_good.write_text("x = 1  # noqa: S101 -- invariant verified above\n")
+    ts_good = repo / "new_good.ts"
+    ts_good.write_text(
+        "// External SDK payload is validated at runtime.\n"
+        "// oxlint-disable-next-line no-explicit-any\n"
+        "const v: any = 1;\n"
+    )
+    passed = subprocess.run(
+        (sys.executable, str(script), str(py_good), str(ts_good)),
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert passed.returncode == 0, passed.stdout + passed.stderr
 
 
 GOOD_MODULE_DOCSTRING = (

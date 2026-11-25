@@ -44,15 +44,15 @@ Findings group by file, sorted by line, rule ID, and column (hook mode prefixes
 ```text
 BYOR found 1 issue.
 
-src/example.py:3:9
-Rule: python.no-typing-cast
-Severity: warning
-Message: Avoid typing.cast in Python code.
+src/example.py:3:8
+Rule: python.no-requests
+Severity: error
+Message: This codebase uses httpx, not requests.
 Code:
-  3 | value = cast(int, "3")
+  3 | import requests
 
 Instruction:
-Do not use typing.cast here. Fix the type by narrowing, changing the signature, introducing a protocol, or restructuring the value flow.
+Use httpx instead. For simple calls the API is the same (httpx.get, httpx.post); for anything repeated, use an httpx.Client or httpx.AsyncClient with an explicit timeout. Do not add requests to the dependencies.
 ```
 
 - **Concise output:** Pass `--concise` or set `output.concise: true` in

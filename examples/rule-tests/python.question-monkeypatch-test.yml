@@ -1,0 +1,10 @@
+id: python.question-monkeypatch
+valid:
+  - monkeypatch.setenv("API_KEY", "test")
+  - monkeypatch.delenv("DEBUG", raising=False)
+  - monkeypatch.chdir(tmp_path)
+  - service = Service(client=FakeClient())
+invalid:
+  - monkeypatch.setattr(module, "fetch", fake_fetch)
+  - 'monkeypatch.setattr("app.http.get", lambda *args: None)'
+  - monkeypatch.delattr(module, "CACHE", raising=False)

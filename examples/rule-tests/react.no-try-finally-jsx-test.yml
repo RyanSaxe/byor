@@ -1,0 +1,45 @@
+id: react.no-try-finally-jsx
+valid:
+  - |
+    function runWithCleanup(work: () => void, cleanup: () => void) {
+      try {
+        work();
+      } finally {
+        cleanup();
+      }
+    }
+  - |
+    function SafePanel({ label }: { label: string }) {
+      try {
+        return <section>{label}</section>;
+      } catch {
+        return <p>fallback</p>;
+      }
+    }
+  - |
+    const SimpleIcon = () => <svg />;
+invalid:
+  - |
+    function Panel() {
+      try {
+        return <div />;
+      } finally {
+        release();
+      }
+    }
+  - |
+    const Card = () => {
+      try {
+        return <section><p>hi</p></section>;
+      } finally {
+        done();
+      }
+    };
+  - |
+    const FragmentCard = function () {
+      try {
+        return <><span>ok</span></>;
+      } finally {
+        reset();
+      }
+    };

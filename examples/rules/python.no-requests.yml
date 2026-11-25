@@ -1,10 +1,8 @@
-# Demonstrates: banning a library. This is the kind of rule a general linter
-# will never ship, because it names a choice that is yours: this codebase uses
-# httpx. Import statements are the choke point — every use of a library starts
-# with one — so the rule matches the module name node (`dotted_name`) inside
-# any plain import, which covers the aliased, submodule, and comma-combined
-# forms in one clause, plus the two from-import patterns.
-id: no-requests
+# Demonstrates: banning a library at import choke points. Standard linters
+# cannot know which HTTP client your team standardized on. Matching
+# `dotted_name` inside `import_statement` covers aliased, submodule, and
+# comma-combined imports in one clause alongside the two from-import patterns.
+id: python.no-requests
 language: Python
 severity: error
 message: This codebase uses httpx, not requests.

@@ -22,16 +22,6 @@ uv run --locked ast-grep test -c examples/sgconfig.yml --skip-snapshot-tests
 uv run --locked pytest --cov=byor --cov-report=term-missing --cov-fail-under=90
 ```
 
-| Check | Enforces |
-| --- | --- |
-| `rumdl` | Markdown lint, 80-char paragraph wrap, relative link checks (`.rumdl.toml`) |
-| `ast-grep` | Committed project rules under `.byor/rules/project/` |
-| `ruff` | `select = ["ALL"]` minus ignores in `pyproject.toml`, line length 120, `max-complexity = 8`, `max-positional-args = 2`, formatting |
-| `ty` | Static type checking |
-| `oxfmt` / `oxlint` | JS/TS/JSON/YAML/TOML formatting and type-aware lint of packaged TS plugins |
-| `max-file-lines` | 1,000-line cap on source files |
-| `uv-lock-check` | Keeps `uv.lock` synced with `pyproject.toml` |
-
 ## Package layout
 
 | Path | Responsibility |

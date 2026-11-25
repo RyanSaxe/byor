@@ -10,29 +10,27 @@ Use standard `ast-grep` YAML with an optional `metadata.byor` block for AI
 hooks:
 
 ```yaml
-# .byor/rules/project/python.no-typing-cast.yml
-id: python.no-typing-cast
+# .byor/rules/project/python.no-requests.yml
+id: python.no-requests
 language: Python
-severity: warning
-message: Avoid typing.cast in Python code.
+severity: error
+message: This codebase uses httpx, not requests.
 rule:
   any:
-    - pattern: from typing import cast
-    - pattern: from typing import cast as $ALIAS
-    - pattern: from typing_extensions import cast
-    - pattern: from typing_extensions import cast as $ALIAS
-    - pattern: typing.cast($TYPE, $VALUE)
-    - pattern: typing_extensions.cast($TYPE, $VALUE)
-    - pattern: cast($TYPE, $VALUE)
+    - kind: dotted_name
+      regex: ^requests(\.|$)
+      inside: { stopBy: end, kind: import_statement }
+    - pattern: from requests import $$$NAMES
+    - pattern: from requests.$SUB import $$$NAMES
 metadata:
   byor:
     rationale: >
-      Casting hides type-model problems and hides invalid assumptions from
-      reviewers and type checkers.
+      We standardized on httpx for its async support and strict timeouts.
     agent_prompt: >
-      Do not use typing.cast here. Fix the type by narrowing, changing the
-      signature, introducing a protocol, or restructuring the value flow.
-    tags: [python, typing]
+      Use httpx instead. For simple calls the API is the same (httpx.get,
+      httpx.post); for repeated calls, use an httpx.Client or httpx.AsyncClient
+      with an explicit timeout. Do not add requests to dependencies.
+    tags: [python, dependencies]
 ```
 
 Required fields: `id`, `language`, `rule`, `message` (`severity` recommended).
@@ -53,9 +51,9 @@ formatters cannot relocate it; always name the rule ID so other rules stay
 active:
 
 ```python
-# External library returns untyped dict; validated at boundary.
-# ast-grep-ignore: python.no-typing-cast
-value = cast(dict[str, str], raw)
+# Legacy third-party SDK requires a requests.Session until v2 migration.
+# ast-grep-ignore: python.no-requests
+import requests
 ```
 
 Pass `--allow-exceptions` to `byor add` to append the standard suppression
@@ -66,12 +64,12 @@ suppressions for unknown rules as `unused-suppression` in CI.
 ## Managing rules with the CLI
 
 ```sh
-byor add --scope project --from draft.yml            # validate, copy, sync, quick doctor
-byor add --scope global --id no-print --edit         # open template in $EDITOR (saves draft on error)
+byor add --scope project --from draft.yml                        # validate, copy, sync, quick doctor
+byor add --scope global --id python.no-sys-path-mutation --edit  # open template in $EDITOR (saves draft on error)
 byor add --scope project --from draft.yml --allow-exceptions
-byor edit python.no-typing-cast                      # resolve project -> local -> canonical global
-byor remove python.no-typing-cast                    # delete from resolved scope and re-sync
-byor list --scope all                                # active, skipped, and excluded rules + checks
+byor edit python.no-requests                                     # resolve project -> local -> canonical global
+byor remove python.no-requests                                   # delete from resolved scope and re-sync
+byor list --scope all                                            # active, skipped, and excluded rules + checks
 ```
 
 Global `add`, `edit`, and `remove` operate on `~/.config/byor/rules/` and fan
@@ -120,9 +118,9 @@ checks:
 
 ## Check scripts
 
-Use a script for multi-step checks (such as autofix-then-report). An autofixing
-script must report what it changed and exit nonzero whenever it edits a file so
-the agent sees why disk changed:
+Use a script for multi-step checks (such as lint + format verification). Prefer
+read-only checks in agent hooks so files never mutate underneath an active edit
+session; if a custom script does autofix, report what changed and exit nonzero:
 
 ```sh
 #!/bin/sh
@@ -138,24 +136,24 @@ EOF
   [ "$#" -eq 0 ] && exit 0
 fi
 
-# Keep F401 unfixable so autofix does not drop an import before the next edit uses it.
-fixed=$(uvx ruff check --fix-only --show-fixes --unfixable F401 "$@" 2>/dev/null)
-reformatted=""
-case "$(uvx ruff format "$@" 2>&1)" in
-*reformatted*) reformatted="ruff format reformatted the file(s)." ;;
-esac
-remaining=$(uvx ruff check --quiet --output-format concise "$@" 2>/dev/null)
+lint=$(uvx ruff check --quiet --output-format concise "$@" 2>/dev/null)
+lint_status=$?
+format_needed=""
+if ! uvx ruff format --check --quiet "$@" >/dev/null 2>&1; then
+  format_needed="Files need formatting (run \`uvx ruff format\`)."
+fi
 
-[ -z "$fixed$reformatted$remaining" ] && exit 0
-[ -n "$fixed" ] && printf 'Autofixed by ruff (no action needed):\n%s\n' "$fixed"
-[ -n "$reformatted" ] && printf '%s\n' "$reformatted"
-[ -n "$remaining" ] && printf 'Remaining ruff issues to fix:\n%s\n' "$remaining"
+if [ "$lint_status" -eq 0 ] && [ -z "$format_needed" ]; then
+  exit 0
+fi
+[ -n "$lint" ] && printf '%s\n' "$lint"
+[ -n "$format_needed" ] && printf '%s\n' "$format_needed"
 exit 1
 ```
 
 Put personal scripts in `~/.config/byor/scripts/` (`~/`) and repo scripts in
 `.byor/scripts/`. Make scripts executable or prefix an interpreter in `run`
-(`sh ~/.config/byor/scripts/ruff.sh`).
+(`sh ~/.config/byor/scripts/ruff-readonly.sh`).
 
 ### Shared helpers
 

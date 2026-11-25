@@ -1,10 +1,12 @@
 # Examples
 
-Starter rules, command rules, and check scripts demonstrating byor mechanics.
-Copy what fits; nothing here is enabled by default.
+Starter rules, command rules, and check scripts showing what byor enforces
+beyond standard linters: library choices, packaging boundaries, design-craft
+nudges, architectural seams, framework compiler constraints, and shell safety
+gates. Copy what fits; nothing here is enabled by default.
 
-Every rule in this directory is tested in CI against its `valid:` and `invalid:`
-fixtures:
+Every rule and command rule in this directory is tested in CI against its
+`valid:` and `invalid:` fixtures:
 
 ```sh
 ast-grep test -c examples/sgconfig.yml --skip-snapshot-tests
@@ -33,18 +35,16 @@ examples. For a full production setup across many repositories, see
 ## Rules library
 
 Each file is an ordinary `ast-grep` YAML rule with `metadata.byor.agent_prompt`
-(see [Authoring rules](../docs/guides/authoring-rules.md)). Ordered from
-simplest pattern to relational rules:
+(see [Authoring rules](../docs/guides/authoring-rules.md)) targeting conventions
+standard linters like Ruff and oxlint do not enforce:
 
 | Rule | Demonstrates |
 | --- | --- |
-| [`no-print`](rules/no-print.yml) | Bare `pattern` with a variadic metavariable (`$$$ARGS`) |
-| [`no-requests`](rules/no-requests.yml) | Banning a library at import choke points (`dotted_name` + from-import patterns) |
-| [`python.no-typing-cast`](rules/python.no-typing-cast.yml) | `any` combining import and call patterns with named metavariables (`$TYPE`, `$VALUE`) |
-| [`no-routing-functions`](rules/no-routing-functions.yml) | Relational rules (`any`/`all`, `inside`, `follows`, `nthChild` with `reverse`) matching pass-through wrappers |
-| [`keyword-only-args`](rules/keyword-only-args.yml) | Composed `utils` rules counting positional parameters while exempting `self`/`cls` and `*`/`*args` |
-| [`no-console-log`](rules/no-console-log.yml) | Bare `pattern` in TypeScript (`language: typescript`) |
-| [`no-type-suppression`](rules/no-type-suppression.yml) | Combining two node kinds (`cast(...)` calls and `# type: ignore` comments) in one rule |
+| [`python.no-requests`](rules/python.no-requests.yml) | Banning a library at import choke points (`dotted_name` + from-import patterns) to standardize on `httpx` |
+| [`python.no-sys-path-mutation`](rules/python.no-sys-path-mutation.yml) | Blocking `sys.path.append`/`insert`/`extend`/`+=` packaging hacks |
+| [`python.question-monkeypatch`](rules/python.question-monkeypatch.yml) | Design-craft nudge (`severity: info`) asking agents to justify `monkeypatch.setattr`/`delattr` while allowing `setenv`/`delenv`/`chdir` |
+| [`ts.no-direct-env-access`](rules/ts.no-direct-env-access.yml) | Architectural boundary routing `process.env` reads through a typed `env` config module (`language: TypeScript`) |
+| [`react.no-try-finally-jsx`](rules/react.no-try-finally-jsx.yml) | Relational AST rule (`all`, `has`, `inside`) catching `try ... finally` inside TSX components for React Compiler (`language: Tsx`) |
 
 Matching fixtures live in [`rule-tests/`](rule-tests/).
 
@@ -57,9 +57,9 @@ run with the same `ast-grep test` command above.
 
 | Rule | Demonstrates |
 | --- | --- |
-| [`prefer-rg`](command-rules/prefer-rg.yml) | Bare pattern matching `grep` inside pipelines or compound commands without matching quoted strings |
-| [`no-pip-install`](command-rules/no-pip-install.yml) | `any` covering `pip`, `pip3`, and `python -m pip` while allowing `uv pip install` |
 | [`no-force-push`](command-rules/no-force-push.yml) | Relational `has` with anchored regex matching `--force`/`-f` at any position while keeping `--force-with-lease` legal |
+| [`no-pip-install`](command-rules/no-pip-install.yml) | `any` covering `pip`, `pip3`, and `python -m pip` while allowing `uv pip install` |
+| [`no-commit-no-verify`](command-rules/no-commit-no-verify.yml) | Blocking `git commit --no-verify`, `-n`, and `SKIP=` / `PREK_SKIP=` hook bypasses without false-positives on `git log -n` or quoted strings |
 
 ## Global config and check scripts
 
@@ -67,8 +67,8 @@ Starter global configuration and check scripts under [`config/`](config/):
 
 | File | Purpose |
 | --- | --- |
-| [`config/config.yml`](config/config.yml) | Annotated `~/.config/byor/config.yml` with `checks`, `command_checks`, `output`, `worktrees`, and a sample profile |
-| [`config/scripts/ruff.sh`](config/scripts/ruff.sh) | Autofix-then-report check script that tells the agent what changed and scans the whole repo when given no args |
+| [`config/config.yml`](config/config.yml) | Annotated `~/.config/byor/config.yml` with read-only linter forwarding (`gate: false`), `command_checks`, `output.concise: true`, `paths.commands`, `init.packages`, and a sample profile |
+| [`config/scripts/ruff-readonly.sh`](config/scripts/ruff-readonly.sh) | Read-only Ruff check + format check script (`gate: false`) that reports lint and formatting issues without mutating files underneath an active agent |
 | [`config/scripts/dependency-gate.sh`](config/scripts/dependency-gate.sh) | Agent-only check (`gate: false`) that fails when `pyproject.toml` dependencies change from `HEAD` |
-| [`config/scripts/uv-lock-guard.sh`](config/scripts/uv-lock-guard.sh) | Agent-only check (`gate: false`) rejecting hand edits to `uv.lock` |
+| [`config/scripts/check-suppression-reason.py`](config/scripts/check-suppression-reason.py) | Cross-language craft script (`gate: false`) requiring a short reason on newly added `# noqa`, `# type: ignore`, `// oxlint-disable`, `@ts-*`, or `ast-grep-ignore` suppressions |
 | [`config/scripts/protect-ssh.sh`](config/scripts/protect-ssh.sh) | `command_check` script using `$HOME` expansion to block commands targeting `~/.ssh` |

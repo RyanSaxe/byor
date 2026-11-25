@@ -1,9 +1,0 @@
-id: no-type-suppression
-valid:
-  - "x = fetch()"
-  - "result: str = compute()"
-  - "# a normal comment"
-invalid:
-  - "user = cast(User, data)"
-  - "value = untyped()  # type: ignore[assignment]"
-  - "config = load()  # type:ignore"

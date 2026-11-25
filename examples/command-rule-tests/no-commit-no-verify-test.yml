@@ -1,0 +1,16 @@
+id: no-commit-no-verify
+valid:
+  - 'git commit -m "feat: add rule"'
+  - git commit --amend --no-edit
+  - 'git commit -am "fix: typo"'
+  - git log -n 5
+  - prek run --all-files
+  - echo "git commit --no-verify"
+invalid:
+  - git commit --no-verify -m "wip"
+  - git commit -n -m "wip"
+  - git commit -anm "wip"
+  - /usr/bin/git commit --no-verify -m "wip"
+  - SKIP=ruff git commit -m "wip"
+  - PREK_SKIP=ty prek run --all-files
+  - SKIP=flake8 pre-commit run

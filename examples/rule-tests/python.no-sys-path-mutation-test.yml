@@ -1,0 +1,11 @@
+id: python.no-sys-path-mutation
+valid:
+  - print(sys.path)
+  - search_paths = list(sys.path)
+  - items.append("src")
+  - sys.argv.append("--verbose")
+invalid:
+  - sys.path.append("/tmp/extra")
+  - sys.path.insert(0, str(ROOT))
+  - sys.path.extend([str(src), str(lib)])
+  - sys.path += ["src"]
