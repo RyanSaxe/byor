@@ -1,13 +1,14 @@
 # A global byor config (~/.config/byor/config.yml). This is where byor goes
-# beyond plain ast-grep: it wires external linters and type checkers into the
-# same diagnostic loop as your rules. byor reads this file and never writes it,
-# so it can live in a dotfiles repo; the agents byor installs are recorded in
-# its state file, ~/.local/state/byor/state.yml, not here.
+# beyond plain ast-grep: it forwards read-only diagnostics from external linters
+# and craft scripts into the same agent loop as your rules, and gates shell
+# commands before they run. byor reads this file and never writes it, so it can
+# live in a dotfiles repo; machine state lives in ~/.local/state/byor/.
 version: 1
 
 paths:
-  rules: rules # global rules live in ~/.config/byor/rules/
+  rules: rules # global file rules live in ~/.config/byor/rules/
   packages: packages # opt-in rule/check bundles; `byor package add <name>`
+  commands: commands # global Bash command rules live in ~/.config/byor/commands/
   repos: repos.yml # registry of repos byor syncs global rules into, in ~/.local/state/byor/
 
 ast_grep:
@@ -17,51 +18,65 @@ output:
   concise: true # one line per diagnostic, easiest for agents to parse
   # max_diagnostics: 10 # cap rendered diagnostics, noting "... and N more"; default unlimited
 
+init:
+  # Opt-in packages enabled automatically when you run `byor init`.
+  packages:
+    - craft
+
 worktrees:
   # Copy every git-ignored file, such as .env, from the main checkout into a new
   # worktree, not only byor's. Default false. A large ignored folder makes the
   # first copy slow, including inside an agent hook.
   copy_ignored: false
 
-# `checks` run alongside ast-grep rules. Each runs on files matching its
-# extensions; byor appends the in-scope paths as arguments and feeds any
-# nonzero-exit output back to the agent. When no paths are passed, the command
-# should scan the whole repo while respecting ignored files. A check can be a
-# one-liner or a script (see scripts/ruff.sh for the autofix-then-report pattern).
+# `checks` run alongside ast-grep rules. Prefer read-only linter forwarding
+# (`gate: false`) in your global config: hooks steer the agent immediately
+# without mutating files underneath it, while each repository keeps its own CI
+# and pre-commit hooks as the source of truth.
 checks:
   - name: ruff
     extensions:
       - py
-    run: ~/.config/byor/scripts/ruff.sh
+      - pyi
+    run: ~/.config/byor/scripts/ruff-readonly.sh
+    gate: false
     tags:
       - format
+      - lint
   - name: ty
     extensions:
       - py
+      - pyi
     run: uvx ty check --output-format concise
+    gate: false
     tags:
       - strict
-  # These two police the agent, not the code, so they carry `gate: false`:
-  # the post-edit hook runs them, but generated pre-commit/CI gates leave
-  # them out, where they would block a person doing the same thing on purpose.
+  # Agent-only steering checks (`gate: false`): the post-edit hook runs them,
+  # but generated pre-commit/CI gates leave them out.
   - name: dependency-gate
     extensions:
       - toml
     run: ~/.config/byor/scripts/dependency-gate.sh
     gate: false
-  - name: uv-lock-guard
+  - name: suppression-reason
     extensions:
-      - lock
-    run: ~/.config/byor/scripts/uv-lock-guard.sh
+      - py
+      - pyi
+      - ts
+      - tsx
+      - js
+      - jsx
+    run: ~/.config/byor/scripts/check-suppression-reason.py
     gate: false
+    tags:
+      - craft
 
 # `command_checks` are the pre-command gate's script escape hatch: byor pipes
 # the shell command an agent is about to run to the script's stdin, and a
-# nonzero exit denies it — the output becomes the agent's correction. They run
-# on every command an agent issues, so keep them fast (well under ~100ms): no
-# network, no heavy interpreter startup. Prefer a `language: Bash` command
-# *rule* when a pattern can express the policy; reach for a script only when
-# the decision needs runtime state (see scripts/protect-ssh.sh).
+# nonzero exit denies it — the output becomes the agent's correction. Keep them
+# fast (well under ~100ms): no network, no heavy interpreter startup. Prefer a
+# `language: Bash` command *rule* when a pattern can express the policy; reach
+# for a script only when the decision needs runtime state (see protect-ssh.sh).
 command_checks:
   - name: protect-ssh
     run: ~/.config/byor/scripts/protect-ssh.sh

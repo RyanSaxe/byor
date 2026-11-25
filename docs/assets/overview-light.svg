@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 374" role="img" aria-label="byor architecture overview. When an AI coding agent edits a file or runs a shell command, a byor hook (agent-check or command-check) evaluates the shared rule set of ast-grep YAML rules, external linters and scripts, and Bash command rules synced across project, local, package, and global scopes. Clean actions proceed; findings return diagnostics, agent_prompt instructions, or a command denial so the agent fixes and retries. The same synced rule set drives editor ast-grep lsp diagnostics, terminal ast-grep scan, and committed pre-commit and CI gates that run on fresh clones without byor installed.">
+<style>
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:#1f2328;text-anchor:middle;font-size:15.5px}
+.t{font-weight:600}.s{font-size:13px;fill:#59636e}.l{text-anchor:start}
+.line{fill:none;stroke:#1f2328;stroke-width:1.5}.head{fill:#1f2328}
+.bline{fill:none;stroke:#3a5bd9;stroke-width:1.5}.bhead{fill:#3a5bd9}
+.box{fill:#ffffff;stroke:#b8bec6}.round{fill:#eef2fd;stroke:#3a5bd9}
+</style>
+<defs>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+<marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="bhead"/></marker>
+</defs>
+<rect class="box" x="24" y="20" width="220" height="82" rx="10"/>
+<text x="134" y="50" class="t">1. Agent acts</text>
+<text x="134" y="71" class="s">edits a file or</text>
+<text x="134" y="89" class="s">runs a shell command</text>
+<path class="line" d="M244 61 H296" marker-end="url(#a)"/>
+<text x="270" y="51" class="s">hook</text>
+<rect class="round" x="300" y="20" width="220" height="82" rx="10"/>
+<text x="410" y="50" class="t">2. byor hook</text>
+<text x="410" y="71" class="s">agent-check · command-check</text>
+<text x="410" y="89" class="s">scoped to edited lines</text>
+<path class="line" d="M520 61 H572" marker-end="url(#a)"/>
+<text x="546" y="51" class="s">clean</text>
+<rect class="box" x="576" y="20" width="220" height="82" rx="10"/>
+<text x="686" y="50" class="t">3. Proceed</text>
+<text x="686" y="71" class="s">edit lands cleanly</text>
+<text x="686" y="89" class="s">command executes</text>
+<path class="bline" d="M360 102 V128 H134 V106" marker-end="url(#b)"/>
+<text x="247" y="146" class="s">diagnostics / deny → fix &amp; retry</text>
+<path class="bline" d="M455 168 V106" marker-end="url(#b)"/>
+<text x="467" y="141" class="s l">evaluates rules &amp; checks</text>
+<rect class="round" x="24" y="168" width="772" height="68" rx="10"/>
+<text x="410" y="196" class="t">Shared rules &amp; checks: ast-grep + external linters &amp; scripts + Bash rules</text>
+<text x="410" y="218" class="s">scoped layers (project &gt; local &gt; package &gt; global) · synced by byor sync into mirrors &amp; sgconfig.yml</text>
+<path class="bline" d="M134 236 V272" marker-end="url(#b)"/>
+<path class="bline" d="M410 236 V272" marker-end="url(#b)"/>
+<path class="bline" d="M686 236 V272" marker-end="url(#b)"/>
+<rect class="box" x="24" y="276" width="220" height="80" rx="10"/>
+<text x="134" y="305" class="t">Editor</text>
+<text x="134" y="326" class="s">ast-grep lsp</text>
+<text x="134" y="344" class="s">live inline diagnostics</text>
+<rect class="box" x="300" y="276" width="220" height="80" rx="10"/>
+<text x="410" y="305" class="t">Terminal</text>
+<text x="410" y="326" class="s">ast-grep scan</text>
+<text x="410" y="344" class="s">on-demand local checks</text>
+<rect class="box" x="576" y="276" width="220" height="80" rx="10"/>
+<text x="686" y="305" class="t">Pre-commit &amp; CI gate</text>
+<text x="686" y="326" class="s">byor init --gate</text>
+<text x="686" y="344" class="s">runs without byor on clone</text>
+</svg>

@@ -1,8 +1,0 @@
-id: no-print
-valid:
-  - logger.info("hello")
-  - sys.stdout.write("hello")
-invalid:
-  - print("hello")
-  - print(value, file=stream)
-  - print()

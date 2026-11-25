@@ -1,0 +1,12 @@
+id: ts.no-direct-env-access
+valid:
+  - |
+    import { env } from "./env";
+    const url = env.DATABASE_URL;
+  - const port = config.env.PORT;
+  - "const env = { PORT: 3000 };"
+invalid:
+  - const url = process.env.DATABASE_URL;
+  - const port = process.env["PORT"];
+  - const { NODE_ENV } = process.env;
+  - export const rawEnv = process.env;

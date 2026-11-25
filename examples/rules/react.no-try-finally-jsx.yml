@@ -1,0 +1,38 @@
+# Demonstrates: a relational AST rule for a framework compiler constraint.
+# React Compiler bails out of optimizing components that contain `try ... finally`.
+# Matching `try_statement` with a `finally_clause` inside any function that also
+# renders JSX catches components (including fragments, which tree-sitter-tsx
+# parses as `jsx_element`) while leaving plain non-JSX helpers untouched.
+id: react.no-try-finally-jsx
+language: Tsx
+severity: error
+message: Avoid `try ... finally` inside React components; React Compiler skips optimizing them.
+rule:
+  all:
+    - kind: try_statement
+    - has:
+        kind: finally_clause
+    - inside:
+        any:
+          - kind: function_declaration
+          - kind: arrow_function
+          - kind: function_expression
+        has:
+          any:
+            - kind: jsx_element
+            - kind: jsx_self_closing_element
+          stopBy: end
+        stopBy: end
+metadata:
+  byor:
+    rationale: >
+      React Compiler silently skips optimizing components that contain
+      `try ... finally` blocks, and general linters do not catch this in the
+      fast path.
+    agent_prompt: >
+      Move cleanup into a helper function outside the component body, a
+      `useEffect` cleanup function, or a `try ... catch` with post-block
+      cleanup so React Compiler can optimize this component.
+    tags:
+      - react
+      - web
